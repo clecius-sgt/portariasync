@@ -1923,6 +1923,28 @@ function identificarMoradorOCR(textoOCR) {
 
   const prefixosIgnorar = /^(endere[cç]o|cep|cidade|complemento|bairro|estado|rua|avenida|av\.|pack|nf:|nota|despachar|seg|ter|qua|qui|sex|sab|dom|\d)/i;
 
+  // Detectar se "BADY BASSITT" aparece no texto — e pegar as linhas próximas como destinatário
+  const temBadyBassitt = /bady\s*bass?itt/i.test(textoOCR);
+  if (temBadyBassitt) {
+    for (let i = 0; i < linhas.length; i++) {
+      if (/bady\s*bass?itt/i.test(linhas[i])) {
+        // Linhas anteriores (até 3) são candidatas a nome do destinatário
+        for (let k = Math.max(0, i - 3); k < i; k++) {
+          const l = linhas[k];
+          const ln = linhasNorm[k];
+          if (prefixosIgnorar.test(l)) continue;
+          if (ln.replace(/\s/g,'').length < 5) continue;
+          if (/remetente|de\s*:|from\s*:/i.test(l)) continue;
+          // Linha em maiúsculas ou com iniciais maiúsculas = nome de pessoa
+          if (/^[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÇ\s]{5,}$/.test(l) || /([A-Z][a-z]{2,}\s+){2,}/.test(l)) {
+            candidatosNome.push({ texto: ln, peso: 25 }); // peso máximo — cidade confirmada
+          }
+        }
+        break;
+      }
+    }
+  }
+
   for (let i = 0; i < linhas.length; i++) {
     const l = linhas[i];
     const ln = linhasNorm[i];
@@ -1930,6 +1952,8 @@ function identificarMoradorOCR(textoOCR) {
     if (prefixosIgnorar.test(l.trim())) continue;
     if (ln.replace(/\s/g,'').length < 6) continue;
     if (l.includes('>')) continue;
+    // Ignorar linhas com "remetente" ou "de:"
+    if (/remetente|de\s*:|from\s*:/i.test(l)) continue;
 
     // Padrão ML: "lucimara Gonçalves Salomé (LUCIMARAGONVESSALOM)" — mesmo após junção de linhas
     const parMatch = l.match(/^(.{4,}?)\s*\([A-Z]{4,}\)/);
