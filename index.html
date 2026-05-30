@@ -533,6 +533,7 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 
     <button class="btn btn-primary btn-full" onclick="salvarConfig()">💾 Salvar configurações</button>
     <button class="btn btn-full" style="background:#eee; margin-top:8px;" onclick="testarWhatsApp()">📱 Testar envio WhatsApp</button>
+    <button class="btn btn-full" style="background:#25D366;color:white;margin-top:8px;" onclick="reconectarWhatsApp()">🔄 Reconectar WhatsApp</button>
   </div>
 
   <div class="card" id="painelUsuarios" style="display:none;">
@@ -1256,6 +1257,59 @@ function salvarConfig() {
   localStorage.setItem('config', JSON.stringify(config));
   document.getElementById('headerCondominio').textContent = config.condominio;
   toast('✅ Configurações salvas!');
+}
+
+async function reconectarWhatsApp() {
+  salvarConfig();
+  if (!config.apiUrl || !config.apiKey || !config.instancia) {
+    toast('⚠️ Configure a URL, API Key e Instância primeiro');
+    return;
+  }
+
+  // Remove modal anterior
+  const ant = document.getElementById('modalQR');
+  if (ant) ant.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalQR';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:360px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+      <div style="font-size:20px;font-weight:700;margin-bottom:4px;">🔄 Reconectar WhatsApp</div>
+      <div style="font-size:14px;color:#5f6368;margin-bottom:20px;">Escaneie o QR Code com o celular da portaria</div>
+      <div id="qrArea" style="min-height:200px;display:flex;align-items:center;justify-content:center;">
+        <div style="color:#5f6368;">⏳ Gerando QR Code...</div>
+      </div>
+      <button onclick="document.getElementById('modalQR').remove()" style="margin-top:20px;width:100%;padding:12px;border-radius:8px;border:1px solid #dadce0;background:white;color:#5f6368;font-weight:600;cursor:pointer;font-size:15px;">Fechar</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  try {
+    // Tenta conectar a instância
+    const url = config.apiUrl.replace(/\/$/, '');
+    const resp = await fetch(`${url}/instance/connect/${encodeURIComponent(config.instancia)}`, {
+      method: 'GET',
+      headers: { 'apikey': config.apiKey }
+    });
+    const data = await resp.json();
+    const qrArea = document.getElementById('qrArea');
+    if (!qrArea) return;
+
+    if (data.base64) {
+      // QR Code retornado como base64
+      qrArea.innerHTML = `<img src="${data.base64}" style="width:220px;height:220px;border-radius:8px;">`;
+    } else if (data.qrcode && data.qrcode.base64) {
+      qrArea.innerHTML = `<img src="${data.qrcode.base64}" style="width:220px;height:220px;border-radius:8px;">`;
+    } else if (data.instance && data.instance.state === 'open') {
+      qrArea.innerHTML = `<div style="font-size:48px;">✅</div><div style="font-size:16px;font-weight:600;color:#34a853;margin-top:8px;">WhatsApp já está conectado!</div>`;
+    } else {
+      qrArea.innerHTML = `<div style="color:#c0392b;font-size:14px;">❌ Não foi possível gerar o QR Code.<br>Verifique se a instância "<strong>${config.instancia}</strong>" existe no Evolution Manager.</div>`;
+    }
+  } catch(e) {
+    const qrArea = document.getElementById('qrArea');
+    if (qrArea) qrArea.innerHTML = `<div style="color:#c0392b;font-size:14px;">❌ Erro ao conectar com a Evolution API.<br>Verifique se o servidor está online.</div>`;
+  }
 }
 
 async function testarWhatsApp() {
