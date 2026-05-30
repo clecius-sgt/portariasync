@@ -1528,6 +1528,17 @@ async function abrirCameraUnificada() {
     const video = document.getElementById('uniVideo');
     video.srcObject = uniStream;
     await video.play();
+
+    // Acender lanterna automaticamente
+    try {
+      const track = uniStream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      if (capabilities.torch) {
+        await track.applyConstraints({ advanced: [{ torch: true }] });
+      }
+    } catch(e) {
+      console.log('Lanterna não disponível neste dispositivo');
+    }
   } catch(e) {
     fecharCameraUnificada();
     toast('⚠️ Não foi possível acessar a câmera. Verifique as permissões.');
@@ -1950,21 +1961,31 @@ function identificarMoradorOCR(textoOCR) {
     }
   }
 
-  // --- PASSO 1b: busca direta — procura pares de palavras do nome no texto OCR ---
-  // Conta quantos pares consecutivos de palavras do nome aparecem no texto
-  // Quanto mais pares, mais confiante a identificação
+  // --- PASSO 1b: busca direta — procura nome completo e primeiro nome no texto OCR ---
   for (const m of moradores) {
     const nomeN = norm(m.nome);
-    const partes = nomeN.split(' ').filter(p => p.length > 3);
-    if (partes.length < 2) continue;
+    const partes = nomeN.split(' ').filter(p => p.length > 2);
+    if (partes.length < 1) continue;
+
+    const primeiroNome = partes[0]; // ex: "lucimara"
+    let peso = 0;
+
+    // Primeiro nome presente no texto — peso alto (é o identificador principal)
+    if (textoNorm.includes(primeiroNome)) peso += 20;
+
+    // Pares consecutivos de palavras do nome completo
     let paresEncontrados = 0;
     for (let k = 0; k < partes.length - 1; k++) {
       const par = partes[k] + ' ' + partes[k + 1];
       if (textoNorm.includes(par)) paresEncontrados++;
     }
-    if (paresEncontrados > 0) {
-      // Peso proporcional aos pares encontrados — mais pares = mais certeza
-      candidatosNome.push({ texto: nomeN, peso: 10 + paresEncontrados * 5, moradorDireto: m.id });
+    peso += paresEncontrados * 8;
+
+    // Nome completo encontrado inteiro — bônus máximo
+    if (textoNorm.includes(nomeN)) peso += 30;
+
+    if (peso > 0) {
+      candidatosNome.push({ texto: nomeN, peso, moradorDireto: m.id });
     }
   }
 
