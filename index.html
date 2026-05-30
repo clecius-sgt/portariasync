@@ -554,10 +554,15 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
       <label>Nome</label>
       <input type="text" id="novoUsuarioNome" placeholder="Ex: João Porteiro">
       <label>Perfil</label>
-      <select id="novoUsuarioPerfil">
-        <option value="porteiro">Porteiro</option>
-        <option value="admin">Administrador</option>
+      <select id="novoUsuarioPerfil" onchange="atualizarDescricaoPermissao()">
+        <option value="porteiro">Porteiro — só registra e confirma retirada</option>
+        <option value="supervisor">Supervisor — registra, confirma e exclui encomendas</option>
+        <option value="admin">Administrador — acesso total</option>
       </select>
+      <label>Permissões</label>
+      <div style="background:#f8f9fa;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;">
+        <div id="descricaoPermissao" style="color:var(--muted);">Porteiro: pode registrar encomendas e confirmar retiradas. Não acessa configurações nem moradores.</div>
+      </div>
       <label>Senha</label>
       <input type="password" id="novoUsuarioSenha" placeholder="Mínimo 4 caracteres">
       <button class="btn btn-primary btn-full" style="margin-top:12px;" onclick="criarUsuario()">➕ Criar usuário</button>
@@ -709,6 +714,14 @@ let filtroAtivo = 'pendente';
 let moradorSelecionadoId = null;
 
 // ========== USUÁRIOS & LOGIN ==========
+// SENHA MASTER — acesso total independente do perfil
+const SENHA_MASTER = 'DItalia@2024#Master';
+
+// Níveis de acesso:
+// porteiro   → registrar encomenda, confirmar retirada, reenviar WhatsApp
+// supervisor → tudo do porteiro + excluir encomenda + editar moradores
+// admin      → acesso total (configurações, usuários, log, moradores, dados)
+
 let _usuarios_default = [
   { id: 'u1', nome: 'Administrador', perfil: 'admin', senha: 'admin123' }
 ];
@@ -717,34 +730,51 @@ if (!localStorage.getItem('usuarios')) localStorage.setItem('usuarios', JSON.str
 
 let usuarioLogado = null;
 
+function podeExcluir() { return usuarioLogado && (usuarioLogado.perfil === 'admin' || usuarioLogado.perfil === 'supervisor' || usuarioLogado._master); }
+function podeEditarMoradores() { return usuarioLogado && (usuarioLogado.perfil === 'admin' || usuarioLogado.perfil === 'supervisor' || usuarioLogado._master); }
+function isAdmin() { return usuarioLogado && (usuarioLogado.perfil === 'admin' || usuarioLogado._master); }
+
 function iniciarLogin() {
   const sel = document.getElementById('loginUsuario');
+  const labels = { admin: 'Admin', supervisor: 'Supervisor', porteiro: 'Porteiro' };
   sel.innerHTML = '<option value="">Selecione...</option>' +
-    usuarios.map(u => `<option value="${u.id}">${u.nome} (${u.perfil === 'admin' ? 'Admin' : 'Porteiro'})</option>`).join('');
+    usuarios.map(u => `<option value="${u.id}">${u.nome} (${labels[u.perfil] || u.perfil})</option>`).join('');
 }
 
 function fazerLogin() {
   const uid = document.getElementById('loginUsuario').value;
   const senha = document.getElementById('loginSenha').value;
   const erroEl = document.getElementById('loginErro');
-  const usuario = usuarios.find(u => u.id === uid && u.senha === senha);
+
+  // Verificar senha master
+  const isMaster = senha === SENHA_MASTER;
+  const usuario = usuarios.find(u => u.id === uid && (u.senha === senha || isMaster));
   if (!usuario) { erroEl.style.display = 'block'; return; }
+
   erroEl.style.display = 'none';
-  usuarioLogado = usuario;
+  usuarioLogado = { ...usuario, _master: isMaster };
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainHeader').style.display = 'flex';
   document.getElementById('mainNav').style.display = 'flex';
-  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome;
-  // Porteiro não vê Config nem Moradores
-  if (usuario.perfil !== 'admin') {
-    document.getElementById('navConfig').style.display = 'none';
-    document.getElementById('navMoradores').style.display = 'none';
-  } else {
+  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome + (isMaster ? ' 🔑' : '');
+
+  // Controle de visibilidade por perfil
+  if (isAdmin()) {
     document.getElementById('navConfig').style.display = '';
     document.getElementById('navMoradores').style.display = '';
     document.getElementById('painelUsuarios').style.display = 'block';
     document.getElementById('painelLog').style.display = 'block';
     renderLog();
+  } else if (podeEditarMoradores()) {
+    // Supervisor — vê moradores mas não vê config/usuários/log
+    document.getElementById('navConfig').style.display = 'none';
+    document.getElementById('navMoradores').style.display = '';
+    document.getElementById('painelUsuarios').style.display = 'none';
+    document.getElementById('painelLog').style.display = 'none';
+  } else {
+    // Porteiro — só encomendas
+    document.getElementById('navConfig').style.display = 'none';
+    document.getElementById('navMoradores').style.display = 'none';
   }
   renderDashboard();
   agendarBackup();
@@ -824,6 +854,17 @@ function fazerLogout() {
   document.getElementById('mainNav').style.display = 'none';
   document.getElementById('loginSenha').value = '';
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+}
+
+function atualizarDescricaoPermissao() {
+  const perfil = document.getElementById('novoUsuarioPerfil').value;
+  const desc = {
+    porteiro: 'Porteiro: registra encomendas e confirma retiradas. Não acessa configurações, moradores ou exclusões.',
+    supervisor: 'Supervisor: tudo do porteiro + pode excluir encomendas e editar moradores. Não acessa configurações do sistema.',
+    admin: 'Administrador: acesso total ao sistema — configurações, usuários, log, moradores e dados.'
+  };
+  const el = document.getElementById('descricaoPermissao');
+  if (el) el.textContent = desc[perfil] || '';
 }
 
 function criarUsuario() {
@@ -1063,7 +1104,7 @@ function itemEncomendaHTML(e) {
       ${e.status === 'pendente' ? `
       <button class="btn btn-success btn-sm" onclick="darBaixa('${e.id}')">✅ Confirmar retirada</button>
       <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="reenviarWhats('${e.id}')">📲 Reenviar aviso</button>` : ''}
-      <button class="btn btn-danger btn-sm" onclick="excluirEncomenda('${e.id}')">🗑️ Excluir</button>
+      ${podeExcluir() ? `<button class="btn btn-danger btn-sm" onclick="excluirEncomenda('${e.id}')">🗑️ Excluir</button>` : ''}
     </div>
   </div>`;
 }
@@ -1260,8 +1301,8 @@ function renderMoradores() {
         <div class="detalhe">🏠 ${m.casa} · 📱 ${formatarWhats(m.whats)}</div>
       </div>
       <div style="display:flex;gap:6px;">
-        <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="editarMorador('${m.id}')">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>
+        ${podeEditarMoradores() ? `<button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="editarMorador('${m.id}')">✏️</button>` : ''}
+        ${isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>` : ''}
       </div>
     </div>
   `).join('');
