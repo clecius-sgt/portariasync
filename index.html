@@ -1175,9 +1175,54 @@ function renderMoradores() {
         <div class="nome">${m.nome}</div>
         <div class="detalhe">🏠 ${m.casa} · 📱 ${formatarWhats(m.whats)}</div>
       </div>
-      <button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="editarMorador('${m.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>
+      </div>
     </div>
   `).join('');
+}
+
+function editarMorador(id) {
+  const m = moradores.find(x => x.id === id);
+  if (!m) return;
+
+  const modal = document.createElement('div');
+  modal.id = 'modalEditarMorador';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px;">✏️ Editar morador</div>
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Nome</label>
+      <input id="editNome" type="text" value="${m.nome}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Casa / Endereço</label>
+      <input id="editCasa" type="text" value="${m.casa}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">WhatsApp (só números com DDD)</label>
+      <input id="editWhats" type="tel" value="${m.whats}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:20px;">
+      <div style="display:flex;gap:10px;">
+        <button onclick="document.getElementById('modalEditarMorador').remove()" style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--muted);font-weight:600;cursor:pointer;">Cancelar</button>
+        <button onclick="salvarEdicaoMorador('${id}')" style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--primary);color:white;font-weight:700;cursor:pointer;">💾 Salvar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function salvarEdicaoMorador(id) {
+  const m = moradores.find(x => x.id === id);
+  if (!m) return;
+  const nome = document.getElementById('editNome').value.trim();
+  const casa = document.getElementById('editCasa').value.trim();
+  const whats = document.getElementById('editWhats').value.trim().replace(/\D/g,'');
+  if (!nome || !casa || !whats) { toast('⚠️ Preencha todos os campos'); return; }
+  if (whats.length < 10) { toast('⚠️ WhatsApp inválido'); return; }
+  m.nome = nome;
+  m.casa = casa;
+  m.whats = whats;
+  salvarMoradores();
+  document.getElementById('modalEditarMorador').remove();
+  renderMoradores();
+  toast('✅ Morador atualizado!');
 }
 
 function excluirMorador(id) {
