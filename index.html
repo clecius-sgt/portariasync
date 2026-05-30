@@ -737,6 +737,7 @@ function fazerLogin() {
   renderDashboard();
   agendarBackup();
   carregarDoSupabase(); // carrega dados do servidor
+  iniciarPingEvolution(); // mantém Evolution API acordada
 }
 
 function fazerLogout() {
@@ -934,7 +935,11 @@ async function registrarEncomenda() {
   toast('✅ Encomenda registrada!');
 
   // Enviar WhatsApp
-  if (config.whatsAuto !== false) {
+  if (config.whatsAuto === false) {
+    // WhatsApp automático desligado nas configurações
+  } else if (!config.apiUrl || !config.apiKey) {
+    toast('⚠️ Configure a Evolution API nas Configurações para enviar WhatsApp', 5000);
+  } else {
     await enviarWhatsApp(morador, enc);
   }
 }
@@ -1681,6 +1686,15 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
 
     const { morador, nomeExtraido, debug } = identificarMoradorOCR(textoOCR);
 
+    // Extrair código da encomenda pelo OCR se ainda não foi lido pelo QR Code
+    if (!codigoJaLido) {
+      const codigoOCR = extrairCodigoOCR(textoOCR);
+      if (codigoOCR && !document.getElementById('inputCodigo').value) {
+        document.getElementById('inputCodigo').value = codigoOCR;
+        codigoJaLido = codigoOCR;
+      }
+    }
+
     if (morador) {
       selecionarMorador(morador.id);
       const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
@@ -1857,6 +1871,29 @@ function resizarImagem(file, maxDim) {
   });
 }
 
+function extrairCodigoOCR(textoOCR) {
+  const linhas = textoOCR.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+  for (const linha of linhas) {
+    // Código numérico longo (Mercado Livre, Shopee etc) — 10 a 20 dígitos
+    const numLongo = linha.match(/\b(\d{10,20})\b/);
+    if (numLongo) return numLongo[1];
+
+    // Código alfanumérico tipo Correios: AA000000000BR, BR000000000BR
+    const correios = linha.match(/\b([A-Z]{2}\d{9}[A-Z]{2})\b/);
+    if (correios) return correios[1];
+
+    // Código após palavras-chave
+    const aposChave = linha.match(/(?:c[oó]digo|rastreio|rastreamento|tracking|n[°º]\.?\s*pedido)[:\s#]*([A-Z0-9]{6,})/i);
+    if (aposChave) return aposChave[1];
+
+    // Código alfanumérico genérico com letras e números misturados (min 8 chars)
+    const alfanum = linha.match(/\b([A-Z]{2,4}\d{6,}[A-Z0-9]*)\b/);
+    if (alfanum) return alfanum[1];
+  }
+  return null;
+}
+
 function identificarMoradorOCR(textoOCR) {
   const norm = (s) => (s || '').toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -1987,6 +2024,21 @@ function identificarMoradorOCR(textoOCR) {
 }
 
 // ========== BACKUP AUTOMÁTICO ÀS 02H ==========
+// ========== PING EVOLUTION API (mantém servidor acordado) ==========
+function iniciarPingEvolution() {
+  async function ping() {
+    if (!config.apiUrl) return;
+    try {
+      await fetch(config.apiUrl.replace(/\/$/, '') + '/', { method: 'GET', mode: 'no-cors' });
+      console.log('🟢 Ping Evolution API:', new Date().toLocaleTimeString('pt-BR'));
+    } catch(e) {
+      console.warn('🔴 Ping Evolution API falhou:', e.message);
+    }
+  }
+  ping(); // ping imediato ao fazer login
+  setInterval(ping, 10 * 60 * 1000); // a cada 10 minutos
+}
+
 function agendarBackup() {
   const agora = new Date();
   const proximo02h = new Date();
