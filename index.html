@@ -534,6 +534,16 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
     <button class="btn btn-primary btn-full" onclick="salvarConfig()">💾 Salvar configurações</button>
     <button class="btn btn-full" style="background:#eee; margin-top:8px;" onclick="testarWhatsApp()">📱 Testar envio WhatsApp</button>
     <button class="btn btn-full" style="background:#25D366;color:white;margin-top:8px;" onclick="reconectarWhatsApp()">🔄 Reconectar WhatsApp</button>
+    <button class="btn btn-full" style="background:#1a73e8;color:white;margin-top:8px;" onclick="recuperarBackupSupabase()">☁️ Recuperar dados do backup (Supabase)</button>
+  </div>
+
+  <div class="card" id="painelLog" style="display:none;">
+    <h2>📋 Log de Atividades</h2>
+    <div style="margin-bottom:12px;display:flex;gap:8px;">
+      <button class="btn btn-sm" style="background:#eee;" onclick="exportarLog()">⬇️ Exportar log</button>
+      <button class="btn btn-sm btn-danger" onclick="limparLog()">🗑️ Limpar log</button>
+    </div>
+    <div id="listaLog" style="font-size:13px;max-height:400px;overflow-y:auto;"></div>
   </div>
 
   <div class="card" id="painelUsuarios" style="display:none;">
@@ -733,11 +743,77 @@ function fazerLogin() {
     document.getElementById('navConfig').style.display = '';
     document.getElementById('navMoradores').style.display = '';
     document.getElementById('painelUsuarios').style.display = 'block';
+    document.getElementById('painelLog').style.display = 'block';
+    renderLog();
   }
   renderDashboard();
   agendarBackup();
   carregarDoSupabase(); // carrega dados do servidor
   iniciarPingEvolution(); // mantém Evolution API acordada
+  registrarLog('Login', 'Usuário ' + usuario.nome + ' (' + usuario.perfil + ') entrou no sistema');
+}
+
+// ========== LOG DE ATIVIDADES ==========
+function registrarLog(acao, detalhe = '') {
+  const log = JSON.parse(localStorage.getItem('logAtividades') || '[]');
+  log.unshift({
+    data: new Date().toLocaleString('pt-BR'),
+    usuario: usuarioLogado ? usuarioLogado.nome : 'Sistema',
+    perfil: usuarioLogado ? usuarioLogado.perfil : '-',
+    acao,
+    detalhe
+  });
+  // Manter só os últimos 500 registros
+  if (log.length > 500) log.splice(500);
+  localStorage.setItem('logAtividades', JSON.stringify(log));
+}
+
+function renderLog() {
+  const log = JSON.parse(localStorage.getItem('logAtividades') || '[]');
+  const div = document.getElementById('listaLog');
+  if (!div) return;
+  if (log.length === 0) {
+    div.innerHTML = '<div style="color:var(--muted);text-align:center;padding:16px;">Nenhuma atividade registrada</div>';
+    return;
+  }
+  div.innerHTML = log.map(l => `
+    <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+      <span style="color:var(--muted);font-size:11px;">${l.data}</span>
+      <span style="margin-left:8px;background:${l.perfil==='admin'?'#e8f0fe':'#e6f4ea'};color:${l.perfil==='admin'?'#1a73e8':'#137333'};padding:1px 6px;border-radius:4px;font-size:11px;">${l.usuario}</span>
+      <div style="margin-top:2px;font-weight:500;">${l.acao}</div>
+      ${l.detalhe ? `<div style="color:var(--muted);font-size:12px;">${l.detalhe}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function exportarLog() {
+  const log = JSON.parse(localStorage.getItem('logAtividades') || '[]');
+  const linhas = ['Data,Usuário,Perfil,Ação,Detalhe',
+    ...log.map(l => `"${l.data}","${l.usuario}","${l.perfil}","${l.acao}","${l.detalhe}"`)
+  ];
+  const blob = new Blob([linhas.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'log-portaria-' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.csv';
+  a.click();
+}
+
+function limparLog() {
+  if (!confirm('Apagar todo o histórico de atividades?')) return;
+  localStorage.removeItem('logAtividades');
+  renderLog();
+  toast('Log apagado');
+}
+
+// ========== RECUPERAR BACKUP DO SUPABASE ==========
+async function recuperarBackupSupabase() {
+  if (!confirm('Isso vai substituir os dados locais pelos dados salvos no Supabase. Continuar?')) return;
+  toast('⏳ Recuperando dados do Supabase...');
+  await carregarDoSupabase();
+  renderDashboard();
+  renderEncomendas();
+  registrarLog('Recuperação de backup', 'Dados restaurados do Supabase');
+  toast('✅ Dados recuperados com sucesso!');
 }
 
 function fazerLogout() {
@@ -933,6 +1009,7 @@ async function registrarEncomenda() {
   moradorSelecionadoId = null;
 
   toast('✅ Encomenda registrada!');
+  registrarLog('Encomenda registrada', morador.nome + ' · ' + (enc.transportadora || '') + ' · Código: ' + enc.codigo);
 
   // Enviar WhatsApp
   if (config.whatsAuto === false) {
@@ -1138,6 +1215,7 @@ function confirmarRetirada(id) {
   fecharModalRetirada();
   renderEncomendas();
   renderDashboard();
+  registrarLog('Retirada confirmada', enc.moradorNome + ' · Retirado por: ' + retirante + ' · Código: ' + enc.codigo);
   toast('✅ Retirada confirmada por ' + retirante + '!');
 }
 
@@ -1529,16 +1607,6 @@ async function abrirCameraUnificada() {
     video.srcObject = uniStream;
     await video.play();
 
-    // Acender lanterna automaticamente
-    try {
-      const track = uniStream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-      if (capabilities.torch) {
-        await track.applyConstraints({ advanced: [{ torch: true }] });
-      }
-    } catch(e) {
-      console.log('Lanterna não disponível neste dispositivo');
-    }
   } catch(e) {
     fecharCameraUnificada();
     toast('⚠️ Não foi possível acessar a câmera. Verifique as permissões.');
