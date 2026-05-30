@@ -1685,18 +1685,128 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
       selecionarMorador(morador.id);
       const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
       mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo);
-    } else if (nomeExtraido) {
-      mostrarStatusOCR(statusEl, 'aviso',
-        '⚠️ Nome lido: "' + nomeExtraido + '" — não encontrado no cadastro. Busque manualmente.\nCandidatos: ' + debug);
     } else {
-      mostrarStatusOCR(statusEl, 'aviso',
-        '⚠️ Não identificou o destinatário. Texto lido: ' + textoOCR.substring(0, 200).replace(/\n/g, ' | '));
+      // Não encontrou — mostra sugestões ou opção de cadastrar
+      const nomeParaBusca = nomeExtraido || '';
+      mostrarStatusOCR(statusEl, 'aviso', '⚠️ Morador não identificado. ' + (nomeExtraido ? 'Nome lido: "' + nomeExtraido + '"' : 'Texto não reconhecido.'));
+      abrirModalSugestaoMorador(nomeParaBusca, textoOCR);
     }
 
   } catch(e) {
     console.error('Erro OCR:', e);
     mostrarStatusOCR(statusEl, 'erro', '❌ Erro ao processar. Verifique a conexão com a internet.');
   }
+}
+
+function abrirModalSugestaoMorador(nomeExtraido, textoOCR) {
+  const ant = document.getElementById('modalSugestaoMorador');
+  if (ant) ant.remove();
+
+  // Calcular sugestões — top 5 mais próximos pelo nome
+  function similaridade(a, b) {
+    a = a.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    b = b.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    const partesA = a.split(' ').filter(p => p.length > 3);
+    let score = 0;
+    for (const p of partesA) { if (b.includes(p)) score += p.length; }
+    return score;
+  }
+
+  const texto = (nomeExtraido + ' ' + textoOCR).toLowerCase();
+  const sugestoes = moradores
+    .map(m => ({ m, score: similaridade(m.nome, texto) }))
+    .filter(x => x.score > 0)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, 5)
+    .map(x => x.m);
+
+  const modal = document.createElement('div');
+  modal.id = 'modalSugestaoMorador';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  const listaSugestoes = sugestoes.length > 0
+    ? sugestoes.map(m => `
+        <div onclick="selecionarMoradorSugestao('${m.id}')"
+          style="padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px;transition:background 0.15s;"
+          onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background='white'">
+          <div style="font-weight:600;">${m.nome}</div>
+          <div style="font-size:12px;color:var(--muted);">🏠 ${m.casa}</div>
+        </div>`).join('')
+    : '<div style="color:var(--muted);font-size:14px;text-align:center;padding:12px;">Nenhuma sugestão encontrada</div>';
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔍 Morador não identificado</div>
+      ${nomeExtraido ? `<div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Nome lido na etiqueta: <strong>"${nomeExtraido}"</strong></div>` : '<div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Não foi possível ler o nome na etiqueta.</div>'}
+      ${sugestoes.length > 0 ? '<div style="font-size:14px;font-weight:600;margin-bottom:10px;">É um desses moradores?</div>' : ''}
+      ${listaSugestoes}
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+        <button onclick="abrirCadastroRapidoMorador('${nomeExtraido}')"
+          style="padding:12px;border-radius:8px;border:none;background:var(--primary);color:white;font-weight:700;cursor:pointer;font-size:15px;">
+          ➕ Cadastrar novo morador
+        </button>
+        <button onclick="document.getElementById('modalSugestaoMorador').remove()"
+          style="padding:12px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--muted);font-weight:600;cursor:pointer;font-size:15px;">
+          Buscar manualmente
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function selecionarMoradorSugestao(id) {
+  const m = moradores.find(x => x.id === id);
+  if (!m) return;
+  const ant = document.getElementById('modalSugestaoMorador');
+  if (ant) ant.remove();
+  selecionarMorador(id);
+  toast('✅ Morador selecionado: ' + m.nome);
+}
+
+function abrirCadastroRapidoMorador(nomePreenchido) {
+  const ant = document.getElementById('modalSugestaoMorador');
+  if (ant) ant.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalCadastroRapido';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px;">➕ Cadastrar novo morador</div>
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Nome completo</label>
+      <input id="rapidoNome" type="text" value="${nomePreenchido}" placeholder="Nome do morador"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Casa / Endereço</label>
+      <input id="rapidoCasa" type="text" placeholder="Ex: QD01LT05 – Rua Brasilia, 199"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">WhatsApp (com DDD, só números)</label>
+      <input id="rapidoWhats" type="tel" placeholder="Ex: 17991234567"
+        style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:20px;">
+      <div style="display:flex;gap:10px;">
+        <button onclick="document.getElementById('modalCadastroRapido').remove()"
+          style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--muted);font-weight:600;cursor:pointer;">Cancelar</button>
+        <button onclick="confirmarCadastroRapido()"
+          style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--primary);color:white;font-weight:700;cursor:pointer;">✅ Cadastrar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('rapidoNome').focus(), 100);
+}
+
+function confirmarCadastroRapido() {
+  const nome = document.getElementById('rapidoNome').value.trim();
+  const casa = document.getElementById('rapidoCasa').value.trim();
+  const whats = document.getElementById('rapidoWhats').value.trim().replace(/\D/g,'');
+  if (!nome || !casa || !whats) { toast('⚠️ Preencha todos os campos'); return; }
+  if (whats.length < 10) { toast('⚠️ WhatsApp inválido (mínimo 10 dígitos com DDD)'); return; }
+  const novoMorador = { id: Date.now().toString(), nome, casa, whats };
+  moradores.push(novoMorador);
+  salvarMoradores();
+  document.getElementById('modalCadastroRapido').remove();
+  selecionarMorador(novoMorador.id);
+  toast('✅ Morador cadastrado e selecionado!');
 }
 
 function mostrarStatusOCR(el, tipo, msg) {
