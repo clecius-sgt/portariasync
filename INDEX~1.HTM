@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PortariaSync – Controle de Encomendas</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #1a1f3a;
+    --primary-dark: #0f1224;
+    --gold: #c9a84c;
+    --gold-light: #e8c97a;
+    --success: #2d7d4f;
+    --warning: #b8860b;
+    --danger: #c0392b;
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --text: #1a1f3a;
+    --muted: #6b7280;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 16px; }
+
+  header {
+    background: linear-gradient(135deg, #1a1f3a 0%, #2d3561 100%);
+    color: white;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    border-bottom: 2px solid var(--gold);
+  }
+  header h1 { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+  header h1 span { color: var(--gold); }
+  header .header-sub { font-size: 10px; opacity: 0.7; letter-spacing: 1px; text-transform: uppercase; }
+  header .header-right { text-align: right; font-size: 13px; opacity: 0.85; }
+
+  /* LOGIN */
+  #loginScreen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: linear-gradient(160deg, #0f1224 0%, #1a1f3a 50%, #2d3561 100%);
+    z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .login-logo { margin-bottom: 8px; }
+  .login-logo svg { width: 60px; height: 40px; }
+  .login-brand { font-family: 'Playfair Display', serif; font-size: 28px; color: white; text-align: center; margin-bottom: 2px; }
+  .login-brand span { color: var(--gold); }
+  .login-sub { font-size: 10px; letter-spacing: 2px; color: var(--gold); text-align: center; text-transform: uppercase; margin-bottom: 6px; opacity: 0.9; }
+  .login-divider { width: 120px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 0 auto 28px; }
+  .login-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(201,168,76,0.3); border-radius: 16px; padding: 28px 24px; width: 100%; max-width: 360px; backdrop-filter: blur(10px); }
+  .login-box h2 { color: white; font-size: 16px; font-weight: 600; margin-bottom: 20px; text-align: center; letter-spacing: 0.5px; }
+  .login-field { margin-bottom: 14px; }
+  .login-field label { display: block; font-size: 11px; color: var(--gold); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .login-field input { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 15px; outline: none; transition: border 0.2s; }
+  .login-field input:focus { border-color: var(--gold); }
+  .login-field input::placeholder { color: rgba(255,255,255,0.35); }
+  .login-field select { width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; font-size: 15px; outline: none; }
+  .login-field select option { background: #1a1f3a; color: white; }
+  .btn-login { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%); border: none; border-radius: 8px; color: #1a1f3a; font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px; margin-top: 8px; transition: opacity 0.2s; }
+  .btn-login:hover { opacity: 0.9; }
+  #loginErro { color: #ff8a80; font-size: 13px; text-align: center; margin-top: 10px; display: none; }
+  .login-footer { margin-top: 32px; text-align: center; }
+  .login-footer p { font-size: 10px; color: rgba(255,255,255,0.35); letter-spacing: 0.5px; line-height: 1.8; }
+  .login-footer strong { color: var(--gold); font-weight: 600; }
+
+  nav {
+    display: flex;
+    background: white;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  nav button {
+    flex: 1;
+    padding: 14px 10px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  nav button.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+
+  .page { display: none; padding: 16px; max-width: 900px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .card h2 { font-size: 17px; margin-bottom: 16px; color: var(--text); }
+
+  label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; margin-top: 12px; }
+  input, select, textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: border 0.2s;
+  }
+  input:focus, select:focus { border-color: var(--primary); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-danger { background: var(--danger); color: white; font-size: 13px; padding: 8px 14px; }
+  .btn-sm { padding: 8px 14px; font-size: 13px; }
+  .btn-full { width: 100%; margin-top: 16px; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-pending { background: #fff3cd; color: #856404; }
+  .badge-done { background: #d1e7dd; color: #0f5132; }
+
+  .encomenda-item {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border-left: 4px solid var(--warning);
+  }
+  .encomenda-item.retirada { border-left-color: var(--success); opacity: 0.7; }
+  .encomenda-item .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .encomenda-item .morador { font-size: 17px; font-weight: 700; }
+  .encomenda-item .casa { font-size: 14px; color: var(--muted); }
+  .encomenda-item .codigo { font-size: 13px; color: var(--muted); margin-top: 4px; font-family: monospace; }
+  .encomenda-item .data { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .encomenda-item .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  .morador-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .morador-item:last-child { border-bottom: none; }
+  .morador-info .nome { font-weight: 600; }
+  .morador-info .detalhe { font-size: 13px; color: var(--muted); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .stat-card .number { font-size: 32px; font-weight: 700; }
+  .stat-card .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stat-pending .number { color: var(--warning); }
+  .stat-done .number { color: var(--success); }
+  .stat-total .number { color: var(--primary); }
+
+  .config-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .config-item:last-child { border-bottom: none; }
+  .config-label { font-weight: 500; }
+  .config-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .toggle {
+    position: relative; width: 50px; height: 28px;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: #ccc; border-radius: 28px; transition: 0.3s;
+  }
+  .slider:before {
+    position: absolute; content: ""; height: 20px; width: 20px;
+    left: 4px; bottom: 4px; background: white; border-radius: 50%; transition: 0.3s;
+  }
+  input:checked + .slider { background: var(--primary); }
+  input:checked + .slider:before { transform: translateX(22px); }
+
+  .alert {
+    padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;
+  }
+  .alert-info { background: #e8f0fe; color: #1a73e8; }
+  .alert-success { background: #e6f4ea; color: #137333; }
+  .alert-danger { background: #fce8e6; color: #c5221f; }
+
+  .search-box { position: relative; }
+  .search-box input { padding-left: 40px; }
+  .search-box::before {
+    content: "🔍";
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 16px;
+  }
+
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #333; color: white; padding: 12px 24px; border-radius: 8px;
+    font-size: 14px; z-index: 9999; display: none; text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .empty-state {
+    text-align: center; padding: 40px 20px; color: var(--muted);
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 15px; }
+
+  .filter-tabs {
+    display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .filter-tab {
+    padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
+    background: white; cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .filter-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+  @media (max-width: 480px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .stat-card .number { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TELA DE LOGIN -->
+<div id="loginScreen">
+  <div class="login-logo">
+    <svg viewBox="0 0 80 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 38 Q20 8 40 14 Q60 20 76 4" stroke="#c9a84c" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+      <path d="M40 14 L52 38" stroke="#c9a84c" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+      <line x1="8" y1="44" x2="72" y2="44" stroke="#c9a84c" stroke-width="1.5" opacity="0.6"/>
+    </svg>
+  </div>
+  <div class="login-brand">Portaria<span>Sync</span></div>
+  <div class="login-sub">Controle Inteligente de Encomendas</div>
+  <div class="login-divider"></div>
+
+  <div class="login-box">
+    <h2>Acesso ao Sistema</h2>
+    <div class="login-field">
+      <label>Usuário</label>
+      <select id="loginUsuario">
+        <option value="">Selecione...</option>
+      </select>
+    </div>
+    <div class="login-field">
+      <label>Senha</label>
+      <input type="password" id="loginSenha" placeholder="Digite sua senha" onkeydown="if(event.key==='Enter') fazerLogin()">
+    </div>
+    <button class="btn-login" onclick="fazerLogin()">ENTRAR</button>
+    <div id="loginErro">Usuário ou senha incorretos</div>
+  </div>
+
+  <div class="login-footer">
+    <p>Desenvolvido por<br><strong>CLECIUS SALOMÉ</strong><br>Transformando Tecnologia em Soluções Jurídicas Inteligentes</p>
+  </div>
+</div>
+
+<header id="mainHeader" style="display:none;">
+  <div>
+    <h1>📦 Portaria<span style="color:var(--gold);">Sync</span></h1>
+    <div class="header-sub" id="headerCondominio">Residencial D'Italia</div>
+  </div>
+  <div class="header-right">
+    <div id="clockDisplay"></div>
+    <div id="headerUsuario" style="font-size:11px;color:var(--gold);margin-top:2px;"></div>
+  </div>
+</header>
+
+<nav id="mainNav" style="display:none;">
+  <button class="active" onclick="showPage('dashboard')">🏠 Início</button>
+  <button onclick="showPage('registrar')">➕ Registrar</button>
+  <button onclick="showPage('encomendas')">📦 Encomendas</button>
+  <button onclick="showPage('consultas')">🔍 Consultas</button>
+  <button onclick="showPage('moradores')" id="navMoradores">👥 Moradores</button>
+  <button onclick="showPage('config')" id="navConfig">⚙️ Config</button>
+  <button onclick="fazerLogout()" style="color:#ea4335;">🔒 Sair</button>
+</nav>
+
+<!-- DASHBOARD -->
+<div id="page-dashboard" class="page active">
+  <div class="stats">
+    <div class="stat-card stat-pending">
+      <div class="number" id="statPendente">0</div>
+      <div class="label">Aguardando</div>
+    </div>
+    <div class="stat-card stat-done">
+      <div class="number" id="statRetirado">0</div>
+      <div class="label">Retirados hoje</div>
+    </div>
+    <div class="stat-card stat-total">
+      <div class="number" id="statTotal">0</div>
+      <div class="label">Total</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>⚡ Ação rápida</h2>
+    <button class="btn btn-primary btn-full" style="font-size:18px; padding:16px;" onclick="showPage('registrar')">
+      📷 Registrar nova encomenda
+    </button>
+  </div>
+
+  <div class="card">
+    <h2>📬 Aguardando retirada</h2>
+    <div id="dashPendentes"></div>
+  </div>
+</div>
+
+<!-- REGISTRAR -->
+<div id="page-registrar" class="page">
+  <div class="card">
+    <h2>➕ Nova Encomenda</h2>
+
+    <label>Código da encomenda (etiqueta)</label>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="inputCodigo" placeholder="Ex: TBR364591209" autocomplete="off" style="font-size:18px;">
+    </div>
+
+    <!-- Botão único unificado -->
+    <button class="btn btn-full" style="background:linear-gradient(135deg,#1a1f3a,#2d3561);color:white;font-size:17px;padding:16px;margin-top:12px;border-radius:10px;letter-spacing:0.3px;" onclick="abrirCameraUnificada()">
+      📷 Fotografar etiqueta — ler código + identificar morador
+    </button>
+    <div id="ocrStatus" style="display:none;margin-top:8px;padding:10px;background:#e8f0fe;border-radius:8px;font-size:14px;color:#1a1f3a;text-align:center;"></div>
+
+    <!-- Modal câmera unificada -->
+    <div id="modalUnificado" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.97);z-index:9999;flex-direction:column;align-items:center;justify-content:center;padding:16px;">
+      <div style="color:white;font-size:15px;margin-bottom:10px;font-weight:600;text-align:center;letter-spacing:0.3px;">
+        📷 Enquadre a etiqueta inteira e toque em Capturar
+      </div>
+      <div style="position:relative;width:100%;max-width:420px;">
+        <video id="uniVideo" style="width:100%;border-radius:12px;display:block;" autoplay playsinline></video>
+        <!-- mira de enquadramento -->
+        <div style="position:absolute;inset:0;pointer-events:none;">
+          <div style="position:absolute;top:12px;left:12px;width:36px;height:36px;border-top:3px solid #c9a84c;border-left:3px solid #c9a84c;border-radius:3px 0 0 0;"></div>
+          <div style="position:absolute;top:12px;right:12px;width:36px;height:36px;border-top:3px solid #c9a84c;border-right:3px solid #c9a84c;border-radius:0 3px 0 0;"></div>
+          <div style="position:absolute;bottom:12px;left:12px;width:36px;height:36px;border-bottom:3px solid #c9a84c;border-left:3px solid #c9a84c;border-radius:0 0 0 3px;"></div>
+          <div style="position:absolute;bottom:12px;right:12px;width:36px;height:36px;border-bottom:3px solid #c9a84c;border-right:3px solid #c9a84c;border-radius:0 0 3px 0;"></div>
+        </div>
+        <canvas id="uniCanvas" style="display:none;"></canvas>
+      </div>
+      <div id="uniStatus" style="color:#c9a84c;font-size:13px;margin-top:10px;text-align:center;min-height:20px;"></div>
+      <div style="display:flex;gap:12px;margin-top:14px;">
+        <button class="btn" style="background:linear-gradient(135deg,#c9a84c,#e8c97a);color:#1a1f3a;font-size:16px;font-weight:700;padding:14px 32px;border-radius:10px;" onclick="capturarUnificado()">📸 Capturar</button>
+        <button class="btn" style="background:#333;color:white;padding:14px 20px;border-radius:10px;" onclick="fecharCameraUnificada()">✕ Cancelar</button>
+      </div>
+    </div>
+
+    <label>Morador destinatário</label>
+    <div class="search-box">
+      <input type="text" id="searchMorador" placeholder="Buscar nome ou casa..." oninput="filtrarMoradores()" autocomplete="off">
+    </div>
+    <div id="listaMoradores" style="margin-top:8px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; display:none;"></div>
+    <div id="moradorSelecionado" style="margin-top:8px; padding:12px; background:#e8f0fe; border-radius:8px; display:none;">
+      <strong id="nomeMoradorSel"></strong><br>
+      <small id="casaMoradorSel" style="color:var(--muted)"></small>
+    </div>
+
+    <label>Transportadora</label>
+    <select id="inputTransportadora">
+      <option value="">Selecione...</option>
+      <option>Mercado Livre</option>
+      <option>Shopee</option>
+      <option>Amazon</option>
+      <option>Correios</option>
+      <option>Shein</option>
+      <option>iFood</option>
+      <option>Rappi</option>
+      <option>DHL</option>
+      <option>FedEx</option>
+      <option>Loggi</option>
+      <option>Total Express</option>
+      <option>Jadlog</option>
+      <option>Outro</option>
+    </select>
+
+    <label>Observações (opcional)</label>
+    <input type="text" id="inputObs" placeholder="Ex: Frágil, Refrigerado, etc.">
+
+    <button class="btn btn-primary btn-full" onclick="registrarEncomenda()">
+      ✅ Registrar e notificar morador
+    </button>
+  </div>
+</div>
+
+<!-- ENCOMENDAS -->
+<div id="page-encomendas" class="page">
+  <div class="card" style="padding:12px 16px;">
+    <div class="search-box">
+      <input type="text" id="searchEncomenda" placeholder="Buscar por nome ou código..." oninput="renderEncomendas()">
+    </div>
+  </div>
+  <div class="filter-tabs">
+    <button class="filter-tab active" onclick="setFiltro('pendente', this)">📬 Aguardando</button>
+    <button class="filter-tab" onclick="setFiltro('retirado', this)">✅ Retirados</button>
+    <button class="filter-tab" onclick="setFiltro('todos', this)">📋 Todos</button>
+  </div>
+  <div id="listaEncomendas"></div>
+</div>
+
+<!-- MORADORES -->
+<div id="page-moradores" class="page">
+  <div class="card" style="padding:12px 16px;">
+    <div class="search-box">
+      <input type="text" id="searchMoradorLista" placeholder="Buscar morador..." oninput="renderMoradores()">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>➕ Cadastrar morador</h2>
+    <label>Nome completo</label>
+    <input type="text" id="novoNome" placeholder="Ex: Carlos Augusto">
+    <label>Casa / Número</label>
+    <input type="text" id="novoCasa" placeholder="Ex: Casa 42 ou Rua Londres 160">
+    <label>WhatsApp (com DDD)</label>
+    <input type="tel" id="novoWhats" placeholder="Ex: 11999887766">
+    <button class="btn btn-primary btn-full" onclick="cadastrarMorador()">Cadastrar morador</button>
+  </div>
+
+  <div class="card">
+    <h2>👥 Moradores cadastrados</h2>
+    <div id="listaMoradoresCad"></div>
+  </div>
+</div>
+
+<!-- CONFIG -->
+<div id="page-config" class="page">
+  <div class="card">
+    <h2>⚙️ Configurações</h2>
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Nome do condomínio</div>
+        <div class="config-desc">Aparece no cabeçalho e nos relatórios</div>
+      </div>
+    </div>
+    <input type="text" id="cfgCondominio" placeholder="Ex: Residencial D'Italia" style="margin-bottom:12px;">
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">E-mail para backup automático</div>
+        <div class="config-desc">Backup enviado diariamente às 02h</div>
+      </div>
+    </div>
+    <input type="email" id="cfgEmailBackup" placeholder="seu@email.com" style="margin-bottom:12px;">
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Evolution API – URL</div>
+        <div class="config-desc">Endereço do servidor Evolution instalado</div>
+      </div>
+    </div>
+    <input type="text" id="cfgApiUrl" placeholder="http://SEU-SERVIDOR:8080" style="margin-bottom:12px;">
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Evolution API – API Key</div>
+        <div class="config-desc">Chave de autenticação da API</div>
+      </div>
+    </div>
+    <input type="text" id="cfgApiKey" placeholder="sua-api-key-aqui" style="margin-bottom:12px;">
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Evolution API – Nome da instância</div>
+        <div class="config-desc">Nome da instância criada no Evolution</div>
+      </div>
+    </div>
+    <input type="text" id="cfgInstancia" placeholder="portaria" style="margin-bottom:12px;">
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Enviar WhatsApp automático</div>
+        <div class="config-desc">Notifica o morador ao registrar a encomenda</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="cfgWhatsAuto" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Mensagem de notificação</div>
+        <div class="config-desc">Use {nome}, {casa}, {transportadora}, {codigo}</div>
+      </div>
+    </div>
+    <textarea id="cfgMensagem" rows="4" style="margin-top:8px; margin-bottom:12px;">Olá {nome}! 📦 Chegou uma encomenda para você na portaria.
+
+🏠 Casa: {casa}
+🚚 Transportadora: {transportadora}
+🔖 Código: {codigo}
+
+Por favor, retire o mais breve possível. Obrigado!</textarea>
+
+    <button class="btn btn-primary btn-full" onclick="salvarConfig()">💾 Salvar configurações</button>
+    <button class="btn btn-full" style="background:#eee; margin-top:8px;" onclick="testarWhatsApp()">📱 Testar envio WhatsApp</button>
+  </div>
+
+  <div class="card" id="painelUsuarios" style="display:none;">
+    <h2>👤 Usuários do sistema</h2>
+    <div id="listaUsuarios" style="margin-bottom:16px;"></div>
+    <div style="border-top:1px solid var(--border);padding-top:16px;">
+      <h2 style="font-size:15px;margin-bottom:12px;">➕ Novo usuário</h2>
+      <label>Nome</label>
+      <input type="text" id="novoUsuarioNome" placeholder="Ex: João Porteiro">
+      <label>Perfil</label>
+      <select id="novoUsuarioPerfil">
+        <option value="porteiro">Porteiro</option>
+        <option value="admin">Administrador</option>
+      </select>
+      <label>Senha</label>
+      <input type="password" id="novoUsuarioSenha" placeholder="Mínimo 4 caracteres">
+      <button class="btn btn-primary btn-full" style="margin-top:12px;" onclick="criarUsuario()">➕ Criar usuário</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🗃️ Dados</h2>
+    <button class="btn btn-full" style="background:#eee;" onclick="exportarDados()">📥 Exportar histórico (JSON)</button>
+    <button class="btn btn-danger btn-full" style="margin-top:8px;" onclick="limparDados()">🗑️ Limpar todos os dados</button>
+  </div>
+</div>
+
+<!-- CONSULTAS -->
+<div id="page-consultas" class="page">
+  <div class="card">
+    <h2>🔍 Consultar encomendas</h2>
+
+    <label>Data inicial</label>
+    <input type="date" id="filtroDataInicio">
+    <label>Data final</label>
+    <input type="date" id="filtroDataFim">
+
+    <label>Morador</label>
+    <input type="text" id="filtroMorador" placeholder="Nome do morador..." oninput="renderConsulta()">
+
+    <label>Transportadora</label>
+    <select id="filtroTransp" onchange="renderConsulta()">
+      <option value="">Todas</option>
+      <option>Mercado Livre</option>
+      <option>Shopee</option>
+      <option>Amazon</option>
+      <option>Correios</option>
+      <option>Shein</option>
+      <option>Loggi</option>
+      <option>Jadlog</option>
+      <option>Total Express</option>
+      <option>DHL</option>
+      <option>FedEx</option>
+      <option>Outro</option>
+    </select>
+
+    <label>Status</label>
+    <select id="filtroStatus" onchange="renderConsulta()">
+      <option value="">Todos</option>
+      <option value="pendente">Aguardando retirada</option>
+      <option value="retirado">Retirados</option>
+    </select>
+
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-primary" style="flex:1;" onclick="renderConsulta()">🔍 Consultar</button>
+      <button class="btn" style="flex:1;background:#34a853;color:white;" onclick="gerarRelatorio()">🖨️ Gerar relatório A4</button>
+    </div>
+  </div>
+
+  <div id="resumoConsulta" style="display:none;" class="card" style="padding:12px;">
+    <div id="textoResumo" style="font-size:14px;color:#5f6368;"></div>
+  </div>
+
+  <div id="listaConsulta"></div>
+</div>
+
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ========== SUPABASE ==========
+const SUPABASE_URL = 'https://bpkpmpwwpfipfhloqifo.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwa3BtcHd3cGZpcGZoaW9xaWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwOTMxNTMsImV4cCI6MjA5NTY2OTE1M30.ssWeWVC3ZLjqJ2OQGxKBrZ9MuRS0FI_KQVGonrHnS0k';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Salva/carrega do Supabase quando disponível, senão cai no localStorage
+async function carregarDoSupabase() {
+  try {
+    const { data: enc } = await sb.from('encomendas').select('*').order('created_at', { ascending: false });
+    const { data: mor } = await sb.from('moradores').select('*');
+    if (enc) {
+      encomendas = enc.map(e => ({
+        id: e.id,
+        codigo: e.codigo,
+        transportadora: e.transportadora || 'Não informada',
+        obs: e.obs || '',
+        moradorId: e.morador_id,
+        moradorNome: e.morador_nome,
+        moradorCasa: e.morador_casa,
+        moradorWhats: e.morador_whats,
+        status: e.status,
+        dataEntrada: e.data_entrada,
+        dataRetirada: e.data_retirada || null,
+        retiradoPor: e.retirado_por || null,
+        assinatura: e.assinatura || null
+      }));
+      localStorage.setItem('encomendas', JSON.stringify(encomendas));
+    }
+    if (mor && mor.length > 0) {
+      // Mescla moradores do Supabase com os padrão sem duplicar
+      const idsSupabase = new Set(mor.map(m => m.id));
+      const extras = _moradores_default.filter(m => !idsSupabase.has(m.id));
+      moradores = [...mor.map(m => ({ id: m.id, nome: m.nome, casa: m.casa, whats: m.whats })), ...extras];
+      localStorage.setItem('moradores', JSON.stringify(moradores));
+    }
+    renderDashboard();
+    console.log('✅ Dados carregados do Supabase');
+  } catch(e) {
+    console.warn('Supabase offline, usando localStorage:', e);
+  }
+}
+
+async function salvarEncomendasSupabase(enc) {
+  try {
+    const row = {
+      id: enc.id,
+      codigo: enc.codigo,
+      transportadora: enc.transportadora,
+      obs: enc.obs || '',
+      morador_id: enc.moradorId,
+      morador_nome: enc.moradorNome,
+      morador_casa: enc.moradorCasa,
+      morador_whats: enc.moradorWhats,
+      status: enc.status,
+      data_entrada: enc.dataEntrada,
+      data_retirada: enc.dataRetirada || null,
+      retirado_por: enc.retiradoPor || null,
+      assinatura: enc.assinatura || null
+    };
+    await sb.from('encomendas').upsert(row);
+  } catch(e) {
+    console.warn('Erro ao salvar encomenda no Supabase:', e);
+  }
+}
+
+async function excluirEncomendasSupabase(id) {
+  try { await sb.from('encomendas').delete().eq('id', id); } catch(e) {}
+}
+
+// ========== ESTADO ==========
+let _moradores_default = [{"id": "1001", "nome": "Leonnardo Lopes Ferreira", "casa": "QD01LT04 – Rua Brasilia, 199", "whats": "18996288341"}, {"id": "1004", "nome": "Juliane Maira De Moraes", "casa": "QD01LT07 – Rua Atenas, 243", "whats": "17996625840"}, {"id": "1005", "nome": "Argenio Reati Da Silva", "casa": "QD01LT08 – Rua Brasilia, 263", "whats": "17997440383"}, {"id": "1006", "nome": "Clecius Eduardo Alves Salome", "casa": "QD01LT11 – Rua Brasilia, 311", "whats": "11997868841"}, {"id": "1006b", "nome": "Lucimara Gonçalves Salomé", "casa": "QD01LT11 – Rua Brasilia, 311", "whats": "11997868841"}, {"id": "1007", "nome": "Luciano Albertin", "casa": "QD02LT01 – Rua Brasilia, 531", "whats": "17991282025"}, {"id": "1008", "nome": "Caroline Gabriele Marques", "casa": "QD02LT02 – Rua Berlim, 222", "whats": "17981329209"}, {"id": "1009", "nome": "Lucas Affonso", "casa": "QD02LT04 – Rua Toquio, 179", "whats": "17991471005"}, {"id": "1010", "nome": "Antonio Cesar De Mendonca", "casa": "QD02LT06 – Rua Toquio, 147", "whats": "17991283585"}, {"id": "1011", "nome": "Janaina Beatriz Pelicer Bevilacqua", "casa": "QD02LT07 – Rua Toquio, 131", "whats": "17991540593"}, {"id": "1012", "nome": "Valdecir Moretti", "casa": "QD03LT01 – Rua Atenas, 199", "whats": "17991245444"}, {"id": "1014", "nome": "Helder Silva Macedo", "casa": "QD03LT03 – Rua Roma, 294", "whats": "17997226565"}, {"id": "1015", "nome": "Joaquim Renato De Moraes Leite", "casa": "QD03LT04 – Rua Toquio, 164", "whats": "11995066363"}, {"id": "1016", "nome": "Marizilda Ortega Campanha", "casa": "QD03LT06 – Rua Toquio Qd 03 Lt 06", "whats": "11986003686"}, {"id": "1017", "nome": "Nadia Zakalski Marena", "casa": "QD03LT08 – Rua Toquio, 212", "whats": "11985236041"}, {"id": "1019", "nome": "Myrian Ferreira Silva", "casa": "QD03LT10 – Rua Madri, 313", "whats": "17988147753"}, {"id": "1020", "nome": "Selmo Jose Teodoro", "casa": "QD03LT11 – Rua Londres, 115", "whats": "17991169693"}, {"id": "1021", "nome": "Fernando Da Silva Rodrigues", "casa": "QD03LT12 – Rua Madri, 283", "whats": "351914011279"}, {"id": "1023", "nome": "Ckc  Locação E Serviços Ltda", "casa": "QD03LT14 – Rua Londres, 160", "whats": "11971461548"}, {"id": "1024", "nome": "Elisio Jose Gomes", "casa": "QD03LT15 – Rua Madri, 235", "whats": "17992500884"}, {"id": "1025", "nome": "Maria De Lourdes Teixeira Caprio", "casa": "QD03LT17 – Rua Madri, 203", "whats": "17991138459"}, {"id": "1026", "nome": "Bruno Henrique Peres Capati", "casa": "QD03LT18 – Rua Madri, 128", "whats": "17996664444"}, {"id": "1027", "nome": "Jose Antonio Alves Amaral", "casa": "QD03LT19 – Rua Madri, 171", "whats": "17997339137"}, {"id": "1028", "nome": "Paulo Brigido Lemos", "casa": "QD03LT20 – Rua Madri, 155", "whats": "17997660402"}, {"id": "1030", "nome": "João Paulo Oliveira Burian", "casa": "QD03LT22 – Rua Roma, 310", "whats": "11999006593"}, {"id": "1031", "nome": "Iara Lucia Grechi De Camillo Silva", "casa": "QD04LT02 – Rua Madri, 116", "whats": "17997744626"}, {"id": "1032", "nome": "Valdecir Moretti Junior", "casa": "QD04LT03 – Rua Londres, 115", "whats": "17992668327"}, {"id": "1033", "nome": "Eduardo Felipe Faria Nunes", "casa": "QD04LT05 – Rua Madri, 164", "whats": "17981505883"}, {"id": "1034", "nome": "Jose Aparecido Moretti", "casa": "QD04LT06 – Rua Bueno Aires, 291", "whats": "17997794777"}, {"id": "1035", "nome": "Ivan Carareto Macierinha", "casa": "QD04LT07 – R Madri, 195", "whats": "17996744692"}, {"id": "1036", "nome": "Jose Manoel Aguiar", "casa": "QD04LT08 – Rua Lisboa, 211", "whats": "17997228307"}, {"id": "1037", "nome": "João Ribeiro", "casa": "QD04LT09 – Rua Madri, 228", "whats": "17997690803"}, {"id": "1038", "nome": "Edmur Carlos Michelon", "casa": "QD04LT10 – Rua Madri, 244", "whats": "17997171122"}, {"id": "1039", "nome": "Klebiane Da Silva Januzzi", "casa": "QD04LT11 – Rua Madri, 244", "whats": "17997696095"}, {"id": "1040", "nome": "Carlos Henrique Da Silva Neves", "casa": "QD04LT12 – Rua Lisboa, 275", "whats": "11991114567"}, {"id": "1041", "nome": "Fernanda Teixeira Caprio Loureiro", "casa": "QD04LT18 – Rua Lisboa, 415", "whats": "17991043548"}, {"id": "1042", "nome": "Mateus Diogo Ribeiro", "casa": "QD04LT19 – Rua Londres, 99", "whats": "17991213708"}, {"id": "1043", "nome": "Renato Fernando Secato", "casa": "QD04LT24 – Rua Lisboa, 307", "whats": "17992066328"}, {"id": "1045", "nome": "Marlene Alves Ferreira", "casa": "QD04LT27 – Rua Lisboa, 259", "whats": "1791136712"}, {"id": "1046", "nome": "Helio Pimenta Godoy", "casa": "QD04LT28 – Rua Lisboa, 243", "whats": "11983215571"}, {"id": "1047", "nome": "Ana Paula Palmeira", "casa": "QD04LT29 – Rua Lisboa, 227", "whats": "17991390461"}, {"id": "1049", "nome": "Therezinha Maria Thome Ferrari", "casa": "QD04LT32 – Rua Lisboa, 179", "whats": "44988140477"}, {"id": "1050", "nome": "Valdinei Gonçalves De Amorim", "casa": "QD04LT32 – Rua Lisboa, 179", "whats": "12974020015"}, {"id": "1051", "nome": "João Luis Palmeira", "casa": "QD04LT33 – Rua Lisboa, 163", "whats": "17997441994"}, {"id": "1052", "nome": "Alex Marçal De Noronha", "casa": "QD04LT35 – Rua Lisboa, 131", "whats": "17997011698"}, {"id": "1053", "nome": "Dovilho Pavani", "casa": "QD04LT35 – Rua Lisboa, 131", "whats": "17997273132"}, {"id": "1054", "nome": "Paula Karine Assunção De Carvalho", "casa": "QD04LT36 – Rua Lisboa, 115", "whats": "17981250351"}, {"id": "1055", "nome": "Thiago Delvair Soldo", "casa": "QD04LT36 – Rua Lisboa, 115", "whats": "17991237415"}, {"id": "1056", "nome": "Samir Fuad Daud", "casa": "QD04LT37 – Rua Lisboa, 99", "whats": "17997168580"}, {"id": "1059", "nome": "Joel Fernando Monteiro", "casa": "QD05LT06 – Rua Lisboa, 178", "whats": "17991311909"}, {"id": "1060", "nome": "Edinei Mantovano", "casa": "QD05LT07 – Rua Lisboa, 194", "whats": "16999945099"}, {"id": "1062", "nome": "Aline Rodrigues Da Silva", "casa": "QD05LT09 – Rua Buenos Aires, 140", "whats": "17997563262"}, {"id": "1064", "nome": "Alice Nakayama", "casa": "QD05LT11 – Rua Londres, 195", "whats": "11994868899"}, {"id": "1065", "nome": "Claudio Cardena Miranda", "casa": "QD05LT12 – Rua Lisboa, 274", "whats": "17991258700"}, {"id": "1066", "nome": "Laerci Sebastião Cardoso", "casa": "QD05LT13 – Rua Lisboa, 306", "whats": "65993086735"}, {"id": "1068", "nome": "Fabio Alberto Da Silva", "casa": "QD05LT15 – Rua Lisboa, 306", "whats": "65996464914"}, {"id": "1071", "nome": "Alex Marçal De Noronha", "casa": "QD05LT19 – Rua Buenos Aires, 156", "whats": "17997011698"}, {"id": "1072", "nome": "Rodrigo Martins Salvador", "casa": "QD05LT24 – Rua Paris, 239", "whats": "17996346999"}, {"id": "1073", "nome": "Maria Aparecida Vieira Do Carmo", "casa": "QD05LT25 – Rua Londres, 335", "whats": "17996428285"}, {"id": "1074", "nome": "Luis Gonzaga Fernandes Dos Santos", "casa": "QD05LT26 – Rua Londres, 339", "whats": "17997880965"}, {"id": "1075", "nome": "Luiz Regival Alves Pereira", "casa": "QD05LT27 – Rua Londres, 323", "whats": "17997688866"}, {"id": "1076", "nome": "Lucas Damiani De Mendonça", "casa": "QD05LT28 – Rua Londres, 307", "whats": "17988341101"}, {"id": "1078", "nome": "Rep Administração E Participaçoes Sa", "casa": "QD05LT32 – Rua Londres, 243", "whats": "17996373200"}, {"id": "1080", "nome": "Jose Pedro Teixeira Da Rocha", "casa": "QD05LT36 – Rua Londres, 179", "whats": "17996215084"}, {"id": "1081", "nome": "Jose Pedro Teixeira Da Rocha", "casa": "QD05LT37 – Rua Londres, 163", "whats": "17996215084"}, {"id": "1082", "nome": "Romildo Alves Dos Reis", "casa": "QD05LT39 – Rua Londres, 131", "whats": "17991573783"}, {"id": "1085", "nome": "Rodrigo Rodrigues De Moraes", "casa": "QD05LT43 – Rua Londres, 67", "whats": "17997715877"}, {"id": "1086", "nome": "Jose Monteiro Alves Sobrinho", "casa": "QD06LT02 – Rua Londres, 128", "whats": "17996015440"}, {"id": "1087", "nome": "Creusa Maria Castilho Bento", "casa": "QD06LT04 – Rua Londres, 160", "whats": "11971461548"}, {"id": "1088", "nome": "Fabio De Freitas Nascimento", "casa": "QD06LT06 – Rua Londres, 192", "whats": "17996469945"}, {"id": "1089", "nome": "Leonildo Salvador", "casa": "QD06LT06 – Rua Paris, 239", "whats": "17997710382"}, {"id": "1090", "nome": "Luiz Miguel De Barros", "casa": "QD06LT10 – Rua Londres, 256", "whats": "17981537375"}, {"id": "1091", "nome": "Joaquim Naves Dos Santos", "casa": "QD06LT11 – Rua Londres, 272", "whats": "17992645000"}, {"id": "1094", "nome": "Luiz Antonio Tobardini", "casa": "QD06LT14 – Rua Roma, 310", "whats": "17991052431"}, {"id": "1095", "nome": "Patricia Bonardi", "casa": "QD06LT15 – Rua Roma, 294", "whats": "17997323779"}, {"id": "1096", "nome": "Jose Mauricio De Mendonça", "casa": "QD06LT16 – Rua Toquio, 147", "whats": "17991190061"}, {"id": "1097", "nome": "Leodonio Josil De Souza", "casa": "QD06LT18 – Rua Roma, 273", "whats": "17982177257"}, {"id": "1099", "nome": "Fabio De Castro", "casa": "QD06LT21 – Rua Roma, 225", "whats": "1791137300"}, {"id": "1100", "nome": "Ckc Locação E Serviços Ltda", "casa": "QD06LT23 – Rua Londres, 160", "whats": "11971461548"}, {"id": "1101", "nome": "Manoel Santos Matos", "casa": "QD08LT01 – Rua Roma, 246", "whats": "17992376522"}, {"id": "1102", "nome": "Leonildo Salvador", "casa": "QD08LT03 – Rua Montevideu, 301", "whats": "17997710382"}, {"id": "1105", "nome": "Luana Domingues Corniani Burian", "casa": "QD08LT05 – Rua Roma, 310", "whats": "11999006570"}, {"id": "1109", "nome": "Fernanda Paloma Da Silva Durigan", "casa": "QD09LT03 – Rua Buenos Aires, 124", "whats": "18981999493"}, {"id": "1110", "nome": "Antonio Pinto Da Silva", "casa": "QD09LT04 – Rua Buenos Aires, 140", "whats": "17997761710"}, {"id": "1112", "nome": "Orlando Pinto Da Silva Junior", "casa": "QD09LT05 – Rua Buenos Aires, 156", "whats": "17991148356"}, {"id": "1114", "nome": "Jose Aparecido Moretti", "casa": "QD09LT07 – Rua Buenos Aires, 291", "whats": "17997794777"}, {"id": "1124", "nome": "Nicoli Rossini Salvador", "casa": "QD09LT16 – Rua Montevideu, 301", "whats": "17991771275"}, {"id": "1125", "nome": "Marcos Helene Szauter", "casa": "QD09LT17 – Rua Montevideu, 287", "whats": "17981900500"}, {"id": "1127", "nome": "Leovaldo Jacinto Ferraz", "casa": "QD09LT18 – Rua Montevideu, 273", "whats": "11996220700"}, {"id": "1128", "nome": "Claudinei Parro", "casa": "QD09LT19 – Rua Montevideu, 259", "whats": "17991918979"}, {"id": "1129", "nome": "Ueverton Rodrigues De Sousa", "casa": "QD09LT19 – Rua Montevideu, 259", "whats": "12991871034"}, {"id": "1134", "nome": "Sergio Nunes Pombo Filho", "casa": "QD09LT24 – Rua Montevideo, 189", "whats": "17991348831"}, {"id": "1135", "nome": "Aloisio Punhagui Cuginotti Filho", "casa": "QD09LT25 – Rua Montevideu, 175", "whats": "11985369966"}, {"id": "1136", "nome": "João Flavio Vieira", "casa": "QD09LT25 – Rua Montevideu, 175", "whats": "17997457090"}, {"id": "1137", "nome": "Debora Cristina Colombo", "casa": "QD09LT26 – Rua Montevideu, 161", "whats": "17981824001"}, {"id": "1138", "nome": "Edmur Carlos Michelon", "casa": "QD09LT28 – Rua Montevideu, 133", "whats": "17997171122"}, {"id": "1139", "nome": "Tatiana Ferreira Lopes", "casa": "QD09LT29 – Rua Montevideu, 119", "whats": "17981916734"}, {"id": "1140", "nome": "Alcides P Ramires", "casa": "QD10LT01 – Rua Montevideu, 100", "whats": "17997761710"}, {"id": "1141", "nome": "Luis Carlos Roveda Artigos De Iluminação Me", "casa": "QD10LT05 – Rua Montevideo, 156", "whats": "17997192374"}, {"id": "1143", "nome": "Marcio Fructuoso L Pinto", "casa": "QD10LT08 – Rua Montevideo, 198", "whats": "17991519372"}, {"id": "1144", "nome": "Luiz Otavio Silva Aguiar", "casa": "QD10LT09 – Rua Montevideo, 212", "whats": "17982042229"}, {"id": "1145", "nome": "Sancler Carlos Masson De Menezes", "casa": "QD10LT10 – Rua Montevideu, 226", "whats": "17991379999"}, {"id": "1146", "nome": "Artur Sergio Fava", "casa": "QD10LT11 – Rua Montevideu, 240", "whats": "17981012752"}, {"id": "1147", "nome": "Jozicarla Masson De Menezes", "casa": "QD10LT14 – Rua Montevideu, 282", "whats": "17991468720"}, {"id": "1149", "nome": "Djindja Soares Frade Amorim", "casa": "QD10LT17 – Rua Atenas, 285", "whats": "17981012752"}, {"id": "1152", "nome": "Adalberto Gomes Da Costa", "casa": "QD10LT20 – Rua Atenas, 243", "whats": "71996967400"}, {"id": "1154", "nome": "Kamila De Castro Pinati Figueiredo", "casa": "QD10LT22 – Rua Atenas, 215", "whats": "17996091865"}, {"id": "1155", "nome": "Helio Rubens Ceron", "casa": "QD10LT23 – Rua Atenas, 199", "whats": "17996158548"}, {"id": "1156", "nome": "Ubirajara Brasil Da Silva", "casa": "QD10LT24 – Rua Atenas, 185", "whats": "17991361787"}, {"id": "1157", "nome": "Karina Soares Frade Barufi", "casa": "QD10LT27 – Rua Atenas, 143", "whats": "17996156276"}, {"id": "1158", "nome": "Phabio Tridico Leão", "casa": "QD10LT29 – Rua Atenas, 115", "whats": "17981535856"}, {"id": "1159", "nome": "Camila Carvalho Godoi Rosa", "casa": "QD08LT06 – Rua Olimpio Manoel Damasio, 2731", "whats": "11947462618"}, {"id": "1160", "nome": "Alcenir Ricardo Bruzadin", "casa": "QD09LT13 – Av Zaia Tarraf, 1931", "whats": "17991619957"}, {"id": "1161", "nome": "Carolina Takaku", "casa": "QD05LT34 – Rua Adamastor Baltazar De Araujo, 177 Qd 24 Lt 03", "whats": "17981164919"}, {"id": "1162", "nome": "Santorini Logistica Ltda", "casa": "QD01LT09 – Av Olivio Martinelli, 1150", "whats": "17981951057"}, {"id": "1163", "nome": "Paulo Cesar Da Silva", "casa": "QD09LT03 – Av Angelica Bello Scarpelli, 283", "whats": "17991170464"}, {"id": "1164", "nome": "Sirley Magaly Albieri", "casa": "QD10LT12 – Avenida America, 539", "whats": "17988182973"}, {"id": "1165", "nome": "Roberto Artiolli", "casa": "QD02LT03 – Rua Elidio Verona, 30 Apto 92", "whats": "17982083379"}, {"id": "1166", "nome": "Renato Jose Agreli", "casa": "QD05LT30 – Rua Dos Bombeiros, 42", "whats": "1781709847"}, {"id": "1167", "nome": "Sueli Aparecida Garcia Freire", "casa": "QD04LT22 – Rua Novaes, 39", "whats": "17981129273"}, {"id": "1168", "nome": "Maykon Donizeti Gervasoni", "casa": "QD06LT09 – Rua João Gonçalves Noronha, 2197", "whats": "17982139355"}, {"id": "1169", "nome": "Lhb Participações Ltda", "casa": "QD06LT19 – Av Projetada 02, 580 Sala 08", "whats": "17991573764"}];
+let moradores = JSON.parse(localStorage.getItem('moradores') || 'null') || _moradores_default;
+// Mescla novos moradores do padrão sem apagar cadastros manuais
+const idsExistentes = new Set(moradores.map(m => m.id));
+for (const m of _moradores_default) {
+  if (!idsExistentes.has(m.id)) moradores.push(m);
+}
+localStorage.setItem('moradores', JSON.stringify(moradores));
+let encomendas = JSON.parse(localStorage.getItem('encomendas') || '[]');
+let config = JSON.parse(localStorage.getItem('config') || '{}');
+let filtroAtivo = 'pendente';
+let moradorSelecionadoId = null;
+
+// ========== USUÁRIOS & LOGIN ==========
+let _usuarios_default = [
+  { id: 'u1', nome: 'Administrador', perfil: 'admin', senha: 'admin123' }
+];
+let usuarios = JSON.parse(localStorage.getItem('usuarios') || 'null') || _usuarios_default;
+if (!localStorage.getItem('usuarios')) localStorage.setItem('usuarios', JSON.stringify(usuarios));
+
+let usuarioLogado = null;
+
+function iniciarLogin() {
+  const sel = document.getElementById('loginUsuario');
+  sel.innerHTML = '<option value="">Selecione...</option>' +
+    usuarios.map(u => `<option value="${u.id}">${u.nome} (${u.perfil === 'admin' ? 'Admin' : 'Porteiro'})</option>`).join('');
+}
+
+function fazerLogin() {
+  const uid = document.getElementById('loginUsuario').value;
+  const senha = document.getElementById('loginSenha').value;
+  const erroEl = document.getElementById('loginErro');
+  const usuario = usuarios.find(u => u.id === uid && u.senha === senha);
+  if (!usuario) { erroEl.style.display = 'block'; return; }
+  erroEl.style.display = 'none';
+  usuarioLogado = usuario;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainHeader').style.display = 'flex';
+  document.getElementById('mainNav').style.display = 'flex';
+  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome;
+  // Porteiro não vê Config nem Moradores
+  if (usuario.perfil !== 'admin') {
+    document.getElementById('navConfig').style.display = 'none';
+    document.getElementById('navMoradores').style.display = 'none';
+  } else {
+    document.getElementById('navConfig').style.display = '';
+    document.getElementById('navMoradores').style.display = '';
+    document.getElementById('painelUsuarios').style.display = 'block';
+  }
+  renderDashboard();
+  agendarBackup();
+  carregarDoSupabase(); // carrega dados do servidor
+}
+
+function fazerLogout() {
+  if (!confirm('Deseja sair do sistema?')) return;
+  usuarioLogado = null;
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('mainHeader').style.display = 'none';
+  document.getElementById('mainNav').style.display = 'none';
+  document.getElementById('loginSenha').value = '';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+}
+
+function criarUsuario() {
+  const nome = document.getElementById('novoUsuarioNome').value.trim();
+  const perfil = document.getElementById('novoUsuarioPerfil').value;
+  const senha = document.getElementById('novoUsuarioSenha').value;
+  if (!nome) { toast('⚠️ Informe o nome'); return; }
+  if (senha.length < 4) { toast('⚠️ Senha mínima: 4 caracteres'); return; }
+  usuarios.push({ id: 'u' + Date.now(), nome, perfil, senha });
+  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  document.getElementById('novoUsuarioNome').value = '';
+  document.getElementById('novoUsuarioSenha').value = '';
+  renderListaUsuarios();
+  iniciarLogin();
+  toast('✅ Usuário criado!');
+}
+
+function renderListaUsuarios() {
+  const div = document.getElementById('listaUsuarios');
+  if (!div) return;
+  div.innerHTML = usuarios.map(u => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <strong>${u.nome}</strong>
+        <span style="font-size:12px;color:var(--muted);margin-left:8px;">${u.perfil === 'admin' ? '🔑 Admin' : '👷 Porteiro'}</span>
+      </div>
+      ${u.id !== 'u1' ? `<button class="btn btn-danger btn-sm" onclick="excluirUsuario('${u.id}')">🗑️</button>` : '<span style="font-size:11px;color:var(--muted);">padrão</span>'}
+    </div>
+  `).join('');
+}
+
+function excluirUsuario(id) {
+  if (!confirm('Remover este usuário?')) return;
+  usuarios = usuarios.filter(u => u.id !== id);
+  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  renderListaUsuarios();
+  iniciarLogin();
+  toast('Usuário removido');
+}
+
+// ========== CLOCK ==========
+function atualizarRelogio() {
+  const now = new Date();
+  document.getElementById('clockDisplay').textContent =
+    now.toLocaleDateString('pt-BR') + ' ' + now.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+}
+setInterval(atualizarRelogio, 1000);
+atualizarRelogio();
+
+// ========== NAVEGAÇÃO ==========
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelectorAll('nav button')[['dashboard','registrar','encomendas','consultas','moradores','config'].indexOf(id)].classList.add('active');
+
+  if (id === 'dashboard') renderDashboard();
+  if (id === 'registrar') limparFormRegistrar();
+  if (id === 'encomendas') renderEncomendas();
+  if (id === 'consultas') iniciarConsulta();
+  if (id === 'moradores') renderMoradores();
+  if (id === 'config') carregarConfig();
+}
+
+// ========== TOAST ==========
+function toast(msg, dur = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', dur);
+}
+
+// ========== DASHBOARD ==========
+function renderDashboard() {
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const pendentes = encomendas.filter(e => e.status === 'pendente');
+  const retiradosHoje = encomendas.filter(e => e.status === 'retirado' && e.dataRetirada && e.dataRetirada.startsWith(hoje));
+  document.getElementById('statPendente').textContent = pendentes.length;
+  document.getElementById('statRetirado').textContent = retiradosHoje.length;
+  document.getElementById('statTotal').textContent = encomendas.length;
+
+  const div = document.getElementById('dashPendentes');
+  if (pendentes.length === 0) {
+    div.innerHTML = '<div class="empty-state"><div class="icon">✅</div><p>Nenhuma encomenda aguardando retirada</p></div>';
+    return;
+  }
+  div.innerHTML = pendentes.slice(0, 5).map(e => itemEncomendaHTML(e)).join('');
+  if (pendentes.length > 5) {
+    div.innerHTML += `<p style="text-align:center;color:var(--muted);margin-top:8px;font-size:14px;">+${pendentes.length-5} encomendas aguardando <a href="#" onclick="showPage('encomendas');return false;">Ver todas</a></p>`;
+  }
+}
+
+// ========== LIMPAR FORMULÁRIO ==========
+function limparFormRegistrar() {
+  document.getElementById('inputCodigo').value = '';
+  document.getElementById('searchMorador').value = '';
+  document.getElementById('inputTransportadora').value = '';
+  document.getElementById('inputObs').value = '';
+  document.getElementById('moradorSelecionado').style.display = 'none';
+  document.getElementById('listaMoradores').style.display = 'none';
+  document.getElementById('ocrStatus').style.display = 'none';
+  document.getElementById('inputFotoOCR').value = '';
+  moradorSelecionadoId = null;
+}
+
+// ========== REGISTRAR ==========
+function filtrarMoradores() {
+  const q = document.getElementById('searchMorador').value.toLowerCase();
+  const lista = document.getElementById('listaMoradores');
+  if (!q) { lista.style.display = 'none'; return; }
+  const filtrados = moradores.filter(m => m.nome.toLowerCase().includes(q) || m.casa.toLowerCase().includes(q));
+  if (filtrados.length === 0) { lista.innerHTML = '<div style="padding:12px;color:var(--muted)">Nenhum morador encontrado</div>'; }
+  else {
+    lista.innerHTML = filtrados.map(m =>
+      `<div style="padding:12px;cursor:pointer;border-bottom:1px solid var(--border);"
+        onmousedown="selecionarMorador('${m.id}')"
+        onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''"
+      >
+        <strong>${m.nome}</strong><br>
+        <small style="color:var(--muted)">${m.casa} · ${formatarWhats(m.whats)}</small>
+      </div>`
+    ).join('');
+  }
+  lista.style.display = 'block';
+}
+
+function selecionarMorador(id) {
+  const m = moradores.find(x => x.id === id);
+  if (!m) return;
+  moradorSelecionadoId = id;
+  document.getElementById('searchMorador').value = m.nome;
+  document.getElementById('listaMoradores').style.display = 'none';
+  document.getElementById('nomeMoradorSel').textContent = m.nome;
+  document.getElementById('casaMoradorSel').textContent = m.casa + ' · ' + formatarWhats(m.whats);
+  document.getElementById('moradorSelecionado').style.display = 'block';
+}
+
+function formatarWhats(w) {
+  if (!w) return '';
+  return '(' + w.slice(0,2) + ') ' + w.slice(2,7) + '-' + w.slice(7);
+}
+
+async function registrarEncomenda() {
+  const codigo = document.getElementById('inputCodigo').value.trim();
+  const transp = document.getElementById('inputTransportadora').value;
+  const obs = document.getElementById('inputObs').value.trim();
+
+  if (!codigo) { toast('⚠️ Informe o código da encomenda'); return; }
+  if (!moradorSelecionadoId) { toast('⚠️ Selecione o morador destinatário'); return; }
+
+  // Bloqueio de duplicidade
+  const duplicada = verificarDuplicidade(codigo);
+  if (duplicada) {
+    toast(`⚠️ Este código já está registrado e aguarda retirada por ${duplicada.moradorNome}`, 5000);
+    return;
+  }
+
+  const morador = moradores.find(m => m.id === moradorSelecionadoId);
+  const enc = {
+    id: Date.now().toString(),
+    codigo,
+    transportadora: transp || 'Não informada',
+    obs,
+    moradorId: morador.id,
+    moradorNome: morador.nome,
+    moradorCasa: morador.casa,
+    moradorWhats: morador.whats,
+    status: 'pendente',
+    dataEntrada: new Date().toLocaleString('pt-BR'),
+    dataRetirada: null
+  };
+
+  encomendas.unshift(enc);
+  salvarEncomendas();
+  salvarEncomendasSupabase(enc); // sync Supabase
+
+  // Limpar form
+  document.getElementById('inputCodigo').value = '';
+  document.getElementById('searchMorador').value = '';
+  document.getElementById('inputTransportadora').value = '';
+  document.getElementById('inputObs').value = '';
+  document.getElementById('moradorSelecionado').style.display = 'none';
+  moradorSelecionadoId = null;
+
+  toast('✅ Encomenda registrada!');
+
+  // Enviar WhatsApp
+  if (config.whatsAuto !== false) {
+    await enviarWhatsApp(morador, enc);
+  }
+}
+
+// ========== ENCOMENDAS ==========
+function setFiltro(f, btn) {
+  filtroAtivo = f;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderEncomendas();
+}
+
+function renderEncomendas() {
+  const q = (document.getElementById('searchEncomenda')?.value || '').toLowerCase();
+  let lista = encomendas.filter(e => {
+    if (filtroAtivo === 'pendente') return e.status === 'pendente';
+    if (filtroAtivo === 'retirado') return e.status === 'retirado';
+    return true;
+  }).filter(e =>
+    !q || e.moradorNome.toLowerCase().includes(q) || e.codigo.toLowerCase().includes(q)
+  );
+
+  const div = document.getElementById('listaEncomendas');
+  if (lista.length === 0) {
+    div.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>Nenhuma encomenda encontrada</p></div>';
+    return;
+  }
+  div.innerHTML = lista.map(e => itemEncomendaHTML(e)).join('');
+}
+
+function itemEncomendaHTML(e) {
+  return `<div class="encomenda-item ${e.status === 'retirado' ? 'retirada' : ''}">
+    <div class="top">
+      <div>
+        <div class="morador">${e.moradorNome}</div>
+        <div class="casa">🏠 ${e.moradorCasa}</div>
+        <div class="codigo">📦 ${e.codigo} · ${e.transportadora}</div>
+        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' : '') : ''}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
+        ${e.obs ? `<div class="data">📝 ${e.obs}</div>` : ''}
+      </div>
+      <span class="badge ${e.status === 'retirado' ? 'badge-done' : 'badge-pending'}">${e.status === 'retirado' ? 'Retirado' : 'Aguardando'}</span>
+    </div>
+    <div class="actions">
+      ${e.status === 'pendente' ? `
+      <button class="btn btn-success btn-sm" onclick="darBaixa('${e.id}')">✅ Confirmar retirada</button>
+      <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="reenviarWhats('${e.id}')">📲 Reenviar aviso</button>` : ''}
+      <button class="btn btn-danger btn-sm" onclick="excluirEncomenda('${e.id}')">🗑️ Excluir</button>
+    </div>
+  </div>`;
+}
+
+function darBaixa(id) {
+  const enc = encomendas.find(e => e.id === id);
+  if (!enc) return;
+  abrirModalRetirada(enc);
+}
+
+function abrirModalRetirada(enc) {
+  // Remove modal anterior se existir
+  const anterior = document.getElementById('modalRetirada');
+  if (anterior) anterior.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalRetirada';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">✅ Confirmar retirada</div>
+      <div style="font-size:14px;color:#5f6368;margin-bottom:20px;">Encomenda de <strong>${enc.moradorNome}</strong></div>
+
+      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Quem está retirando?</label>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button id="btnProprioMorador" onclick="selecionarRetirante('proprio', '${enc.moradorNome}')"
+          style="flex:1;padding:10px;border-radius:8px;border:2px solid #1a73e8;background:#e8f0fe;color:#1a73e8;font-weight:600;cursor:pointer;font-size:14px;">
+          👤 O próprio morador
+        </button>
+        <button id="btnOutraPessoa" onclick="selecionarRetirante('outro', '')"
+          style="flex:1;padding:10px;border-radius:8px;border:2px solid #dadce0;background:white;color:#5f6368;font-weight:600;cursor:pointer;font-size:14px;">
+          👥 Outra pessoa
+        </button>
+      </div>
+
+      <div id="campoOutraPessoa" style="display:none;margin-bottom:16px;">
+        <input type="text" id="inputRetirante" placeholder="Nome de quem está retirando..."
+          style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:16px;">
+      </div>
+
+      <div id="nomeRetirante" style="padding:10px 14px;background:#e8f0fe;border-radius:8px;font-size:15px;color:#1a73e8;margin-bottom:16px;">
+        👤 ${enc.moradorNome}
+      </div>
+
+      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Assinatura <span style="font-weight:400;color:#aaa;">(assine com o dedo)</span></label>
+      <canvas id="canvasAssinatura" width="360" height="120"
+        style="width:100%;height:120px;border:1px solid #dadce0;border-radius:8px;background:#f8f9fa;touch-action:none;cursor:crosshair;display:block;"></canvas>
+      <button onclick="limparAssinatura()" style="margin-top:4px;background:none;border:none;color:#1a73e8;font-size:13px;cursor:pointer;padding:0;">🗑️ Limpar assinatura</button>
+
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button onclick="fecharModalRetirada()" style="flex:1;padding:12px;border-radius:8px;border:1px solid #dadce0;background:white;color:#5f6368;font-weight:600;cursor:pointer;font-size:15px;">Cancelar</button>
+        <button onclick="confirmarRetirada('${enc.id}')" style="flex:1;padding:12px;border-radius:8px;border:none;background:#34a853;color:white;font-weight:700;cursor:pointer;font-size:15px;">✅ Confirmar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  window._retirante = enc.moradorNome;
+  window._assinaturaData = null;
+  setTimeout(iniciarAssinatura, 100);
+}
+
+function selecionarRetirante(tipo, nome) {
+  const campo = document.getElementById('campoOutraPessoa');
+  const nomeEl = document.getElementById('nomeRetirante');
+  const btnProprio = document.getElementById('btnProprioMorador');
+  const btnOutro = document.getElementById('btnOutraPessoa');
+
+  if (tipo === 'proprio') {
+    campo.style.display = 'none';
+    window._retirante = nome;
+    nomeEl.textContent = '👤 ' + nome;
+    btnProprio.style.borderColor = '#1a73e8'; btnProprio.style.background = '#e8f0fe'; btnProprio.style.color = '#1a73e8';
+    btnOutro.style.borderColor = '#dadce0'; btnOutro.style.background = 'white'; btnOutro.style.color = '#5f6368';
+  } else {
+    campo.style.display = 'block';
+    window._retirante = '';
+    nomeEl.textContent = '👥 Digite o nome abaixo';
+    btnOutro.style.borderColor = '#1a73e8'; btnOutro.style.background = '#e8f0fe'; btnOutro.style.color = '#1a73e8';
+    btnProprio.style.borderColor = '#dadce0'; btnProprio.style.background = 'white'; btnProprio.style.color = '#5f6368';
+    setTimeout(() => document.getElementById('inputRetirante').focus(), 100);
+    document.getElementById('inputRetirante').oninput = function() {
+      window._retirante = this.value.trim();
+      nomeEl.textContent = '👥 ' + (this.value.trim() || 'Digite o nome acima');
+    };
+  }
+}
+
+function fecharModalRetirada() {
+  const m = document.getElementById('modalRetirada');
+  if (m) m.remove();
+  window._assinaturaData = null;
+}
+
+// ========== ASSINATURA DIGITAL ==========
+function iniciarAssinatura() {
+  const canvas = document.getElementById('canvasAssinatura');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  // Ajustar resolução real do canvas ao tamanho exibido
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * window.devicePixelRatio;
+  canvas.height = rect.height * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  let desenhando = false;
+  let temAssinatura = false;
+
+  function posRelativa(e) {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  }
+
+  function iniciar(e) { e.preventDefault(); desenhando = true; const p = posRelativa(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function desenhar(e) { e.preventDefault(); if (!desenhando) return; const p = posRelativa(e); ctx.lineTo(p.x, p.y); ctx.stroke(); temAssinatura = true; }
+  function parar(e) { e.preventDefault(); desenhando = false; if (temAssinatura) window._assinaturaData = canvas.toDataURL('image/png'); }
+
+  canvas.addEventListener('mousedown', iniciar);
+  canvas.addEventListener('mousemove', desenhar);
+  canvas.addEventListener('mouseup', parar);
+  canvas.addEventListener('touchstart', iniciar, { passive: false });
+  canvas.addEventListener('touchmove', desenhar, { passive: false });
+  canvas.addEventListener('touchend', parar, { passive: false });
+}
+
+function limparAssinatura() {
+  const canvas = document.getElementById('canvasAssinatura');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  window._assinaturaData = null;
+}
+
+function confirmarRetirada(id) {
+  const retirante = (window._retirante || '').trim();
+  if (!retirante) { toast('⚠️ Informe quem está retirando'); return; }
+  const enc = encomendas.find(e => e.id === id);
+  if (!enc) return;
+  enc.status = 'retirado';
+  enc.dataRetirada = new Date().toLocaleString('pt-BR');
+  enc.retiradoPor = retirante;
+  enc.assinatura = window._assinaturaData || null;
+  salvarEncomendas();
+  salvarEncomendasSupabase(enc); // sync Supabase
+  fecharModalRetirada();
+  renderEncomendas();
+  renderDashboard();
+  toast('✅ Retirada confirmada por ' + retirante + '!');
+}
+
+async function reenviarWhats(id) {
+  const enc = encomendas.find(e => e.id === id);
+  if (!enc) return;
+  const morador = moradores.find(m => m.id === enc.moradorId);
+  if (!morador) { toast('⚠️ Dados do morador não encontrados'); return; }
+  await enviarWhatsApp(morador, enc);
+}
+
+// ========== MORADORES ==========
+function cadastrarMorador() {
+  const nome = document.getElementById('novoNome').value.trim();
+  const casa = document.getElementById('novoCasa').value.trim();
+  const whats = document.getElementById('novoWhats').value.trim().replace(/\D/g,'');
+
+  if (!nome || !casa || !whats) { toast('⚠️ Preencha todos os campos'); return; }
+  if (whats.length < 10) { toast('⚠️ WhatsApp inválido (mínimo 10 dígitos com DDD)'); return; }
+
+  moradores.push({ id: Date.now().toString(), nome, casa, whats });
+  salvarMoradores();
+  document.getElementById('novoNome').value = '';
+  document.getElementById('novoCasa').value = '';
+  document.getElementById('novoWhats').value = '';
+  renderMoradores();
+  toast('✅ Morador cadastrado!');
+}
+
+function renderMoradores() {
+  const q = (document.getElementById('searchMoradorLista')?.value || '').toLowerCase();
+  const lista = moradores.filter(m => !q || m.nome.toLowerCase().includes(q) || m.casa.toLowerCase().includes(q));
+  const div = document.getElementById('listaMoradoresCad');
+  if (lista.length === 0) {
+    div.innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>Nenhum morador cadastrado</p></div>';
+    return;
+  }
+  div.innerHTML = lista.map(m => `
+    <div class="morador-item">
+      <div class="morador-info">
+        <div class="nome">${m.nome}</div>
+        <div class="detalhe">🏠 ${m.casa} · 📱 ${formatarWhats(m.whats)}</div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>
+    </div>
+  `).join('');
+}
+
+function excluirMorador(id) {
+  if (!confirm('Remover este morador?')) return;
+  moradores = moradores.filter(m => m.id !== id);
+  salvarMoradores();
+  renderMoradores();
+  toast('Morador removido');
+}
+
+// ========== CONFIG ==========
+function carregarConfig() {
+  document.getElementById('cfgCondominio').value = config.condominio || "Residencial D'Italia";
+  document.getElementById('cfgEmailBackup').value = config.emailBackup || '';
+  document.getElementById('cfgApiUrl').value = config.apiUrl || '';
+  document.getElementById('cfgApiKey').value = config.apiKey || '';
+  document.getElementById('cfgInstancia').value = config.instancia || 'portaria';
+  document.getElementById('cfgWhatsAuto').checked = config.whatsAuto !== false;
+  document.getElementById('cfgMensagem').value = config.mensagem || document.getElementById('cfgMensagem').value;
+  renderListaUsuarios();
+}
+
+function salvarConfig() {
+  config.condominio = document.getElementById('cfgCondominio').value.trim() || "Residencial D'Italia";
+  config.emailBackup = document.getElementById('cfgEmailBackup').value.trim();
+  config.apiUrl = document.getElementById('cfgApiUrl').value.trim();
+  config.apiKey = document.getElementById('cfgApiKey').value.trim();
+  config.instancia = document.getElementById('cfgInstancia').value.trim() || 'portaria';
+  config.whatsAuto = document.getElementById('cfgWhatsAuto').checked;
+  config.mensagem = document.getElementById('cfgMensagem').value;
+  localStorage.setItem('config', JSON.stringify(config));
+  document.getElementById('headerCondominio').textContent = config.condominio;
+  toast('✅ Configurações salvas!');
+}
+
+async function testarWhatsApp() {
+  salvarConfig();
+  if (!config.apiUrl || !config.apiKey) { toast('⚠️ Configure a URL e API Key primeiro'); return; }
+  const numero = prompt('Digite seu número para teste (com DDD, sem +55):');
+  if (!numero) return;
+  const msg = '✅ Teste do sistema de portaria – conexão funcionando!';
+  const ok = await chamarEvolutionAPI(numero.replace(/\D/g,''), msg);
+  toast(ok ? '✅ Mensagem de teste enviada!' : '❌ Falha no envio. Verifique as configurações.');
+}
+
+// ========== WHATSAPP / EVOLUTION API ==========
+async function enviarWhatsApp(morador, enc) {
+  if (!config.apiUrl || !config.apiKey) {
+    toast('⚠️ Configure a Evolution API para enviar WhatsApp automático');
+    return;
+  }
+  let msg = (config.mensagem || 'Olá {nome}! 📦 Chegou uma encomenda na portaria.\n🏠 {casa}\n🚚 {transportadora}\n🔖 Código: {codigo}')
+    .replace('{nome}', morador.nome)
+    .replace('{casa}', morador.casa)
+    .replace('{transportadora}', enc.transportadora)
+    .replace('{codigo}', enc.codigo);
+
+  const ok = await chamarEvolutionAPI(morador.whats, msg);
+  if (ok) toast('📲 WhatsApp enviado para ' + morador.nome + '!');
+  else toast('⚠️ Encomenda registrada, mas falha no WhatsApp. Avise manualmente.');
+}
+
+async function chamarEvolutionAPI(numero, mensagem) {
+  try {
+    const url = config.apiUrl.replace(/\/$/, '') +
+      '/message/sendText/' + encodeURIComponent(config.instancia);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': config.apiKey
+      },
+      body: JSON.stringify({
+        number: numero.startsWith('55') ? numero : '55' + numero,
+        textMessage: { text: mensagem }
+      })
+    });
+    return resp.ok;
+  } catch(e) {
+    console.error('Evolution API error:', e);
+    return false;
+  }
+}
+
+// ========== PERSIST ==========
+function salvarEncomendas() { localStorage.setItem('encomendas', JSON.stringify(encomendas)); }
+function salvarMoradores() { localStorage.setItem('moradores', JSON.stringify(moradores)); }
+
+// Salva uma encomenda específica no Supabase (chamada sempre que salvarEncomendas() for chamado com enc específica)
+async function syncEncomendaSupabase(id) {
+  const enc = encomendas.find(e => e.id === id);
+  if (enc) await salvarEncomendasSupabase(enc);
+}
+
+// ========== EXPORT / CLEAR ==========
+function exportarDados() {
+  const data = { moradores, encomendas, exportadoEm: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'portaria-backup-' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.json';
+  a.click();
+}
+
+function limparDados() {
+  if (!confirm('Isso apagará TODOS os dados. Tem certeza?')) return;
+  if (!confirm('Confirme novamente: apagar tudo?')) return;
+  moradores = []; encomendas = [];
+  salvarMoradores(); salvarEncomendas();
+  renderDashboard();
+  toast('Dados apagados');
+}
+
+// ========== BLOQUEIO ==========
+function bloquearSistema() {
+  const ls = document.getElementById('lockScreen');
+  ls.style.display = 'flex';
+  document.getElementById('senhaDesbloqueio').value = '';
+  document.getElementById('erroSenha').style.display = 'none';
+  setTimeout(() => document.getElementById('senhaDesbloqueio').focus(), 100);
+}
+
+function desbloquear() {
+  const senha = document.getElementById('senhaDesbloqueio').value;
+  const senhaSalva = config.senha || 'portaria';
+  if (senha === senhaSalva) {
+    document.getElementById('lockScreen').style.display = 'none';
+  } else {
+    document.getElementById('erroSenha').style.display = 'block';
+    document.getElementById('senhaDesbloqueio').value = '';
+  }
+}
+
+// ========== EXCLUIR ENCOMENDA ==========
+function excluirEncomenda(id) {
+  const enc = encomendas.find(e => e.id === id);
+  if (!enc) return;
+  if (!confirm('Excluir encomenda de ' + enc.moradorNome + '?')) return;
+  encomendas = encomendas.filter(e => e.id !== id);
+  salvarEncomendas();
+  excluirEncomendasSupabase(id); // sync Supabase
+  renderEncomendas();
+  renderDashboard();
+  toast('🗑️ Encomenda excluída');
+}
+
+// ========== PROCESSAR CÓDIGO LIDO ==========
+function processarCodigoLido(val) {
+  let codigo = val.trim();
+  let transpDetectada = '';
+
+  // Tentar parsear JSON (ex: Mercado Livre: {"id":"46573699051","t":"lm"})
+  try {
+    const json = JSON.parse(val);
+    if (json.id) {
+      codigo = json.id;
+      // Detectar transportadora pelo campo "t"
+      const t = (json.t || '').toLowerCase();
+      if (t === 'lm' || t === 'ml') transpDetectada = 'Mercado Livre';
+      else if (t === 'sh' || t === 'shp') transpDetectada = 'Shopee';
+      else if (t === 'az' || t === 'amz') transpDetectada = 'Amazon';
+      else if (t === 'cr' || t === 'correios') transpDetectada = 'Correios';
+    }
+  } catch(e) {
+    // Não é JSON — código simples (código de barras)
+  }
+
+  // Preencher campo de código
+  document.getElementById('inputCodigo').value = codigo;
+
+  // Detectar transportadora pelo código se não detectou pelo JSON
+  if (!transpDetectada) transpDetectada = detectarTransportadora(codigo);
+  if (transpDetectada) document.getElementById('inputTransportadora').value = transpDetectada;
+
+  // SÓ tentar identificar morador se o conteúdo original (não JSON) tiver texto com nome/endereço
+  // QR Codes que retornam JSON não contêm nome — não tentar identificar
+  let moradorEncontrado = null;
+  const ehJson = val.trim().startsWith('{');
+  if (!ehJson && val.length > 20) {
+    moradorEncontrado = identificarMorador(val);
+  }
+
+  if (moradorEncontrado) {
+    selecionarMorador(moradorEncontrado.id);
+    toast('✅ Código lido! Morador: ' + moradorEncontrado.nome, 4000);
+  } else {
+    toast('✅ ' + (transpDetectada || 'Código') + ' lido: ' + codigo);
+  }
+}
+
+function detectarTransportadora(codigo) {
+  const v = codigo.toUpperCase();
+  if (/^[0-9]{11,}$/.test(v)) return 'Mercado Livre'; // numérico longo = ML
+  if (v.startsWith('TBR') || v.startsWith('TBA')) return 'Mercado Livre';
+  if (v.startsWith('SHP') || v.includes('SHOPEE')) return 'Shopee';
+  if (v.startsWith('TBA') || v.includes('AMAZON')) return 'Amazon';
+  if (v.startsWith('SB') || v.startsWith('RR') || v.startsWith('AA') || v.startsWith('RA')) return 'Correios';
+  if (v.includes('SHEIN')) return 'Shein';
+  if (v.includes('LOGGI')) return 'Loggi';
+  if (v.includes('JADLOG')) return 'Jadlog';
+  return '';
+}
+
+function identificarMorador(val) {
+  const texto = val.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  let melhor = null;
+  let melhorScore = 0;
+
+  for (const m of moradores) {
+    let score = 0;
+    const nomeNorm = m.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const casaNorm = m.casa.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    const partes = nomeNorm.split(' ').filter(p => p.length > 4);
+    for (const parte of partes) {
+      if (texto.includes(parte)) score += parte.length > 6 ? 4 : 2;
+    }
+
+    const endMatch = casaNorm.match(/rua\s+(\w+)[,\s]+(\d+)/);
+    if (endMatch) {
+      if (texto.includes(endMatch[1])) score += 3;
+      if (texto.includes(endMatch[2]) && endMatch[2].length >= 3) score += 2;
+    }
+
+    if (score > melhorScore && score >= 5) {
+      melhorScore = score;
+      melhor = m;
+    }
+  }
+  return melhor;
+}
+
+// ========== CÂMERA UNIFICADA — QR Code + OCR em uma foto ==========
+let uniStream = null;
+
+async function abrirCameraUnificada() {
+  const modal = document.getElementById('modalUnificado');
+  modal.style.display = 'flex';
+  document.getElementById('uniStatus').textContent = '';
+  try {
+    uniStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    const video = document.getElementById('uniVideo');
+    video.srcObject = uniStream;
+    await video.play();
+  } catch(e) {
+    fecharCameraUnificada();
+    toast('⚠️ Não foi possível acessar a câmera. Verifique as permissões.');
+  }
+}
+
+function fecharCameraUnificada() {
+  document.getElementById('modalUnificado').style.display = 'none';
+  if (uniStream) { uniStream.getTracks().forEach(t => t.stop()); uniStream = null; }
+}
+
+async function capturarUnificado() {
+  const video = document.getElementById('uniVideo');
+  const canvas = document.getElementById('uniCanvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  fecharCameraUnificada();
+
+  const statusEl = document.getElementById('ocrStatus');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#e8f0fe';
+  statusEl.style.color = '#1a1f3a';
+  statusEl.textContent = '⏳ Lendo etiqueta...';
+
+  const imgBase64 = canvas.toDataURL('image/jpeg', 0.92);
+
+  // PASSO 1: tentar ler QR Code da imagem via BarcodeDetector
+  let codigoLido = null;
+  let transpLida = '';
+  if ('BarcodeDetector' in window) {
+    try {
+      const detector = new BarcodeDetector({ formats: ['qr_code','data_matrix','pdf417','aztec','code_128','code_39','ean_13','ean_8'] });
+      const blob = await (await fetch(imgBase64)).blob();
+      const img = await createImageBitmap(blob);
+      const codes = await detector.detect(img);
+      if (codes.length > 0) {
+        const qr = codes.find(c => ['qr_code','data_matrix','pdf417','aztec'].includes(c.format));
+        const melhor = qr || codes[0];
+        const val = melhor.rawValue;
+        // Processar código (JSON do ML ou código simples)
+        let codigo = val.trim();
+        try {
+          const json = JSON.parse(val);
+          if (json.id) {
+            codigo = json.id;
+            const t = (json.t || '').toLowerCase();
+            if (t === 'lm' || t === 'ml') transpLida = 'Mercado Livre';
+            else if (t === 'sh' || t === 'shp') transpLida = 'Shopee';
+            else if (t === 'az' || t === 'amz') transpLida = 'Amazon';
+            else if (t === 'cr' || t === 'correios') transpLida = 'Correios';
+          }
+        } catch(e) {}
+        codigoLido = codigo;
+        if (!transpLida) transpLida = detectarTransportadora(codigo);
+      }
+    } catch(e) { console.log('BarcodeDetector erro:', e); }
+  }
+
+  if (codigoLido) {
+    document.getElementById('inputCodigo').value = codigoLido;
+    if (transpLida) document.getElementById('inputTransportadora').value = transpLida;
+    statusEl.textContent = '✅ Código lido! Identificando morador...';
+  } else {
+    statusEl.textContent = '⏳ QR Code não detectado — lendo nome pelo OCR...';
+  }
+
+  // PASSO 2: OCR para identificar o morador (independente de ter lido QR Code ou não)
+  await enviarParaOCR(imgBase64, statusEl, codigoLido, transpLida);
+}
+
+// Funções legadas mantidas por compatibilidade (não usadas na UI)
+function abrirScanner() { abrirCameraUnificada(); }
+function fecharScanner() { fecharCameraUnificada(); }
+let scannerStream = null;
+let scannerInterval = null;
+
+// ========== OCR – FOTO DA ETIQUETA ==========
+let ocrStream = null;
+
+async function abrirCameraOCR() {
+  const modal = document.getElementById('ocrModal');
+  modal.style.display = 'flex';
+  try {
+    ocrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    const video = document.getElementById('ocrVideo');
+    video.srcObject = ocrStream;
+    await video.play();
+  } catch(e) {
+    fecharCameraOCR();
+    toast('⚠️ Não foi possível acessar a câmera. Verifique as permissões.');
+  }
+}
+
+function fecharCameraOCR() {
+  document.getElementById('ocrModal').style.display = 'none';
+  if (ocrStream) { ocrStream.getTracks().forEach(t => t.stop()); ocrStream = null; }
+}
+
+async function capturarFotoOCR() {
+  const video = document.getElementById('ocrVideo');
+  const canvas = document.getElementById('ocrCanvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  fecharCameraOCR();
+
+  const statusEl = document.getElementById('ocrStatus');
+  statusEl.style.background = '#e8f0fe';
+  statusEl.style.color = '#1a73e8';
+  statusEl.style.display = 'block';
+  statusEl.textContent = '⏳ Lendo a etiqueta...';
+
+  // Converter canvas para base64 jpeg
+  const imgBase64 = canvas.toDataURL('image/jpeg', 0.88);
+  await enviarParaOCR(imgBase64, statusEl);
+}
+
+async function processarFotoOCR(input) {
+  // fallback não usado
+}
+
+async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '') {
+  try {
+    const formData = new FormData();
+    formData.append('base64Image', imgBase64);
+    formData.append('language', 'por');
+    formData.append('isOverlayRequired', 'false');
+    formData.append('detectOrientation', 'true');
+    formData.append('scale', 'true');
+    formData.append('OCREngine', '2');
+
+    const resp = await fetch('https://api.ocr.space/parse/image', {
+      method: 'POST',
+      headers: { 'apikey': 'K85992490088957' },
+      body: formData
+    });
+
+    const result = await resp.json();
+
+    if (!result.ParsedResults || result.ParsedResults.length === 0) {
+      mostrarStatusOCR(statusEl, 'erro', '❌ Não foi possível ler o texto. Tente com melhor iluminação.');
+      return;
+    }
+
+    const textoOCR = result.ParsedResults[0].ParsedText;
+    console.log('OCR lido:\n', textoOCR);
+
+    // Só preenche transportadora se ainda não foi detectada pelo QR Code
+    const transpOCR = transpJaLida || detectarTransportadoraOCR(textoOCR);
+    if (transpOCR && !document.getElementById('inputTransportadora').value) {
+      document.getElementById('inputTransportadora').value = transpOCR;
+    }
+
+    const { morador, nomeExtraido, debug } = identificarMoradorOCR(textoOCR);
+
+    if (morador) {
+      selecionarMorador(morador.id);
+      const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
+      mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo);
+    } else if (nomeExtraido) {
+      mostrarStatusOCR(statusEl, 'aviso',
+        '⚠️ Nome lido: "' + nomeExtraido + '" — não encontrado no cadastro. Busque manualmente.\nCandidatos: ' + debug);
+    } else {
+      mostrarStatusOCR(statusEl, 'aviso',
+        '⚠️ Não identificou o destinatário. Texto lido: ' + textoOCR.substring(0, 200).replace(/\n/g, ' | '));
+    }
+
+  } catch(e) {
+    console.error('Erro OCR:', e);
+    mostrarStatusOCR(statusEl, 'erro', '❌ Erro ao processar. Verifique a conexão com a internet.');
+  }
+}
+
+function mostrarStatusOCR(el, tipo, msg) {
+  const estilos = {
+    ok:    { bg: '#e6f4ea', cor: '#137333', dur: 5000 },
+    aviso: { bg: '#fff3cd', cor: '#856404', dur: 10000 },
+    erro:  { bg: '#fce8e6', cor: '#c5221f', dur: 5000 }
+  };
+  const s = estilos[tipo];
+  el.style.background = s.bg;
+  el.style.color = s.cor;
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; el.style.background = '#e8f0fe'; el.style.color = '#1a73e8'; }, s.dur);
+}
+
+function detectarTransportadoraOCR(texto) {
+  const t = texto.toUpperCase();
+  if (t.includes('MERCADO LIVRE') || t.includes('MERCADOLIVRE') || t.includes('MELI') || t.includes('MLB')) return 'Mercado Livre';
+  if (t.includes('SHOPEE')) return 'Shopee';
+  if (t.includes('AMAZON') || t.includes('AMAZN')) return 'Amazon';
+  if (t.includes('SHEIN')) return 'Shein';
+  if (t.includes('CORREIOS') || t.includes('ECT')) return 'Correios';
+  if (t.includes('LOGGI')) return 'Loggi';
+  if (t.includes('JADLOG')) return 'Jadlog';
+  if (t.includes('TOTAL EXPRESS')) return 'Total Express';
+  if (t.includes('DHL')) return 'DHL';
+  if (t.includes('FEDEX')) return 'FedEx';
+  return '';
+}
+
+function resizarImagem(file, maxDim) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
+    };
+    img.src = url;
+  });
+}
+
+function identificarMoradorOCR(textoOCR) {
+  const norm = (s) => (s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+
+  // Juntar linhas consecutivas que formam "nome\n(NOMEJUNTO)" em uma só
+  const textoJuntado = textoOCR.replace(/([^\n]{4,})\n(\([A-Z]{6,}\))/g, '$1 $2');
+
+  const linhas = textoJuntado.split(/\n/).map(l => l.trim()).filter(l => l.length > 3);
+  const linhasNorm = linhas.map(norm);
+  const textoNorm = norm(textoOCR);
+
+  // --- PASSO 1: extrair candidatos a nome ---
+  let candidatosNome = [];
+
+  const prefixosIgnorar = /^(endere[cç]o|cep|cidade|complemento|bairro|estado|rua|avenida|av\.|pack|nf:|nota|despachar|seg|ter|qua|qui|sex|sab|dom|\d)/i;
+
+  for (let i = 0; i < linhas.length; i++) {
+    const l = linhas[i];
+    const ln = linhasNorm[i];
+
+    if (prefixosIgnorar.test(l.trim())) continue;
+    if (ln.replace(/\s/g,'').length < 6) continue;
+    if (l.includes('>')) continue;
+
+    // Padrão ML: "lucimara Gonçalves Salomé (LUCIMARAGONVESSALOM)" — mesmo após junção de linhas
+    const parMatch = l.match(/^(.{4,}?)\s*\([A-Z]{4,}\)/);
+    if (parMatch) {
+      const nomeParte = parMatch[1].trim();
+      if (nomeParte.split(/\s+/).length >= 2 && !prefixosIgnorar.test(nomeParte)) {
+        candidatosNome.push({ texto: norm(nomeParte), peso: 15 });
+        continue;
+      }
+    }
+
+    // Palavra-chave de destinatário
+    if (/destinat[aá]rio|para\s*:|nome\s*:|recipient/i.test(l)) {
+      const resto = l.replace(/destinat[aá]rio|para\s*:|nome\s*:|recipient/gi, '').trim();
+      if (resto.length > 4) candidatosNome.push({ texto: norm(resto), peso: 12 });
+      if (i + 1 < linhas.length && !prefixosIgnorar.test(linhas[i+1])) {
+        candidatosNome.push({ texto: linhasNorm[i + 1], peso: 11 });
+      }
+    }
+
+    // Linha toda em maiúsculas com espaços (ex: "LUCIMARA GONCALVES SALOME")
+    if (/^[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÇ\s]{8,}$/.test(l) && l.split(/\s+/).length >= 2) {
+      candidatosNome.push({ texto: ln, peso: 10 });
+    }
+
+    // Linha mista com pelo menos 2 palavras iniciando em maiúscula (ex: "lucimara Gonçalves Salomé")
+    if (/([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÇ][a-záéíóúâêîôûãõàç]{2,}\s+){2,}/.test(l)) {
+      candidatosNome.push({ texto: ln, peso: 9 });
+    }
+  }
+
+  // --- PASSO 1b: busca direta — procura pares de palavras do nome no texto OCR ---
+  // Conta quantos pares consecutivos de palavras do nome aparecem no texto
+  // Quanto mais pares, mais confiante a identificação
+  for (const m of moradores) {
+    const nomeN = norm(m.nome);
+    const partes = nomeN.split(' ').filter(p => p.length > 3);
+    if (partes.length < 2) continue;
+    let paresEncontrados = 0;
+    for (let k = 0; k < partes.length - 1; k++) {
+      const par = partes[k] + ' ' + partes[k + 1];
+      if (textoNorm.includes(par)) paresEncontrados++;
+    }
+    if (paresEncontrados > 0) {
+      // Peso proporcional aos pares encontrados — mais pares = mais certeza
+      candidatosNome.push({ texto: nomeN, peso: 10 + paresEncontrados * 5, moradorDireto: m.id });
+    }
+  }
+
+  // --- PASSO 2: pontuar moradores ---
+  let melhor = null;
+  let melhorScore = 0;
+  let nomeExtraido = null;
+
+  // Checar candidatos com moradorDireto — escolhe o de maior peso
+  const candsDiretos = candidatosNome.filter(c => c.moradorDireto).sort((a, b) => b.peso - a.peso);
+  if (candsDiretos.length > 0) {
+    const melhorCand = candsDiretos[0];
+    // Só usa direto se tiver vantagem clara sobre o segundo (evita empate por endereço compartilhado)
+    const segundo = candsDiretos[1];
+    if (!segundo || melhorCand.peso > segundo.peso) {
+      melhor = moradores.find(m => m.id === melhorCand.moradorDireto) || null;
+      if (melhor) {
+        const debug = candidatosNome.map(c => '"' + c.texto + '" (peso:' + c.peso + ')').join(' | ');
+        return { morador: melhor, nomeExtraido: melhorCand.texto, debug };
+      }
+    }
+  }
+
+  for (const m of moradores) {
+    let score = 0;
+    const nomeNorm = norm(m.nome);
+    const partesNome = nomeNorm.split(' ').filter(p => p.length > 3);
+
+    for (const cand of candidatosNome) {
+      const palavrasCand = cand.texto.split(' ').filter(p => p.length > 3);
+      const matches = partesNome.filter(p => palavrasCand.includes(p));
+      if (matches.length >= 2) {
+        score += matches.length * cand.peso;
+        if (!nomeExtraido) nomeExtraido = cand.texto;
+      }
+    }
+
+    // Presença no texto geral (peso baixo)
+    for (const parte of partesNome) {
+      if (textoNorm.includes(parte)) score += 1;
+    }
+
+    // Endereço — ignorado na pontuação (evita identificar vizinhos errados)
+
+    if (score > melhorScore && score >= 8) {
+      melhorScore = score;
+      melhor = m;
+    }
+  }
+
+  if (!melhor && candidatosNome.length > 0) {
+    nomeExtraido = candidatosNome.sort((a, b) => b.peso - a.peso)[0].texto;
+  }
+
+  const debug = candidatosNome.map(c => '"' + c.texto + '" (peso:' + c.peso + ')').join(' | ');
+  return { morador: melhor, nomeExtraido, debug };
+}
+
+// ========== BACKUP AUTOMÁTICO ÀS 02H ==========
+function agendarBackup() {
+  const agora = new Date();
+  const proximo02h = new Date();
+  proximo02h.setHours(2, 0, 0, 0);
+  if (proximo02h <= agora) proximo02h.setDate(proximo02h.getDate() + 1);
+  const ms = proximo02h - agora;
+  setTimeout(() => {
+    executarBackup();
+    setInterval(executarBackup, 24 * 60 * 60 * 1000);
+  }, ms);
+}
+
+function executarBackup() {
+  const data = {
+    condominio: config.condominio || "Residencial D'Italia",
+    exportadoEm: new Date().toISOString(),
+    moradores,
+    encomendas
+  };
+  const json = JSON.stringify(data, null, 2);
+  const emailDestino = config.emailBackup || '';
+  if (!emailDestino) {
+    // Sem e-mail configurado: faz download automático
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'backup-portaria-' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.json';
+    a.click();
+    return;
+  }
+  // Com e-mail configurado: usa EmailJS se disponível
+  if (window.emailjs) {
+    emailjs.send(config.emailjsService || '', config.emailjsTemplate || '', {
+      to_email: emailDestino,
+      condominio: data.condominio,
+      data: new Date().toLocaleDateString('pt-BR'),
+      backup_json: json.substring(0, 5000) + (json.length > 5000 ? '...[truncado]' : '')
+    }).then(() => console.log('Backup enviado por e-mail'))
+      .catch(() => {
+        // Fallback: download
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = 'backup-portaria-' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.json';
+        a.click();
+      });
+  } else {
+    // Sem EmailJS: download
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'backup-portaria-' + new Date().toLocaleDateString('pt-BR').replace(/\//g,'-') + '.json';
+    a.click();
+  }
+}
+
+// ========== BLOQUEIO DE DUPLICIDADE ==========
+function verificarDuplicidade(codigo) {
+  if (!codigo) return null;
+  return encomendas.find(e => e.codigo === codigo && e.status === 'pendente') || null;
+}
+
+// ========== CONSULTAS ==========
+function iniciarConsulta() {
+  // Preencher datas padrão: mês atual
+  const hoje = new Date();
+  const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  document.getElementById('filtroDataInicio').value = ini.toISOString().slice(0,10);
+  document.getElementById('filtroDataFim').value = hoje.toISOString().slice(0,10);
+  document.getElementById('filtroMorador').value = '';
+  document.getElementById('filtroTransp').value = '';
+  document.getElementById('filtroStatus').value = '';
+  renderConsulta();
+}
+
+function parseDateBR(str) {
+  // Suporta "28/05/2026 21:53" e "2026-05-28"
+  if (!str) return null;
+  if (str.includes('/')) {
+    const [d, m, resto] = str.split('/');
+    const y = resto.split(' ')[0];
+    return new Date(y, m-1, d);
+  }
+  return new Date(str);
+}
+
+function renderConsulta() {
+  const ini = document.getElementById('filtroDataInicio').value;
+  const fim = document.getElementById('filtroDataFim').value;
+  const morador = (document.getElementById('filtroMorador').value || '').toLowerCase();
+  const transp = document.getElementById('filtroTransp').value;
+  const status = document.getElementById('filtroStatus').value;
+
+  const dataIni = ini ? new Date(ini + 'T00:00:00') : null;
+  const dataFim = fim ? new Date(fim + 'T23:59:59') : null;
+
+  const lista = encomendas.filter(e => {
+    const dataEnc = parseDateBR(e.dataEntrada);
+    if (dataIni && dataEnc < dataIni) return false;
+    if (dataFim && dataEnc > dataFim) return false;
+    if (morador && !e.moradorNome.toLowerCase().includes(morador)) return false;
+    if (transp && e.transportadora !== transp) return false;
+    if (status && e.status !== status) return false;
+    return true;
+  });
+
+  const resumo = document.getElementById('resumoConsulta');
+  const textoResumo = document.getElementById('textoResumo');
+  const pendentes = lista.filter(e => e.status === 'pendente').length;
+  const retirados = lista.filter(e => e.status === 'retirado').length;
+  resumo.style.display = 'block';
+  textoResumo.innerHTML = `<strong>${lista.length}</strong> encomenda(s) encontrada(s) &nbsp;·&nbsp; <span style="color:#fbbc04;">⏳ ${pendentes} aguardando</span> &nbsp;·&nbsp; <span style="color:#34a853;">✅ ${retirados} retiradas</span>`;
+
+  const div = document.getElementById('listaConsulta');
+  if (lista.length === 0) {
+    div.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>Nenhuma encomenda no período</p></div>';
+    return;
+  }
+  div.innerHTML = lista.map(e => itemEncomendaHTML(e)).join('');
+}
+
+// ========== RELATÓRIO A4 ==========
+function gerarRelatorio() {
+  const ini = document.getElementById('filtroDataInicio').value;
+  const fim = document.getElementById('filtroDataFim').value;
+  const morador = (document.getElementById('filtroMorador').value || '').toLowerCase();
+  const transp = document.getElementById('filtroTransp').value;
+  const status = document.getElementById('filtroStatus').value;
+
+  const dataIni = ini ? new Date(ini + 'T00:00:00') : null;
+  const dataFim = fim ? new Date(fim + 'T23:59:59') : null;
+
+  const lista = encomendas.filter(e => {
+    const dataEnc = parseDateBR(e.dataEntrada);
+    if (dataIni && dataEnc < dataIni) return false;
+    if (dataFim && dataEnc > dataFim) return false;
+    if (morador && !e.moradorNome.toLowerCase().includes(morador)) return false;
+    if (transp && e.transportadora !== transp) return false;
+    if (status && e.status !== status) return false;
+    return true;
+  });
+
+  const pendentes = lista.filter(e => e.status === 'pendente').length;
+  const retirados = lista.filter(e => e.status === 'retirado').length;
+
+  const periodoTexto = ini && fim
+    ? new Date(ini+'T12:00:00').toLocaleDateString('pt-BR') + ' a ' + new Date(fim+'T12:00:00').toLocaleDateString('pt-BR')
+    : 'Período completo';
+
+  const linhas = lista.map((e, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#f8f9fa'};">
+      <td style="text-align:center;">${i+1}</td>
+      <td>${e.dataEntrada}</td>
+      <td style="font-weight:600;">${e.moradorNome}</td>
+      <td style="font-size:11px;color:#555;">${e.moradorCasa}</td>
+      <td>${e.transportadora}</td>
+      <td style="font-family:monospace;font-size:11px;">${e.codigo}</td>
+      <td style="text-align:center;">
+        <span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${e.status==='retirado'?'#d1e7dd':'#fff3cd'};color:${e.status==='retirado'?'#0f5132':'#856404'};">
+          ${e.status === 'retirado' ? 'Retirado' : 'Aguardando'}
+        </span>
+      </td>
+      <td>${e.dataRetirada || '—'}</td>
+      <td>${e.retiradoPor || '—'}</td>
+      <td style="text-align:center;">${e.assinatura ? '<img src="'+e.assinatura+'" style="height:32px;max-width:80px;">' : '—'}</td>
+    </tr>
+  `).join('');
+
+  const nomeCondominio = config.condominio || "Residencial D'Italia";
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório de Encomendas – ${nomeCondominio}</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4 landscape; margin: 14mm 14mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', Arial, sans-serif; font-size: 10.5px; color: #1a1f3a; background: white; }
+
+  .cabecalho {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding-bottom: 10px; margin-bottom: 12px;
+    border-bottom: 3px solid #1a1f3a;
+  }
+  .cab-left { display: flex; align-items: flex-start; gap: 14px; }
+  .cab-logo { display: flex; flex-direction: column; align-items: center; padding-top: 2px; }
+  .cab-logo svg { width: 48px; height: 32px; }
+  .cab-logo .marca { font-size: 14px; font-family: 'Playfair Display', serif; color: #1a1f3a; letter-spacing: 0.5px; }
+  .cab-logo .marca span { color: #c9a84c; }
+  .cab-titulo h1 { font-family: 'Playfair Display', serif; font-size: 16px; color: #1a1f3a; margin-bottom: 3px; }
+  .cab-titulo .sub { font-size: 10px; color: #6b7280; }
+  .cab-titulo .periodo { font-size: 10px; color: #1a1f3a; margin-top: 4px; }
+  .cab-right { text-align: right; }
+  .cab-right .emissao { font-size: 9.5px; color: #6b7280; line-height: 1.7; }
+  .cab-right .total { font-size: 13px; font-weight: 700; color: #1a1f3a; margin-top: 4px; }
+
+  .resumo { display: flex; gap: 10px; margin-bottom: 12px; }
+  .resumo-item { padding: 6px 16px; border-radius: 6px; font-size: 10px; font-weight: 600; border: 1px solid; }
+  .r-aguard { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
+  .r-ret    { background: #f0fdf4; color: #166534; border-color: #86efac; }
+  .r-total  { background: #eff6ff; color: #1e40af; border-color: #93c5fd; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  thead tr { background: #1a1f3a; }
+  th { color: white; padding: 7px 5px; text-align: left; font-size: 9.5px; font-weight: 600; letter-spacing: 0.3px; }
+  th:first-child { border-radius: 0; }
+  td { padding: 6px 5px; border-bottom: 1px solid #e2e8f0; font-size: 9.5px; vertical-align: middle; line-height: 1.4; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .badge { display:inline-block; padding: 2px 7px; border-radius: 10px; font-size: 9px; font-weight: 700; }
+  .badge-pend { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
+  .badge-ret  { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+
+  .rodape {
+    border-top: 1px solid #e2e8f0; padding-top: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .rodape-marca { font-size: 8.5px; color: #9ca3af; }
+  .rodape-marca strong { color: #c9a84c; }
+  .rodape-pag { font-size: 8.5px; color: #9ca3af; }
+
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+
+<div class="cabecalho">
+  <div class="cab-left">
+    <div class="cab-logo">
+      <svg viewBox="0 0 80 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 38 Q20 8 40 14 Q60 20 76 4" stroke="#c9a84c" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+        <path d="M40 14 L52 38" stroke="#c9a84c" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+        <line x1="8" y1="44" x2="72" y2="44" stroke="#c9a84c" stroke-width="1.5" opacity="0.6"/>
+      </svg>
+      <div class="marca">Portaria<span>Sync</span></div>
+    </div>
+    <div class="cab-titulo">
+      <h1>Relatório de Controle de Encomendas</h1>
+      <div class="sub">${nomeCondominio}</div>
+      <div class="periodo">Período: <strong>${periodoTexto}</strong>${transp ? ' &nbsp;·&nbsp; Transportadora: <strong>'+transp+'</strong>' : ''}${status ? ' &nbsp;·&nbsp; Status: <strong>'+(status==='pendente'?'Aguardando':'Retiradas')+'</strong>' : ''}</div>
+    </div>
+  </div>
+  <div class="cab-right">
+    <div class="emissao">Emitido em: ${new Date().toLocaleString('pt-BR')}<br>Responsável: ${usuarioLogado ? usuarioLogado.nome : 'Sistema'}</div>
+    <div class="total">${lista.length} registro(s)</div>
+  </div>
+</div>
+
+<div class="resumo">
+  <div class="resumo-item r-aguard">⏳ Aguardando retirada: ${pendentes}</div>
+  <div class="resumo-item r-ret">✅ Retiradas no período: ${retirados}</div>
+  <div class="resumo-item r-total">📦 Total no período: ${lista.length}</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:24px;">#</th>
+      <th style="width:100px;">Data entrada</th>
+      <th style="width:130px;">Morador / Destinatário</th>
+      <th style="width:115px;">Endereço</th>
+      <th style="width:80px;">Transportadora</th>
+      <th style="width:95px;">Código</th>
+      <th style="width:60px;text-align:center;">Status</th>
+      <th style="width:100px;">Data retirada</th>
+      <th style="width:95px;">Retirado por</th>
+      <th style="width:72px;text-align:center;">Assinatura</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${linhas || '<tr><td colspan="10" style="text-align:center;padding:20px;color:#9ca3af;font-style:italic;">Nenhuma encomenda no período selecionado</td></tr>'}
+  </tbody>
+</table>
+
+<div class="rodape">
+  <div class="rodape-marca">
+    Desenvolvido por <strong>CLECIUS SALOMÉ</strong> &nbsp;·&nbsp; Transformando Tecnologia em Soluções Jurídicas Inteligentes
+  </div>
+  <div class="rodape-pag">PortariaSync &nbsp;·&nbsp; ${nomeCondominio}</div>
+</div>
+
+</body>
+</html>`;
+
+  const janela = window.open('', '_blank');
+  janela.document.write(html);
+  janela.document.close();
+  setTimeout(() => janela.print(), 800);
+}
+
+// ========== INIT ==========
+iniciarLogin();
+renderListaUsuarios();
+</script>
+</body>
+</html>
