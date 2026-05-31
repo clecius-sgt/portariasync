@@ -533,7 +533,6 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 
     <button class="btn btn-primary btn-full" onclick="salvarConfig()">💾 Salvar configurações</button>
     <button class="btn btn-full" style="background:#eee; margin-top:8px;" onclick="testarWhatsApp()">📱 Testar envio WhatsApp</button>
-    <button class="btn btn-full" style="background:#25D366;color:white;margin-top:8px;" onclick="reconectarWhatsApp()">🔄 Reconectar WhatsApp</button>
     <button class="btn btn-full" style="background:#1a73e8;color:white;margin-top:8px;" onclick="recuperarBackupSupabase()">☁️ Recuperar dados do backup (Supabase)</button>
   </div>
 
@@ -1085,7 +1084,8 @@ function renderEncomendas() {
     div.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>Nenhuma encomenda encontrada</p></div>';
     return;
   }
-  div.innerHTML = lista.map(e => itemEncomendaHTML(e)).join('');
+  const listaOrdenada = [...lista].sort((a,b) => a.moradorNome.localeCompare(b.moradorNome, "pt-BR"));
+  div.innerHTML = listaOrdenada.map(e => itemEncomendaHTML(e)).join('');
 }
 
 function itemEncomendaHTML(e) {
@@ -2309,7 +2309,8 @@ function renderConsulta() {
     div.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>Nenhuma encomenda no período</p></div>';
     return;
   }
-  div.innerHTML = lista.map(e => itemEncomendaHTML(e)).join('');
+  const listaOrdenada = [...lista].sort((a,b) => a.moradorNome.localeCompare(b.moradorNome, 'pt-BR'));
+  div.innerHTML = listaOrdenada.map(e => itemEncomendaHTML(e)).join('');
 }
 
 // ========== RELATÓRIO A4 ==========
