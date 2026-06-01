@@ -1680,13 +1680,13 @@ async function enviarWhatsApp(morador, enc) {
     .replace('{transportadora}', enc.transportadora)
     .replace('{codigo}', enc.codigo);
 
-  // Enviar foto da etiqueta se disponível
+  // Enviar foto da etiqueta se disponível, senão só texto
+  let ok = false;
   if (enc.fotoEtiqueta) {
-    await chamarEvolutionAPIMedia(morador.whats, enc.fotoEtiqueta, msg);
+    ok = await chamarEvolutionAPIMedia(morador.whats, enc.fotoEtiqueta, msg);
   } else {
-    await chamarEvolutionAPI(morador.whats, msg);
+    ok = await chamarEvolutionAPI(morador.whats, msg);
   }
-  const ok = true;
   if (ok) toast('📲 WhatsApp enviado para ' + morador.nome + '!');
   else toast('⚠️ Encomenda registrada, mas falha no WhatsApp. Avise manualmente.');
 }
@@ -1695,19 +1695,43 @@ async function chamarEvolutionAPIMedia(numero, imagemBase64, caption) {
   try {
     const url = config.apiUrl.replace(/\/$/, '') +
       '/message/sendMedia/' + encodeURIComponent(config.instancia);
-    // Remove o prefixo data:image/jpeg;base64,
+    // Evolution API v1.8.x — formato correto para envio de imagem base64
     const base64 = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': config.apiKey },
       body: JSON.stringify({
         number: numero.startsWith('55') ? numero : '55' + numero,
-        mediatype: 'image',
-        media: base64,
-        caption: caption
+        mediaMessage: {
+          mediatype: 'image',
+          base64: base64,
+          caption: caption,
+          fileName: 'etiqueta.jpg'
+        }
       })
     });
-    return resp.ok;
+    if (!resp.ok) {
+      // Fallback: se mediaMessage falhar, tenta formato alternativo
+      const resp2 = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': config.apiKey },
+        body: JSON.stringify({
+          number: numero.startsWith('55') ? numero : '55' + numero,
+          mediatype: 'image',
+          mimetype: 'image/jpeg',
+          media: base64,
+          caption: caption,
+          fileName: 'etiqueta.jpg'
+        })
+      });
+      if (!resp2.ok) {
+        // Fallback final: envia só o texto sem foto
+        console.warn('Envio de imagem falhou, enviando só texto');
+        return chamarEvolutionAPI(numero, caption);
+      }
+      return true;
+    }
+    return true;
   } catch(e) {
     console.warn('Erro ao enviar mídia, tentando texto puro:', e);
     return chamarEvolutionAPI(numero, caption);
