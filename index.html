@@ -1680,15 +1680,53 @@ async function enviarWhatsApp(morador, enc) {
     .replace('{transportadora}', enc.transportadora)
     .replace('{codigo}', enc.codigo);
 
-  // Enviar foto da etiqueta se disponível, senão só texto
-  let ok = false;
+  // Se tem foto, faz upload no Supabase e inclui link na mensagem
   if (enc.fotoEtiqueta) {
-    ok = await chamarEvolutionAPIMedia(morador.whats, enc.fotoEtiqueta, msg);
-  } else {
-    ok = await chamarEvolutionAPI(morador.whats, msg);
+    toast('⏳ Enviando foto da etiqueta...');
+    const linkFoto = await uploadFotoSupabase(enc.fotoEtiqueta, enc.id);
+    if (linkFoto) {
+      msg += '\n📸 Foto da etiqueta: ' + linkFoto;
+      enc.linkFotoEtiqueta = linkFoto;
+      salvarEncomendas();
+    }
   }
+
+  const ok = await chamarEvolutionAPI(morador.whats, msg);
   if (ok) toast('📲 WhatsApp enviado para ' + morador.nome + '!');
   else toast('⚠️ Encomenda registrada, mas falha no WhatsApp. Avise manualmente.');
+}
+
+// ========== UPLOAD FOTO ETIQUETA → SUPABASE STORAGE ==========
+async function uploadFotoSupabase(base64, encId) {
+  try {
+    // Converter base64 para blob
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
+    const byteChars = atob(base64Data);
+    const byteArr = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], { type: 'image/jpeg' });
+
+    const fileName = 'etiqueta_' + encId + '_' + Date.now() + '.jpg';
+    const uploadUrl = SUPABASE_URL + '/storage/v1/object/etiquetas/' + fileName;
+
+    const resp = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true'
+      },
+      body: blob
+    });
+
+    if (resp.ok) {
+      return SUPABASE_URL + '/storage/v1/object/public/etiquetas/' + fileName;
+    }
+    return null;
+  } catch(e) {
+    console.warn('Erro upload Supabase:', e);
+    return null;
+  }
 }
 
 async function chamarEvolutionAPIMedia(numero, imagemBase64, caption) {
