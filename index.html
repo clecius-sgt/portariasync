@@ -1208,8 +1208,10 @@ async function registrarEncomenda() {
     moradorWhats: morador.whats,
     status: 'pendente',
     dataEntrada: new Date().toLocaleString('pt-BR'),
-    dataRetirada: null
+    dataRetirada: null,
+    fotoEtiqueta: _fotoEtiquetaBase64 || null
   };
+  _fotoEtiquetaBase64 = null; // limpa após usar
 
   encomendas.unshift(enc);
   salvarEncomendas();
@@ -1463,6 +1465,21 @@ function confirmarRetirada(id) {
   const logDetalhe = enc.moradorNome + ' · Retirado por: ' + retirante + (rg ? ' · RG: ' + rg : '') + ' · Código: ' + enc.codigo;
   registrarLog('Retirada confirmada', logDetalhe);
   toast('✅ Retirada confirmada por ' + retirante + '!');
+
+  // Enviar WhatsApp de confirmação de retirada
+  if (config.apiUrl && config.apiKey) {
+    const morador = moradores.find(m => m.id === enc.moradorId);
+    if (morador && morador.whats) {
+      const msgRetirada = '✅ Olá ' + enc.moradorNome + '! Sua encomenda foi retirada na portaria.\n\n' +
+        '📦 Código: ' + enc.codigo + '\n' +
+        '🚚 Transportadora: ' + (enc.transportadora || 'Não informada') + '\n' +
+        '📅 Data/hora: ' + enc.dataRetirada + '\n' +
+        '👤 Retirado por: ' + retirante +
+        (rg ? '\n🪪 RG: ' + rg : '') + '\n\n' +
+        'Agradecemos a sua confiança! — Portaria Residencial D\'Italia';
+      chamarEvolutionAPI(morador.whats, msgRetirada);
+    }
+  }
 }
 
 async function reenviarWhats(id) {
@@ -1663,9 +1680,38 @@ async function enviarWhatsApp(morador, enc) {
     .replace('{transportadora}', enc.transportadora)
     .replace('{codigo}', enc.codigo);
 
-  const ok = await chamarEvolutionAPI(morador.whats, msg);
+  // Enviar foto da etiqueta se disponível
+  if (enc.fotoEtiqueta) {
+    await chamarEvolutionAPIMedia(morador.whats, enc.fotoEtiqueta, msg);
+  } else {
+    await chamarEvolutionAPI(morador.whats, msg);
+  }
+  const ok = true;
   if (ok) toast('📲 WhatsApp enviado para ' + morador.nome + '!');
   else toast('⚠️ Encomenda registrada, mas falha no WhatsApp. Avise manualmente.');
+}
+
+async function chamarEvolutionAPIMedia(numero, imagemBase64, caption) {
+  try {
+    const url = config.apiUrl.replace(/\/$/, '') +
+      '/message/sendMedia/' + encodeURIComponent(config.instancia);
+    // Remove o prefixo data:image/jpeg;base64,
+    const base64 = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': config.apiKey },
+      body: JSON.stringify({
+        number: numero.startsWith('55') ? numero : '55' + numero,
+        mediatype: 'image',
+        media: base64,
+        caption: caption
+      })
+    });
+    return resp.ok;
+  } catch(e) {
+    console.warn('Erro ao enviar mídia, tentando texto puro:', e);
+    return chamarEvolutionAPI(numero, caption);
+  }
 }
 
 async function chamarEvolutionAPI(numero, mensagem) {
@@ -1840,6 +1886,7 @@ function identificarMorador(val) {
 
 // ========== CÂMERA UNIFICADA — QR Code + OCR em uma foto ==========
 let uniStream = null;
+let _fotoEtiquetaBase64 = null; // armazena a última foto da etiqueta para envio no WhatsApp
 
 async function abrirCameraUnificada() {
   const modal = document.getElementById('modalUnificado');
@@ -1879,6 +1926,7 @@ async function capturarUnificado() {
   statusEl.textContent = '⏳ Lendo etiqueta...';
 
   const imgBase64 = canvas.toDataURL('image/jpeg', 0.92);
+  _fotoEtiquetaBase64 = imgBase64; // guarda foto para enviar no WhatsApp
 
   // PASSO 1: tentar ler QR Code da imagem via BarcodeDetector
   let codigoLido = null;
@@ -2009,7 +2057,8 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
       document.getElementById('inputTransportadora').value = transpOCR;
     }
 
-    const { morador, nomeExtraido, debug } = identificarMoradorOCR(textoOCR);
+    const resultado = identificarMoradorOCR(textoOCR);
+    const { morador, nomeExtraido, debug } = resultado;
 
     // Extrair código da encomenda pelo OCR se ainda não foi lido pelo QR Code
     if (!codigoJaLido) {
@@ -2023,7 +2072,11 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
     if (morador) {
       selecionarMorador(morador.id);
       const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
-      mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo);
+      const avisoEndereco = resultado && resultado.porEndereco
+        ? ' ⚠️ Identificado pelo endereço (nome na etiqueta diferente do cadastro)'
+        : '';
+      mostrarStatusOCR(statusEl, resultado && resultado.porEndereco ? 'aviso' : 'ok',
+        (resultado && resultado.porEndereco ? '📍' : '✅') + ' Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo + avisoEndereco);
     } else {
       // Não encontrou — mostra sugestões ou opção de cadastrar
       const nomeParaBusca = nomeExtraido || '';
@@ -2378,8 +2431,70 @@ function identificarMoradorOCR(textoOCR) {
     nomeExtraido = candidatosNome.sort((a, b) => b.peso - a.peso)[0].texto;
   }
 
+  // ── PASSO 3: Busca por ENDEREÇO ──────────────────────────────────────────
+  // Se não identificou pelo nome, tenta pelo endereço da etiqueta
+  // Resolve casos como "José Roberto" com endereço da Lucimara
+  if (!melhor) {
+    const moradorPorEndereco = identificarMoradorPorEndereco(textoNorm);
+    if (moradorPorEndereco) {
+      return {
+        morador: moradorPorEndereco,
+        nomeExtraido: nomeExtraido,
+        debug: 'Identificado pelo endereço',
+        porEndereco: true
+      };
+    }
+  }
+
   const debug = candidatosNome.map(c => '"' + c.texto + '" (peso:' + c.peso + ')').join(' | ');
   return { morador: melhor, nomeExtraido, debug };
+}
+
+// ── Identificar morador pelo endereço da etiqueta ────────────────────────────
+function identificarMoradorPorEndereco(textoNorm) {
+  const norm = (s) => (s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  let melhor = null;
+  let melhorScore = 0;
+
+  for (const m of moradores) {
+    const casaNorm = norm(m.casa);
+    let score = 0;
+
+    // Extrair partes do endereço: rua, número, quadra, lote
+    // Ex: "QD01LT11 – Rua Brasilia, 311"
+    const partesCasa = casaNorm.split(/[\s,\-]+/).filter(p => p.length >= 3);
+
+    for (const parte of partesCasa) {
+      // Ignorar palavras genéricas
+      if (['rua','av','ave','avenida','rod','rodovia'].includes(parte)) continue;
+      if (textoNorm.includes(parte)) {
+        // Peso maior para partes mais específicas (números, lote, quadra)
+        score += /\d/.test(parte) ? 4 : 2;
+      }
+    }
+
+    // Bonus: número do lote/quadra presente no texto
+    const loteMatch = casaNorm.match(/(?:qd|lt|lote|quadra)\s*(\d+)/g);
+    if (loteMatch) {
+      for (const lt of loteMatch) {
+        const ltNorm = norm(lt).replace(/\s/g,'');
+        if (textoNorm.replace(/\s/g,'').includes(ltNorm)) score += 5;
+      }
+    }
+
+    // Número do endereço (ex: 311)
+    const numMatch = casaNorm.match(/,\s*(\d{2,4})/);
+    if (numMatch && textoNorm.includes(numMatch[1])) score += 6;
+
+    if (score >= 6 && score > melhorScore) {
+      melhorScore = score;
+      melhor = m;
+    }
+  }
+  return melhor;
 }
 
 // ========== BACKUP AUTOMÁTICO ÀS 02H ==========
