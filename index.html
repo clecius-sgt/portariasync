@@ -653,6 +653,7 @@ async function carregarDoSupabase() {
         dataEntrada: e.data_entrada,
         dataRetirada: e.data_retirada || null,
         retiradoPor: e.retirado_por || null,
+        retiranteRG: e.retirante_rg || null,
         assinatura: e.assinatura || null
       }));
       localStorage.setItem('encomendas', JSON.stringify(encomendas));
@@ -686,6 +687,7 @@ async function salvarEncomendasSupabase(enc) {
       data_entrada: enc.dataEntrada,
       data_retirada: enc.dataRetirada || null,
       retirado_por: enc.retiradoPor || null,
+      retirante_rg: enc.retiranteRG || null,
       assinatura: enc.assinatura || null
     };
     await sb.from('encomendas').upsert(row);
@@ -1095,7 +1097,7 @@ function itemEncomendaHTML(e) {
         <div class="morador">${e.moradorNome}</div>
         <div class="casa">🏠 ${e.moradorCasa}</div>
         <div class="codigo">📦 ${e.codigo} · ${e.transportadora}</div>
-        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' : '') : ''}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
+        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' + (e.retiranteRG ? ' · RG: ' + e.retiranteRG : '') : '') : ''}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
         ${e.obs ? `<div class="data">📝 ${e.obs}</div>` : ''}
       </div>
       <span class="badge ${e.status === 'retirado' ? 'badge-done' : 'badge-pending'}">${e.status === 'retirado' ? 'Retirado' : 'Aguardando'}</span>
@@ -1140,9 +1142,22 @@ function abrirModalRetirada(enc) {
         </button>
       </div>
 
-      <div id="campoOutraPessoa" style="display:none;margin-bottom:16px;">
-        <input type="text" id="inputRetirante" placeholder="Nome de quem está retirando..."
-          style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:16px;">
+      <div id="campoOutraPessoa" style="display:none;margin-bottom:12px;">
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <div style="flex:1;">
+            <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">Nome</label>
+            <input type="text" id="inputRetiranteNome" placeholder="Nome..."
+              style="width:100%;padding:10px;border:1px solid #dadce0;border-radius:8px;font-size:15px;">
+          </div>
+          <div style="flex:1;">
+            <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">Sobrenome</label>
+            <input type="text" id="inputRetiranteSobrenome" placeholder="Sobrenome..."
+              style="width:100%;padding:10px;border:1px solid #dadce0;border-radius:8px;font-size:15px;">
+          </div>
+        </div>
+        <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">RG <span style="color:#c0392b;">*obrigatório</span></label>
+        <input type="text" id="inputRetiranteRG" placeholder="Ex: 12.345.678-9"
+          style="width:100%;padding:10px;border:1px solid #dadce0;border-radius:8px;font-size:15px;">
       </div>
 
       <div id="nomeRetirante" style="padding:10px 14px;background:#e8f0fe;border-radius:8px;font-size:15px;color:#1a73e8;margin-bottom:16px;">
@@ -1181,14 +1196,23 @@ function selecionarRetirante(tipo, nome) {
   } else {
     campo.style.display = 'block';
     window._retirante = '';
-    nomeEl.textContent = '👥 Digite o nome abaixo';
+    window._retiranteRG = '';
+    nomeEl.textContent = '👥 Preencha os dados abaixo';
     btnOutro.style.borderColor = '#1a73e8'; btnOutro.style.background = '#e8f0fe'; btnOutro.style.color = '#1a73e8';
     btnProprio.style.borderColor = '#dadce0'; btnProprio.style.background = 'white'; btnProprio.style.color = '#5f6368';
-    setTimeout(() => document.getElementById('inputRetirante').focus(), 100);
-    document.getElementById('inputRetirante').oninput = function() {
-      window._retirante = this.value.trim();
-      nomeEl.textContent = '👥 ' + (this.value.trim() || 'Digite o nome acima');
-    };
+    setTimeout(() => document.getElementById('inputRetiranteNome').focus(), 100);
+    function atualizarRetirante() {
+      const nome = (document.getElementById('inputRetiranteNome').value || '').trim();
+      const sob  = (document.getElementById('inputRetiranteSobrenome').value || '').trim();
+      const rg   = (document.getElementById('inputRetiranteRG').value || '').trim();
+      window._retirante = nome + (sob ? ' ' + sob : '');
+      window._retiranteRG = rg;
+      const display = window._retirante || 'Preencha nome e sobrenome';
+      nomeEl.innerHTML = '\u{1F465} ' + display + (rg ? ' &nbsp;&middot;&nbsp; <strong>RG: ' + rg + '</strong>' : '');
+    }
+    document.getElementById('inputRetiranteNome').oninput = atualizarRetirante;
+    document.getElementById('inputRetiranteSobrenome').oninput = atualizarRetirante;
+    document.getElementById('inputRetiranteRG').oninput = atualizarRetirante;
   }
 }
 
@@ -1245,18 +1269,26 @@ function limparAssinatura() {
 function confirmarRetirada(id) {
   const retirante = (window._retirante || '').trim();
   if (!retirante) { toast('⚠️ Informe quem está retirando'); return; }
+
+  // Se for outra pessoa, RG é obrigatório
+  const ehOutraPessoa = document.getElementById('campoOutraPessoa').style.display !== 'none';
+  const rg = (window._retiranteRG || '').trim();
+  if (ehOutraPessoa && !rg) { toast('⚠️ O RG é obrigatório para terceiros'); return; }
+
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
   enc.status = 'retirado';
   enc.dataRetirada = new Date().toLocaleString('pt-BR');
   enc.retiradoPor = retirante;
+  enc.retiranteRG = ehOutraPessoa ? rg : null;
   enc.assinatura = window._assinaturaData || null;
   salvarEncomendas();
   salvarEncomendasSupabase(enc); // sync Supabase
   fecharModalRetirada();
   renderEncomendas();
   renderDashboard();
-  registrarLog('Retirada confirmada', enc.moradorNome + ' · Retirado por: ' + retirante + ' · Código: ' + enc.codigo);
+  const logDetalhe = enc.moradorNome + ' · Retirado por: ' + retirante + (rg ? ' · RG: ' + rg : '') + ' · Código: ' + enc.codigo;
+  registrarLog('Retirada confirmada', logDetalhe);
   toast('✅ Retirada confirmada por ' + retirante + '!');
 }
 
@@ -2488,3 +2520,4 @@ renderListaUsuarios();
 </script>
 </body>
 </html>
+ 
