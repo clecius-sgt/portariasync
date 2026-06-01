@@ -899,7 +899,7 @@ function renderListaUsuarios() {
         <div>
           <strong>${u.nome}</strong>
           <span style="font-size:12px;color:var(--muted);margin-left:8px;">${u.perfil === 'admin' ? '🔑 Admin' : u.perfil === 'supervisor' ? '👨‍💼 Supervisor' : '👷 Porteiro'}</span>
-          ${u.email ? `<div style="font-size:11px;color:var(--muted);">📧 ${u.email}</div>` : '<div style="font-size:11px;color:#e74c3c;">⚠️ Sem e-mail cadastrado</div>'}
+          ${u.email ? `<div style="font-size:11px;color:var(--muted);">📧 ${u.email}</div>` : (u.id !== 'u1' ? '<div style="font-size:11px;color:#e74c3c;">⚠️ Sem e-mail cadastrado</div>' : '<div style="font-size:11px;color:var(--muted);">📧 clecius@aasp.org.br</div>')}
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="abrirTrocarSenha('${u.id}')">🔑 Senha</button>
@@ -2688,11 +2688,14 @@ function gerarRelatorio() {
 }
 
 // ========== INIT ==========
+// Garante que admin padrão sempre existe
+if (!usuarios.find(u => u.id === 'u1')) {
+  usuarios.unshift({ id: 'u1', nome: 'Administrador', perfil: 'admin', senha: 'admin123' });
+  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+}
 iniciarLogin();
 renderListaUsuarios();
 
-// Iniciar login ao carregar a página
-iniciarLogin();
 </script>
 </body>
 </html>
