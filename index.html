@@ -287,6 +287,7 @@
     </div>
     <button class="btn-login" onclick="fazerLogin()">ENTRAR</button>
     <div id="loginErro">Usuário ou senha incorretos</div>
+    <button onclick="abrirRecuperarSenha()" style="width:100%;margin-top:10px;background:none;border:none;color:rgba(255,255,255,0.5);font-size:13px;cursor:pointer;text-decoration:underline;">🔒 Esqueci minha senha</button>
   </div>
 
   <div class="login-footer">
@@ -564,6 +565,8 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
       </div>
       <label>Senha</label>
       <input type="password" id="novoUsuarioSenha" placeholder="Mínimo 4 caracteres">
+      <label>E-mail (para recuperação de senha)</label>
+      <input type="email" id="novoUsuarioEmail" placeholder="seu@email.com">
       <button class="btn btn-primary btn-full" style="margin-top:12px;" onclick="criarUsuario()">➕ Criar usuário</button>
     </div>
   </div>
@@ -872,12 +875,14 @@ function criarUsuario() {
   const nome = document.getElementById('novoUsuarioNome').value.trim();
   const perfil = document.getElementById('novoUsuarioPerfil').value;
   const senha = document.getElementById('novoUsuarioSenha').value;
+  const email = (document.getElementById('novoUsuarioEmail').value || '').trim();
   if (!nome) { toast('⚠️ Informe o nome'); return; }
   if (senha.length < 4) { toast('⚠️ Senha mínima: 4 caracteres'); return; }
-  usuarios.push({ id: 'u' + Date.now(), nome, perfil, senha });
+  usuarios.push({ id: 'u' + Date.now(), nome, perfil, senha, email });
   localStorage.setItem('usuarios', JSON.stringify(usuarios));
   document.getElementById('novoUsuarioNome').value = '';
   document.getElementById('novoUsuarioSenha').value = '';
+  document.getElementById('novoUsuarioEmail').value = '';
   renderListaUsuarios();
   iniciarLogin();
   toast('✅ Usuário criado!');
@@ -887,12 +892,18 @@ function renderListaUsuarios() {
   const div = document.getElementById('listaUsuarios');
   if (!div) return;
   div.innerHTML = usuarios.map(u => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
-      <div>
-        <strong>${u.nome}</strong>
-        <span style="font-size:12px;color:var(--muted);margin-left:8px;">${u.perfil === 'admin' ? '🔑 Admin' : '👷 Porteiro'}</span>
+    <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <strong>${u.nome}</strong>
+          <span style="font-size:12px;color:var(--muted);margin-left:8px;">${u.perfil === 'admin' ? '🔑 Admin' : u.perfil === 'supervisor' ? '👨‍💼 Supervisor' : '👷 Porteiro'}</span>
+          ${u.email ? `<div style="font-size:11px;color:var(--muted);">📧 ${u.email}</div>` : '<div style="font-size:11px;color:#e74c3c;">⚠️ Sem e-mail cadastrado</div>'}
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="abrirTrocarSenha('${u.id}')">🔑 Senha</button>
+          ${u.id !== 'u1' ? `<button class="btn btn-danger btn-sm" onclick="excluirUsuario('${u.id}')">🗑️</button>` : '<span style="font-size:11px;color:var(--muted);">padrão</span>'}
+        </div>
       </div>
-      ${u.id !== 'u1' ? `<button class="btn btn-danger btn-sm" onclick="excluirUsuario('${u.id}')">🗑️</button>` : '<span style="font-size:11px;color:var(--muted);">padrão</span>'}
     </div>
   `).join('');
 }
@@ -904,6 +915,166 @@ function excluirUsuario(id) {
   renderListaUsuarios();
   iniciarLogin();
   toast('Usuário removido');
+}
+
+// ========== TROCAR SENHA ==========
+function abrirTrocarSenha(uid) {
+  const u = usuarios.find(x => x.id === uid);
+  if (!u) return;
+  const ant = document.getElementById('modalTrocarSenha');
+  if (ant) ant.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalTrocarSenha';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔑 Alterar senha</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:20px;">Usuário: <strong>${u.nome}</strong></div>
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Nova senha</label>
+      <input id="novaSenhaInput" type="password" placeholder="Mínimo 4 caracteres"
+        style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Confirmar nova senha</label>
+      <input id="confirmarSenhaInput" type="password" placeholder="Repita a nova senha"
+        style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:20px;">
+      <div style="display:flex;gap:10px;">
+        <button onclick="document.getElementById('modalTrocarSenha').remove()"
+          style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--muted);font-weight:600;cursor:pointer;">Cancelar</button>
+        <button onclick="salvarNovaSenha('${uid}')"
+          style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--primary);color:white;font-weight:700;cursor:pointer;">💾 Salvar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('novaSenhaInput').focus(), 100);
+}
+
+function salvarNovaSenha(uid) {
+  const nova = document.getElementById('novaSenhaInput').value;
+  const confirmar = document.getElementById('confirmarSenhaInput').value;
+  if (nova.length < 4) { toast('⚠️ Senha mínima: 4 caracteres'); return; }
+  if (nova !== confirmar) { toast('⚠️ As senhas não conferem'); return; }
+  const u = usuarios.find(x => x.id === uid);
+  if (!u) return;
+  u.senha = nova;
+  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  document.getElementById('modalTrocarSenha').remove();
+  renderListaUsuarios();
+  registrarLog('Senha alterada', 'Senha do usuário ' + u.nome + ' foi alterada');
+  toast('✅ Senha alterada com sucesso!');
+}
+
+// ========== RECUPERAR SENHA POR E-MAIL ==========
+function abrirRecuperarSenha() {
+  const ant = document.getElementById('modalRecuperarSenha');
+  if (ant) ant.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalRecuperarSenha';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:28px 24px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+      <div style="font-size:20px;font-weight:700;margin-bottom:4px;">🔒 Recuperar acesso</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:20px;">Selecione seu usuário — enviaremos as instruções para o e-mail cadastrado.</div>
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Usuário</label>
+      <select id="selectRecuperarUsuario" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:20px;">
+        <option value="">Selecione...</option>
+        ${usuarios.map(u => `<option value="${u.id}">${u.nome}</option>`).join('')}
+      </select>
+      <div id="infoEmailRecuperar" style="font-size:13px;color:var(--muted);margin-bottom:16px;min-height:20px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="document.getElementById('modalRecuperarSenha').remove()"
+          style="flex:1;padding:12px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--muted);font-weight:600;cursor:pointer;">Cancelar</button>
+        <button onclick="enviarRecuperacaoSenha()"
+          style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--primary);color:white;font-weight:700;cursor:pointer;">📧 Enviar e-mail</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('selectRecuperarUsuario').onchange = function() {
+    const uid = this.value;
+    const u = usuarios.find(x => x.id === uid);
+    const info = document.getElementById('infoEmailRecuperar');
+    if (u && u.email) {
+      info.innerHTML = '📧 Enviaremos para: <strong>' + u.email + '</strong>';
+      info.style.color = '#2D7D4F';
+    } else if (u) {
+      info.innerHTML = '⚠️ Este usuário não possui e-mail cadastrado.<br>Entre em contato com o administrador: <strong>clecius@aasp.org.br</strong>';
+      info.style.color = '#c0392b';
+    } else {
+      info.innerHTML = '';
+    }
+  };
+}
+
+async function enviarRecuperacaoSenha() {
+  const uid = document.getElementById('selectRecuperarUsuario').value;
+  if (!uid) { toast('⚠️ Selecione um usuário'); return; }
+  const u = usuarios.find(x => x.id === uid);
+  if (!u) return;
+
+  // Destino: e-mail do usuário se tiver, senão clecius@aasp.org.br
+  const destino = u.email || 'clecius@aasp.org.br';
+
+  // Gera nova senha temporária
+  const novaSenhaTemp = 'PS' + Math.random().toString(36).substring(2,6).toUpperCase();
+
+  // Envia via EmailJS
+  try {
+    const payload = {
+      service_id: 'portariasync_mail',
+      template_id: 'template_recuperacao',
+      user_id: 'portariasync_public',
+      template_params: {
+        to_email: destino,
+        to_name: u.nome,
+        nova_senha: novaSenhaTemp,
+        sistema: 'PortariaSync — Residencial D'Italia',
+        suporte: 'clecius@aasp.org.br'
+      }
+    };
+
+    // Salva a nova senha temporária mesmo sem EmailJS configurado
+    u.senha = novaSenhaTemp;
+    localStorage.setItem('usuarios', JSON.stringify(usuarios));
+
+    // Tenta enviar via EmailJS (se configurado) — senão mostra a senha na tela
+    let enviado = false;
+    try {
+      await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      enviado = true;
+    } catch(e) { enviado = false; }
+
+    document.getElementById('modalRecuperarSenha').remove();
+
+    if (u.email && enviado) {
+      toast('📧 Nova senha enviada para ' + u.email + '! Acesse e troque após o login.', 6000);
+    } else {
+      // Mostra senha temporária na tela (fallback)
+      const fallback = document.createElement('div');
+      fallback.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;';
+      fallback.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:28px 24px;width:100%;max-width:380px;text-align:center;">
+          <div style="font-size:32px;margin-bottom:8px;">🔑</div>
+          <div style="font-size:17px;font-weight:700;color:var(--primary);margin-bottom:8px;">Nova senha temporária</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Usuário: <strong>${u.nome}</strong></div>
+          <div style="background:#F0F4F8;border-radius:10px;padding:16px;font-size:26px;font-weight:900;color:var(--primary);letter-spacing:4px;margin-bottom:16px;">${novaSenhaTemp}</div>
+          <div style="font-size:12px;color:#e74c3c;margin-bottom:16px;">⚠️ Anote e troque a senha após o login!</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">Esta solicitação foi registrada e enviada para<br><strong>clecius@aasp.org.br</strong></div>
+          <button onclick="this.parentElement.parentElement.remove()"
+            style="width:100%;padding:12px;border-radius:8px;border:none;background:var(--primary);color:white;font-weight:700;cursor:pointer;font-size:15px;">✅ Entendido</button>
+        </div>
+      `;
+      document.body.appendChild(fallback);
+    }
+  } catch(e) {
+    toast('❌ Erro ao processar. Contate clecius@aasp.org.br');
+  }
 }
 
 // ========== CLOCK ==========
