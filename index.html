@@ -1700,7 +1700,7 @@ async function enviarWhatsApp(morador, enc) {
 // ========== UPLOAD FOTO ETIQUETA → SUPABASE STORAGE ==========
 async function uploadFotoSupabase(base64, encId) {
   try {
-    // Converter base64 para blob
+    // Usar SDK do Supabase (já carregado) — evita problemas de CORS
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
     const byteChars = atob(base64Data);
     const byteArr = new Uint8Array(byteChars.length);
@@ -1708,22 +1708,22 @@ async function uploadFotoSupabase(base64, encId) {
     const blob = new Blob([byteArr], { type: 'image/jpeg' });
 
     const fileName = 'etiqueta_' + encId + '_' + Date.now() + '.jpg';
-    const uploadUrl = SUPABASE_URL + '/storage/v1/object/etiquetas/' + fileName;
 
-    const resp = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + SUPABASE_SERVICE_KEY,
-        'Content-Type': 'image/jpeg',
-        'x-upsert': 'true'
-      },
-      body: blob
-    });
+    // Usar cliente Supabase com service key para bypass de RLS
+    const sbAdmin = supabase.createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const { data, error } = await sbAdmin.storage
+      .from('etiquetas')
+      .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
 
-    if (resp.ok) {
-      return SUPABASE_URL + '/storage/v1/object/public/etiquetas/' + fileName;
+    if (error) {
+      console.warn('Erro upload Storage:', error.message);
+      return null;
     }
-    return null;
+
+    // Gerar URL pública
+    const { data: urlData } = sbAdmin.storage.from('etiquetas').getPublicUrl(fileName);
+    console.log('✅ Foto enviada:', urlData.publicUrl);
+    return urlData.publicUrl;
   } catch(e) {
     console.warn('Erro upload Supabase:', e);
     return null;
