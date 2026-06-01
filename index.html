@@ -730,7 +730,9 @@ let _usuarios_default = [
   { id: 'u1', nome: 'Administrador', perfil: 'admin', senha: 'admin123' }
 ];
 let usuarios = JSON.parse(localStorage.getItem('usuarios') || 'null') || _usuarios_default;
-if (!localStorage.getItem('usuarios')) localStorage.setItem('usuarios', JSON.stringify(usuarios));
+// Garante que o usuário Administrador padrão sempre existe
+if (!usuarios.find(u => u.id === 'u1')) usuarios.unshift(_usuarios_default[0]);
+localStorage.setItem('usuarios', JSON.stringify(usuarios));
 
 let usuarioLogado = null;
 
@@ -2688,6 +2690,9 @@ function gerarRelatorio() {
 // ========== INIT ==========
 iniciarLogin();
 renderListaUsuarios();
+
+// Iniciar login ao carregar a página
+iniciarLogin();
 </script>
 </body>
 </html>
