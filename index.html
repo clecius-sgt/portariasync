@@ -638,6 +638,10 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwa3BtcHd3cGZpcGZoaW9xaWZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDA5MzE1MywiZXhwIjoyMDk1NjY5MTUzfQ.vlfwfpVq1HFooPY1nZ2vL_Mjwe7yICnhgFOkC33j_xc';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ========== Z-API (WhatsApp) ==========
+const ZAPI_URL      = 'https://api.z-api.io/instances/3F27E32E6A01D1A67C06D217A5857A3E/token/38BC8B4E38D967C4EC267A91';
+const ZAPI_CLIENT   = 'F24267a05255f4573b0f8ae3b466314b0S';
+
 // Salva/carrega do Supabase quando disponível, senão cai no localStorage
 async function carregarDoSupabase() {
   try {
@@ -1660,13 +1664,11 @@ async function reconectarWhatsApp() {
 }
 
 async function testarWhatsApp() {
-  salvarConfig();
-  if (!config.apiUrl || !config.apiKey) { toast('⚠️ Configure a URL e API Key primeiro'); return; }
   const numero = prompt('Digite seu número para teste (com DDD, sem +55):');
   if (!numero) return;
-  const msg = '✅ Teste do sistema de portaria – conexão funcionando!';
+  const msg = '✅ Teste do PortariaSync via Z-API – conexão funcionando!';
   const ok = await chamarEvolutionAPI(numero.replace(/\D/g,''), msg);
-  toast(ok ? '✅ Mensagem de teste enviada!' : '❌ Falha no envio. Verifique as configurações.');
+  toast(ok ? '✅ Mensagem de teste enviada via Z-API!' : '❌ Falha no envio. Verifique a instância Z-API.');
 }
 
 // ========== WHATSAPP / EVOLUTION API ==========
@@ -1681,18 +1683,14 @@ async function enviarWhatsApp(morador, enc) {
     .replace('{transportadora}', enc.transportadora)
     .replace('{codigo}', enc.codigo);
 
-  // Se tem foto, faz upload no Supabase e inclui link na mensagem
+  // Z-API: envia imagem direto (com legenda) ou só texto
+  let ok = false;
   if (enc.fotoEtiqueta) {
-    toast('⏳ Enviando foto da etiqueta...');
-    const linkFoto = await uploadFotoSupabase(enc.fotoEtiqueta, enc.id);
-    if (linkFoto) {
-      msg += '\n📸 Foto da etiqueta: ' + linkFoto;
-      enc.linkFotoEtiqueta = linkFoto;
-      salvarEncomendas();
-    }
+    // Envia foto com a mensagem como legenda
+    ok = await chamarEvolutionAPIMedia(morador.whats, enc.fotoEtiqueta, msg);
+  } else {
+    ok = await chamarEvolutionAPI(morador.whats, msg);
   }
-
-  const ok = await chamarEvolutionAPI(morador.whats, msg);
   if (ok) toast('📲 WhatsApp enviado para ' + morador.nome + '!');
   else toast('⚠️ Encomenda registrada, mas falha no WhatsApp. Avise manualmente.');
 }
@@ -1730,71 +1728,51 @@ async function uploadFotoSupabase(base64, encId) {
   }
 }
 
+// ========== Z-API — Envio de imagem ==========
 async function chamarEvolutionAPIMedia(numero, imagemBase64, caption) {
   try {
-    const url = config.apiUrl.replace(/\/$/, '') +
-      '/message/sendMedia/' + encodeURIComponent(config.instancia);
-    // Evolution API v1.8.x — formato correto para envio de imagem base64
+    const num = numero.replace(/\D/g,'');
+    const dest = num.startsWith('55') ? num : '55' + num;
     const base64 = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
-    const resp = await fetch(url, {
+    const resp = await fetch(ZAPI_URL + '/send-image', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': config.apiKey },
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Token': ZAPI_CLIENT
+      },
       body: JSON.stringify({
-        number: numero.startsWith('55') ? numero : '55' + numero,
-        mediaMessage: {
-          mediatype: 'image',
-          base64: base64,
-          caption: caption,
-          fileName: 'etiqueta.jpg'
-        }
+        phone: dest,
+        image: 'data:image/jpeg;base64,' + base64,
+        caption: caption
       })
     });
-    if (!resp.ok) {
-      // Fallback: se mediaMessage falhar, tenta formato alternativo
-      const resp2 = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': config.apiKey },
-        body: JSON.stringify({
-          number: numero.startsWith('55') ? numero : '55' + numero,
-          mediatype: 'image',
-          mimetype: 'image/jpeg',
-          media: base64,
-          caption: caption,
-          fileName: 'etiqueta.jpg'
-        })
-      });
-      if (!resp2.ok) {
-        // Fallback final: envia só o texto sem foto
-        console.warn('Envio de imagem falhou, enviando só texto');
-        return chamarEvolutionAPI(numero, caption);
-      }
-      return true;
-    }
-    return true;
+    const json = await resp.json();
+    console.log('Z-API imagem:', json);
+    return resp.ok;
   } catch(e) {
-    console.warn('Erro ao enviar mídia, tentando texto puro:', e);
+    console.error('Z-API erro imagem:', e);
     return chamarEvolutionAPI(numero, caption);
   }
 }
 
+
 async function chamarEvolutionAPI(numero, mensagem) {
   try {
-    const url = config.apiUrl.replace(/\/$/, '') +
-      '/message/sendText/' + encodeURIComponent(config.instancia);
-    const resp = await fetch(url, {
+    const num = numero.replace(/\D/g,'');
+    const dest = num.startsWith('55') ? num : '55' + num;
+    const resp = await fetch(ZAPI_URL + '/send-text', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': config.apiKey
+        'Client-Token': ZAPI_CLIENT
       },
-      body: JSON.stringify({
-        number: numero.startsWith('55') ? numero : '55' + numero,
-        textMessage: { text: mensagem }
-      })
+      body: JSON.stringify({ phone: dest, message: mensagem })
     });
+    const json = await resp.json();
+    console.log('Z-API texto:', json);
     return resp.ok;
   } catch(e) {
-    console.error('Evolution API error:', e);
+    console.error('Z-API erro texto:', e);
     return false;
   }
 }
