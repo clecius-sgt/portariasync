@@ -657,6 +657,20 @@ function buscarMemoriaRemetente(remetente) {
   return null;
 }
 
+function limparRemetentesInvalidos() {
+  // Remove da memória remetentes que apontam para moradores inexistentes ou inválidos
+  const idsValidos = new Set(moradores.map(m => m.id));
+  let alterou = false;
+  for (const [k, v] of Object.entries(_memoriaRemetentes)) {
+    if (!idsValidos.has(v.moradorId)) {
+      delete _memoriaRemetentes[k];
+      alterou = true;
+      console.log('Remetente inválido removido:', k);
+    }
+  }
+  if (alterou) localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+}
+
 async function carregarMemoriaSupabase() {
   try {
     const { data } = await sb.from('remetentes').select('*');
@@ -794,6 +808,7 @@ function fazerLogin() {
   agendarBackup();
   carregarDoSupabase(); // carrega dados do servidor
   carregarMemoriaSupabase(); // carrega memória de remetentes
+  limparRemetentesInvalidos(); // remove remetentes com moradores inválidos
 }
 
 function fazerLogout() {
@@ -917,7 +932,8 @@ function filtrarMoradores() {
   const filtrados = moradores.filter(m => m.nome.toLowerCase().includes(q) || m.casa.toLowerCase().includes(q));
   if (filtrados.length === 0) { lista.innerHTML = '<div style="padding:12px;color:var(--muted)">Nenhum morador encontrado</div>'; }
   else {
-    lista.innerHTML = filtrados.map(m =>
+    const filtradosOrdenados = filtrados.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    lista.innerHTML = filtradosOrdenados.map(m =>
       `<div style="padding:12px;cursor:pointer;border-bottom:1px solid var(--border);"
         onmousedown="selecionarMorador('${m.id}')"
         onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background=''"
@@ -2352,8 +2368,12 @@ function abrirModalSugestaoMorador(nomeExtraido, textoOCR, remetenteOCR) {
 function filtrarModalSugestao(q) {
   const modal = document.getElementById('modalSugestaoMorador');
   if (!modal) return;
-  const lista = (modal._moradores || moradores)
-    .filter(m => !q || m.nome.toLowerCase().includes(q.toLowerCase()) || m.casa.toLowerCase().includes(q.toLowerCase()))
+  // Sempre busca em TODOS os moradores quando filtrando
+  const base = q ? moradores : (modal._moradores || moradores);
+  const lista = base
+    .filter(m => !q || m.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(
+      q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')) || 
+      m.casa.toLowerCase().includes(q.toLowerCase()))
     .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const remetente = modal._remetente || '';
   document.getElementById('listaSugestoesModal').innerHTML = lista.length > 0
@@ -2364,7 +2384,7 @@ function filtrarModalSugestao(q) {
           <div style="font-weight:600;color:#1a1f3a;">${m.nome}</div>
           <div style="font-size:12px;color:var(--muted);">🏠 ${m.casa}</div>
         </div>`).join('')
-    : '<div style="color:var(--muted);text-align:center;">Nenhum resultado</div>';
+    : '<div style="color:var(--muted);text-align:center;">Nenhum resultado para "<strong>' + q + '</strong>"</div>';
 }
 
 function selecionarMoradorSugestao(id, remetente) {
