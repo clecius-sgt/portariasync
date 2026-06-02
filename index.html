@@ -2494,7 +2494,7 @@ function identificarMoradorOCR(textoOCR) {
 // ── Identificar morador pelo endereço da etiqueta ────────────────────────────
 function identificarMoradorPorEndereco(textoNorm) {
   const norm = (s) => (s || '').toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
   let melhor = null;
@@ -2504,41 +2504,33 @@ function identificarMoradorPorEndereco(textoNorm) {
     const casaNorm = norm(m.casa);
     let score = 0;
 
-    // ── CRITÉRIO 1: Nome da rua ─────────────────────────────────────────────
-    // Extrair nome da rua do cadastro (ex: "londres", "brasilia", "toquio")
+    // Extrair nome da rua e número do cadastro
+    // Ex: "QD05LT39 - Rua Londres, 131" → rua="londres", num="131"
     const ruaMatch = casaNorm.match(/rua\s+([a-z]+)/);
-    if (ruaMatch) {
-      const nomeRua = ruaMatch[1]; // ex: "londres"
-      if (nomeRua.length >= 4 && textoNorm.includes(nomeRua)) {
-        score += 15; // peso alto — nome da rua é muito específico
-      }
+    const numMatch = casaNorm.match(/,?\s*(\d{2,4})\s*(?:$|[^\d])/);
+
+    if (!ruaMatch || !numMatch) continue;
+
+    const nomeRua = ruaMatch[1]; // ex: "londres"
+    const numEnd  = numMatch[1]; // ex: "131"
+
+    // CRITÉRIO PRINCIPAL: rua + número devem aparecer JUNTOS no texto OCR
+    // Aceita: "Londres, 131" ou "Londres 131" ou "Londres,131"
+    const padraoRuaNum = new RegExp(nomeRua + '[^a-z0-9]{0,5}' + numEnd + '\\b');
+    if (padraoRuaNum.test(textoNorm)) {
+      score += 50; // correspondência exata rua+número = alta certeza
+    } else {
+      // Se não encontrou juntos, não considera — evita falsos positivos
+      continue;
     }
 
-    // ── CRITÉRIO 2: Número do endereço ──────────────────────────────────────
-    // Ex: "131" em "Rua Londres, 131"
-    const numMatch = casaNorm.match(/,?\s*(\d{2,4})\s*(?:$|,)/);
-    if (numMatch) {
-      const num = numMatch[1];
-      // Verifica se o número aparece próximo ao nome da rua no texto
-      if (textoNorm.includes(num)) score += 10;
-    }
+    // Bônus: Bady Bassitt no texto confirma localidade correta
+    if (/bady\s*bass?itt/i.test(textoNorm)) score += 10;
 
-    // ── CRITÉRIO 3: Rua + Número juntos (máxima certeza) ───────────────────
-    if (ruaMatch && numMatch) {
-      const ruaNum = ruaMatch[1] + ' ' + numMatch[1]; // ex: "londres 131"
-      const ruaNumAlt = ruaMatch[1] + ', ' + numMatch[1]; // ex: "londres, 131"
-      if (textoNorm.includes(ruaNum) || textoNorm.replace(/,/g,' ').includes(ruaNum)) {
-        score += 20; // bônus máximo — rua + número exatos
-      }
-    }
+    // Bônus: CEP 15115
+    if (textoNorm.includes('15115')) score += 5;
 
-    // ── CRITÉRIO 4: Bady Bassitt no texto confirma que é morador local ──────
-    if (/bady\s*bass?itt/i.test(textoNorm)) score += 5;
-
-    // ── CRITÉRIO 5: CEP da cidade (15115-000) ───────────────────────────────
-    if (textoNorm.includes('15115')) score += 8;
-
-    if (score >= 20 && score > melhorScore) {
+    if (score > melhorScore) {
       melhorScore = score;
       melhor = m;
     }
