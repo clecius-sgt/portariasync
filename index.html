@@ -2504,39 +2504,48 @@ function identificarMoradorPorEndereco(textoNorm) {
     const casaNorm = norm(m.casa);
     let score = 0;
 
-    // Extrair partes do endereço: rua, número, quadra, lote
-    // Ex: "QD01LT11 – Rua Brasilia, 311"
-    const partesCasa = casaNorm.split(/[\s,\-]+/).filter(p => p.length >= 3);
-
-    for (const parte of partesCasa) {
-      // Ignorar palavras genéricas
-      if (['rua','av','ave','avenida','rod','rodovia'].includes(parte)) continue;
-      if (textoNorm.includes(parte)) {
-        // Peso maior para partes mais específicas (números, lote, quadra)
-        score += /\d/.test(parte) ? 4 : 2;
+    // ── CRITÉRIO 1: Nome da rua ─────────────────────────────────────────────
+    // Extrair nome da rua do cadastro (ex: "londres", "brasilia", "toquio")
+    const ruaMatch = casaNorm.match(/rua\s+([a-z]+)/);
+    if (ruaMatch) {
+      const nomeRua = ruaMatch[1]; // ex: "londres"
+      if (nomeRua.length >= 4 && textoNorm.includes(nomeRua)) {
+        score += 15; // peso alto — nome da rua é muito específico
       }
     }
 
-    // Bonus: número do lote/quadra presente no texto
-    const loteMatch = casaNorm.match(/(?:qd|lt|lote|quadra)\s*(\d+)/g);
-    if (loteMatch) {
-      for (const lt of loteMatch) {
-        const ltNorm = norm(lt).replace(/\s/g,'');
-        if (textoNorm.replace(/\s/g,'').includes(ltNorm)) score += 5;
+    // ── CRITÉRIO 2: Número do endereço ──────────────────────────────────────
+    // Ex: "131" em "Rua Londres, 131"
+    const numMatch = casaNorm.match(/,?\s*(\d{2,4})\s*(?:$|,)/);
+    if (numMatch) {
+      const num = numMatch[1];
+      // Verifica se o número aparece próximo ao nome da rua no texto
+      if (textoNorm.includes(num)) score += 10;
+    }
+
+    // ── CRITÉRIO 3: Rua + Número juntos (máxima certeza) ───────────────────
+    if (ruaMatch && numMatch) {
+      const ruaNum = ruaMatch[1] + ' ' + numMatch[1]; // ex: "londres 131"
+      const ruaNumAlt = ruaMatch[1] + ', ' + numMatch[1]; // ex: "londres, 131"
+      if (textoNorm.includes(ruaNum) || textoNorm.replace(/,/g,' ').includes(ruaNum)) {
+        score += 20; // bônus máximo — rua + número exatos
       }
     }
 
-    // Número do endereço (ex: 311)
-    const numMatch = casaNorm.match(/,\s*(\d{2,4})/);
-    if (numMatch && textoNorm.includes(numMatch[1])) score += 6;
+    // ── CRITÉRIO 4: Bady Bassitt no texto confirma que é morador local ──────
+    if (/bady\s*bass?itt/i.test(textoNorm)) score += 5;
 
-    if (score >= 6 && score > melhorScore) {
+    // ── CRITÉRIO 5: CEP da cidade (15115-000) ───────────────────────────────
+    if (textoNorm.includes('15115')) score += 8;
+
+    if (score >= 20 && score > melhorScore) {
       melhorScore = score;
       melhor = m;
     }
   }
   return melhor;
 }
+
 
 // ========== BACKUP AUTOMÁTICO ÀS 02H ==========
 // ========== PING EVOLUTION API (mantém servidor acordado) ==========
