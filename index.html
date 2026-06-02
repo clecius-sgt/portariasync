@@ -2303,6 +2303,80 @@ function moradesDaRua(textoNorm) {
   });
 }
 
+// ========== MODAL SUGESTÃO DE MORADOR ==========
+function abrirModalSugestaoMorador(nomeExtraido, textoOCR, remetenteOCR) {
+  const ant = document.getElementById('modalSugestaoMorador');
+  if (ant) ant.remove();
+
+  // Moradores da mesma rua (ordenados alfabeticamente)
+  const porRua = moradesDaRua(textoOCR)
+    .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  const modal = document.createElement('div');
+  modal.id = 'modalSugestaoMorador';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  const listaSugestoes = porRua.length > 0
+    ? porRua.map(m => `
+        <div onclick="selecionarMoradorSugestao('${m.id}', '${(remetenteOCR||'').replace(/'/g,'')}')"
+          style="padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;background:white;"
+          onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background='white'">
+          <div style="font-weight:600;color:#1a1f3a;">${m.nome}</div>
+          <div style="font-size:12px;color:var(--muted);">🏠 ${m.casa}</div>
+        </div>`).join('')
+    : '<div style="color:var(--muted);text-align:center;padding:12px;">Nenhum morador encontrado pela rua</div>';
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:85vh;overflow-y:auto;">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔍 Selecione o morador</div>
+      ${nomeExtraido ? `<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Nome na etiqueta: <strong>"${nomeExtraido}"</strong></div>` : '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Moradores da mesma rua — em ordem alfabética:</div>'}
+      <div style="margin-bottom:8px;">
+        <input type="text" placeholder="🔍 Filtrar por nome..." oninput="filtrarModalSugestao(this.value)"
+          style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:8px;">
+      </div>
+      <div id="listaSugestoesModal">${listaSugestoes}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+        <button onclick="document.getElementById('modalSugestaoMorador').remove()"
+          style="padding:12px;border-radius:8px;border:1px solid var(--border);background:white;color:var(--muted);font-weight:600;cursor:pointer;">
+          Buscar manualmente
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  // Guardar moradores para filtro
+  modal._moradores = porRua;
+  modal._remetente = remetenteOCR;
+}
+
+function filtrarModalSugestao(q) {
+  const modal = document.getElementById('modalSugestaoMorador');
+  if (!modal) return;
+  const lista = (modal._moradores || moradores)
+    .filter(m => !q || m.nome.toLowerCase().includes(q.toLowerCase()) || m.casa.toLowerCase().includes(q.toLowerCase()))
+    .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const remetente = modal._remetente || '';
+  document.getElementById('listaSugestoesModal').innerHTML = lista.length > 0
+    ? lista.map(m => `
+        <div onclick="selecionarMoradorSugestao('${m.id}', '${remetente.replace(/'/g,'')}')"
+          style="padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;background:white;"
+          onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background='white'">
+          <div style="font-weight:600;color:#1a1f3a;">${m.nome}</div>
+          <div style="font-size:12px;color:var(--muted);">🏠 ${m.casa}</div>
+        </div>`).join('')
+    : '<div style="color:var(--muted);text-align:center;">Nenhum resultado</div>';
+}
+
+function selecionarMoradorSugestao(id, remetente) {
+  const m = moradores.find(x => x.id === id);
+  if (!m) return;
+  const ant = document.getElementById('modalSugestaoMorador');
+  if (ant) ant.remove();
+  selecionarMorador(id);
+  if (remetente && remetente.length > 3) salvarMemoriaRemetente(remetente, m);
+  toast('✅ Morador selecionado: ' + m.nome);
+}
+
 // ========== INIT ==========
 iniciarLogin();
 renderListaUsuarios();
