@@ -2293,23 +2293,47 @@ function resizarImagem(file, maxDim) {
 function extrairCodigoOCR(textoOCR) {
   const linhas = textoOCR.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
 
-  for (const linha of linhas) {
-    // Código numérico longo (Mercado Livre, Shopee etc) — 10 a 20 dígitos
-    const numLongo = linha.match(/\b(\d{10,20})\b/);
-    if (numLongo) return numLongo[1];
+  // Palavras que indicam que a linha é um número de pedido, não código de rastreio
+  const ignorarLinha = (l) => /order|pedido|#|client.id|cnpj|cpf|invoice|nf:|nota/i.test(l);
 
-    // Código alfanumérico tipo Correios: AA000000000BR, BR000000000BR
+  // PASSO 1: código de barras alfanumérico grande (ex: AJ26051411893901)
+  // Esses aparecem em destaque na etiqueta, geralmente sozinhos na linha
+  for (const linha of linhas) {
+    if (ignorarLinha(linha)) continue;
+    // Código tipo Shopee/Anjun: AJ + dígitos longos
+    const shopee = linha.match(/\b(AJ\d{10,})/);
+    if (shopee) return shopee[1];
+  }
+
+  // PASSO 2: código alfanumérico de rastreio (Correios, transportadoras)
+  for (const linha of linhas) {
+    if (ignorarLinha(linha)) continue;
+    // Correios: AA000000000BR
     const correios = linha.match(/\b([A-Z]{2}\d{9}[A-Z]{2})\b/);
     if (correios) return correios[1];
-
-    // Código após palavras-chave
-    const aposChave = linha.match(/(?:c[oó]digo|rastreio|rastreamento|tracking|n[°º]\.?\s*pedido)[:\s#]*([A-Z0-9]{6,})/i);
-    if (aposChave) return aposChave[1];
-
-    // Código alfanumérico genérico com letras e números misturados (min 8 chars)
-    const alfanum = linha.match(/\b([A-Z]{2,4}\d{6,}[A-Z0-9]*)\b/);
-    if (alfanum) return alfanum[1];
   }
+
+  // PASSO 3: código após palavras-chave de rastreio
+  for (const linha of linhas) {
+    const aposChave = linha.match(/(?:c[oó]digo|rastreio|rastreamento|tracking)[:\s#]*([A-Z0-9]{6,})/i);
+    if (aposChave) return aposChave[1];
+  }
+
+  // PASSO 4: código numérico longo (Mercado Livre etc) — só se não for order#
+  for (const linha of linhas) {
+    if (ignorarLinha(linha)) continue;
+    const numLongo = linha.match(/\b(\d{10,20})\b/);
+    if (numLongo) return numLongo[1];
+  }
+
+  // PASSO 5: alfanumérico genérico (último recurso)
+  for (const linha of linhas) {
+    if (ignorarLinha(linha)) continue;
+    // Exclui padrões BR...N (order number Shopee)
+    const alfanum = linha.match(/\b([A-Z]{2,4}\d{6,}[A-Z0-9]*)\b/);
+    if (alfanum && !/^BR\d+N$/.test(alfanum[1])) return alfanum[1];
+  }
+
   return null;
 }
 
