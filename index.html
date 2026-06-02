@@ -618,6 +618,58 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 const SUPABASE_URL = 'https://bpkpmpwwpfipfhloqifo.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwa3BtcHd3cGZpcGZoaW9xaWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwOTMxNTMsImV4cCI6MjA5NTY2OTE1M30.ssWeWVC3ZLjqJ2OQGxKBrZ9MuRS0FI_KQVGonrHnS0k';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ========== MEMÓRIA DE REMETENTES ==========
+// Armazena: { remetente -> { moradorId, moradorNome, moradorCasa } }
+let _memoriaRemetentes = JSON.parse(localStorage.getItem('memoriaRemetentes') || '{}');
+
+function salvarMemoriaRemetente(remetente, morador) {
+  if (!remetente || remetente.length < 4) return;
+  // Ignorar remetentes corporativos (marketplaces)
+  const corporativos = ['shopee','mercado','amazon','correios','shein','loggi','jadlog','anjun','fedex','dhl','total'];
+  const rem = remetente.toLowerCase();
+  if (corporativos.some(c => rem.includes(c))) return;
+  _memoriaRemetentes[rem] = {
+    moradorId: morador.id,
+    moradorNome: morador.nome,
+    moradorCasa: morador.casa,
+    ultimaEntrega: new Date().toLocaleString('pt-BR')
+  };
+  localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+  // Salvar no Supabase também
+  sb.from('remetentes').upsert({ remetente: rem, morador_id: morador.id,
+    morador_nome: morador.nome, morador_casa: morador.casa }).then(() => {}).catch(() => {});
+  console.log('Remetente memorizado:', remetente, '->', morador.nome);
+}
+
+function buscarMemoriaRemetente(remetente) {
+  if (!remetente || remetente.length < 4) return null;
+  const rem = remetente.toLowerCase().trim();
+  // Busca exata
+  if (_memoriaRemetentes[rem]) return _memoriaRemetentes[rem];
+  // Busca parcial (primeiro nome do remetente)
+  const primeiroNome = rem.split(/\s+/)[0];
+  if (primeiroNome.length >= 4) {
+    for (const [k, v] of Object.entries(_memoriaRemetentes)) {
+      if (k.includes(primeiroNome) || primeiroNome.includes(k.split(' ')[0])) return v;
+    }
+  }
+  return null;
+}
+
+async function carregarMemoriaSupabase() {
+  try {
+    const { data } = await sb.from('remetentes').select('*');
+    if (data) {
+      data.forEach(r => {
+        _memoriaRemetentes[r.remetente] = {
+          moradorId: r.morador_id, moradorNome: r.morador_nome, moradorCasa: r.morador_casa
+        };
+      });
+      localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+    }
+  } catch(e) { console.warn('Memória remetentes offline'); }
+}
 const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwa3BtcHd3cGZpcGZoaW9xaWZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDA5MzE1MywiZXhwIjoyMDk1NjY5MTUzfQ.vlfwfpVq1HFooPY1nZ2vL_Mjwe7yICnhgFOkC33j_xc';
 
 // ========== Z-API ==========
@@ -741,6 +793,7 @@ function fazerLogin() {
   renderDashboard();
   agendarBackup();
   carregarDoSupabase(); // carrega dados do servidor
+  carregarMemoriaSupabase(); // carrega memória de remetentes
 }
 
 function fazerLogout() {
@@ -1618,22 +1671,41 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
 
     // Prioridade: endereço exato > nome
     const textoNormBusca = textoOCR.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ');
+
+    // Extrair remetente do texto OCR
+    const remetenteOCR = extrairRemetenteOCR(textoOCR);
+    console.log('Remetente lido:', remetenteOCR);
+
+    // 1ª prioridade: memória de remetentes
+    const memoriaRem = remetenteOCR ? buscarMemoriaRemetente(remetenteOCR) : null;
+
+    if (memoriaRem) {
+      // Remetente já conhecido — confirmar com o porteiro
+      mostrarStatusOCR(statusEl, 'aviso', '⏳ Verificando remetente...');
+      const moradorMemoria = moradores.find(m => m.id === memoriaRem.moradorId);
+      if (moradorMemoria) {
+        abrirModalConfirmarRemetente(remetenteOCR, moradorMemoria, textoOCR, codigoJaLido, transpOCR, statusEl);
+        return;
+      }
+    }
+
+    // 2ª prioridade: endereço exato
     const moradorPorEnd = identificarMoradorPorEndereco(textoNormBusca);
     const resultOCR = identificarMoradorOCR(textoOCR);
     const { nomeExtraido, debug } = resultOCR;
     const morador = moradorPorEnd || resultOCR.morador;
-    if (moradorPorEnd) resultOCR.porEndereco = true;
 
     if (morador) {
       selecionarMorador(morador.id);
+      // Memorizar o remetente para futuras entregas
+      if (remetenteOCR) salvarMemoriaRemetente(remetenteOCR, morador);
       const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
-      mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo);
-    } else if (nomeExtraido) {
-      mostrarStatusOCR(statusEl, 'aviso',
-        '⚠️ Nome lido: "' + nomeExtraido + '" — não encontrado no cadastro. Busque manualmente.\nCandidatos: ' + debug);
+      const aviso = moradorPorEnd ? ' 📍 (identificado pelo endereço)' : '';
+      mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo + aviso);
     } else {
-      mostrarStatusOCR(statusEl, 'aviso',
-        '⚠️ Não identificou o destinatário. Texto lido: ' + textoOCR.substring(0, 200).replace(/\n/g, ' | '));
+      // Não identificou — abrir modal com moradores da rua
+      mostrarStatusOCR(statusEl, 'aviso', '⚠️ Morador não identificado. ' + (nomeExtraido ? 'Nome lido: "' + nomeExtraido + '"' : ''));
+      abrirModalSugestaoMorador(nomeExtraido || '', textoOCR, remetenteOCR);
     }
 
   } catch(e) {
@@ -2106,6 +2178,81 @@ function gerarRelatorio() {
   janela.document.write(html);
   janela.document.close();
   setTimeout(() => janela.print(), 800);
+}
+
+// ========== EXTRAÇÃO DE REMETENTE ==========
+function extrairRemetenteOCR(textoOCR) {
+  const linhas = textoOCR.split(/\n/).map(l => l.trim()).filter(l => l.length > 3);
+  for (let i = 0; i < linhas.length; i++) {
+    const l = linhas[i];
+    // Linha com "Remetente:" ou "De:"
+    if (/^remetente[:\s]/i.test(l)) {
+      const nome = l.replace(/^remetente[:\s]*/i, '').trim();
+      if (nome.length > 3) return nome;
+      if (i+1 < linhas.length) return linhas[i+1].trim();
+    }
+    if (/^de[:\s]/i.test(l) && l.length < 40) {
+      const nome = l.replace(/^de[:\s]*/i, '').trim();
+      if (nome.length > 3) return nome;
+    }
+  }
+  // Busca "Remetente" em qualquer posição
+  for (const l of linhas) {
+    const m = l.match(/remetente[:\s]+([^\n]{4,40})/i);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+// ========== MODAL CONFIRMAR REMETENTE CONHECIDO ==========
+function abrirModalConfirmarRemetente(remetente, morador, textoOCR, codigoJaLido, transpOCR, statusEl) {
+  const ant = document.getElementById('modalConfirmarRemetente');
+  if (ant) ant.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalConfirmarRemetente';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">📬 Remetente conhecido</div>
+      <div style="font-size:14px;color:#5f6368;margin-bottom:16px;">
+        Remetente: <strong>${remetente}</strong><br>
+        Última entrega foi para:
+      </div>
+      <div style="background:#e8f0fe;border-radius:10px;padding:14px;margin-bottom:20px;">
+        <div style="font-size:16px;font-weight:700;color:#1a1f3a;">${morador.nome}</div>
+        <div style="font-size:13px;color:#5f6368;">🏠 ${morador.casa}</div>
+      </div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Esta encomenda é para o mesmo morador?</div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="confirmarRemetenteConhecido('${morador.id}', '${remetente}', '${codigoJaLido||''}', '${transpOCR||''}')"
+          style="flex:1;padding:14px;border-radius:8px;border:none;background:#34a853;color:white;font-weight:700;cursor:pointer;font-size:15px;">
+          ✅ Sim, é para ${morador.nome.split(' ')[0]}
+        </button>
+        <button onclick="recusarRemetenteConhecido('${remetente}', \`${textoOCR.replace(/`/g,"'").substring(0,200)}\`)"
+          style="flex:1;padding:14px;border-radius:8px;border:none;background:#f0f4f8;color:#1a1f3a;font-weight:700;cursor:pointer;font-size:15px;">
+          ❌ Não, outro morador
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function confirmarRemetenteConhecido(moradorId, remetente, codigo, transp) {
+  const m = moradores.find(x => x.id === moradorId);
+  if (!m) return;
+  document.getElementById('modalConfirmarRemetente').remove();
+  selecionarMorador(moradorId);
+  if (codigo) document.getElementById('inputCodigo').value = codigo;
+  if (transp) document.getElementById('inputTransportadora').value = transp;
+  toast('✅ Morador confirmado: ' + m.nome);
+}
+
+function recusarRemetenteConhecido(remetente, textoOCR) {
+  document.getElementById('modalConfirmarRemetente').remove();
+  // Abre modal de sugestão com moradores da rua
+  abrirModalSugestaoMorador('', textoOCR, remetente);
 }
 
 // ========== IDENTIFICAR POR ENDEREÇO ==========
