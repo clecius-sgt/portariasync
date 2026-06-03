@@ -2194,25 +2194,28 @@ function gerarRelatorio() {
 // ========== EXTRAÇÃO DE REMETENTE ==========
 function extrairRemetenteOCR(textoOCR) {
   const linhas = textoOCR.split(/\n/).map(l => l.trim()).filter(l => l.length > 3);
+  
+  // Palavras que indicam que a linha NÃO é nome de remetente
+  const ignorar = /shopee|mercado|amazon|anjun|correios|shein|loggi|jadlog|ltda|s\.a|servicos|tecnologia|cnpj|cpf|order|courier|remessa|devolucao|declaracao|alfandega|conteudo|descricao|retorno|origem|tratar|abandono|ajuda|suporte|avanti|room|road|east|west|north|south|middle|changping|guarulhos|water|chata|linqian/i;
+
   for (let i = 0; i < linhas.length; i++) {
     const l = linhas[i];
-    // Linha com "Remetente:" ou "De:"
+    // Linha explicitamente marcada como Remetente
     if (/^remetente[:\s]/i.test(l)) {
       const nome = l.replace(/^remetente[:\s]*/i, '').trim();
-      if (nome.length > 3) return nome;
-      if (i+1 < linhas.length) return linhas[i+1].trim();
-    }
-    if (/^de[:\s]/i.test(l) && l.length < 40) {
-      const nome = l.replace(/^de[:\s]*/i, '').trim();
-      if (nome.length > 3) return nome;
+      if (nome.length > 3 && !ignorar.test(nome)) return nome;
+      // Tenta próxima linha
+      if (i+1 < linhas.length && !ignorar.test(linhas[i+1])) return linhas[i+1].trim();
     }
   }
-  // Busca "Remetente" em qualquer posição
+  
+  // Busca "Remetente:" em qualquer posição da linha
   for (const l of linhas) {
     const m = l.match(/remetente[:\s]+([^\n]{4,40})/i);
-    if (m) return m[1].trim();
+    if (m && !ignorar.test(m[1])) return m[1].trim();
   }
-  return null;
+  
+  return null; // Não extrai nome se não tiver certeza
 }
 
 // ========== MODAL CONFIRMAR REMETENTE CONHECIDO ==========
@@ -2339,8 +2342,8 @@ function abrirModalSugestaoMorador(nomeExtraido, textoOCR, remetenteOCR) {
 
   modal.innerHTML = `
     <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:85vh;overflow-y:auto;">
-      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔍 Selecione o morador</div>
-      ${nomeExtraido ? `<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Nome na etiqueta: <strong>"${nomeExtraido}"</strong></div>` : '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Moradores da mesma rua — em ordem alfabética:</div>'}
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔍 Selecione o Morador ou filtre pela Rua</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Moradores da Rua Londres — em ordem alfabética. Use o campo abaixo para filtrar por nome ou rua.</div>
       <div style="margin-bottom:8px;">
         <input type="text" placeholder="🔍 Filtrar por nome..." oninput="filtrarModalSugestao(this.value)"
           style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:8px;">
