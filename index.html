@@ -299,7 +299,8 @@
     <h1>📦 Portaria<span style="color:var(--gold);">Sync</span></h1>
     <div class="header-sub" id="headerCondominio">Residencial D'Italia</div>
   </div>
-  <div class="header-right">
+  <div class="header-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+      <div id="whatsStatusBadge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.1);color:#aaa;">⏳ Verificando WhatsApp...</div>
     <div id="clockDisplay"></div>
     <div id="headerUsuario" style="font-size:11px;color:var(--gold);margin-top:2px;"></div>
   </div>
@@ -1290,21 +1291,15 @@ function salvarConfig() {
 }
 
 async function testarWhatsApp() {
-  salvarConfig();
-  if (!config.apiUrl || !config.apiKey) { toast('⚠️ Configure a URL e API Key primeiro'); return; }
   const numero = prompt('Digite seu número para teste (com DDD, sem +55):');
   if (!numero) return;
-  const msg = '✅ Teste do sistema de portaria – conexão funcionando!';
+  const msg = '✅ PortariaSync — WhatsApp conectado e funcionando! ' + new Date().toLocaleString('pt-BR');
   const ok = await chamarEvolutionAPI(numero.replace(/\D/g,''), msg);
   toast(ok ? '✅ Mensagem de teste enviada!' : '❌ Falha no envio. Verifique as configurações.');
 }
 
 // ========== WHATSAPP / EVOLUTION API ==========
 async function enviarWhatsApp(morador, enc) {
-  if (!config.apiUrl || !config.apiKey) {
-    toast('⚠️ Configure a Evolution API para enviar WhatsApp automático');
-    return;
-  }
   let msg = (config.mensagem || 'Olá {nome}! 📦 Chegou uma encomenda na portaria.\n🏠 {casa}\n🚚 {transportadora}\n🔖 Código: {codigo}')
     .replace('{nome}', morador.nome)
     .replace('{casa}', morador.casa)
