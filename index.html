@@ -1171,20 +1171,82 @@ function iniciarAssinatura() {
 
   function posRelativa(e) {
     const r = canvas.getBoundingClientRect();
-    const src = e.touches ? e.touches[0] : e;
-    return { x: src.clientX - r.left, y: src.clientY - r.top };
+    // Suporta mouse, touch e caneta digitalizadora (Wacom, stylus)
+    if (e.touches && e.touches.length > 0) {
+      return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+    }
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
-  function iniciar(e) { e.preventDefault(); desenhando = true; const p = posRelativa(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
-  function desenhar(e) { e.preventDefault(); if (!desenhando) return; const p = posRelativa(e); ctx.lineTo(p.x, p.y); ctx.stroke(); temAssinatura = true; }
-  function parar(e) { e.preventDefault(); desenhando = false; if (temAssinatura) window._assinaturaData = canvas.toDataURL('image/png'); }
+  function iniciar(e) {
+    e.preventDefault();
+    desenhando = true;
+    const p = posRelativa(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  }
 
-  canvas.addEventListener('mousedown', iniciar);
-  canvas.addEventListener('mousemove', desenhar);
-  canvas.addEventListener('mouseup', parar);
-  canvas.addEventListener('touchstart', iniciar, { passive: false });
-  canvas.addEventListener('touchmove', desenhar, { passive: false });
-  canvas.addEventListener('touchend', parar, { passive: false });
+  function desenhar(e) {
+    e.preventDefault();
+    if (!desenhando) return;
+    const p = posRelativa(e);
+    // Pressão da caneta Wacom (se disponível) — linha mais grossa com mais pressão
+    if (e.pressure && e.pressure > 0) {
+      ctx.lineWidth = Math.max(1, e.pressure * 4);
+    } else {
+      ctx.lineWidth = 2.5;
+    }
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    temAssinatura = true;
+  }
+
+  function parar(e) {
+    e.preventDefault();
+    desenhando = false;
+    if (temAssinatura) window._assinaturaData = canvas.toDataURL('image/png');
+  }
+
+  // Remover listeners anteriores clonando o canvas
+  const novo = canvas.cloneNode(true);
+  canvas.parentNode.replaceChild(novo, canvas);
+  const c = document.getElementById('canvasAssinatura');
+  const cx = c.getContext('2d');
+  cx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  cx.strokeStyle = '#1a1a1a';
+  cx.lineWidth = 2.5;
+  cx.lineCap = 'round';
+  cx.lineJoin = 'round';
+
+  // Mouse (computador)
+  c.addEventListener('mousedown', iniciar);
+  c.addEventListener('mousemove', desenhar);
+  c.addEventListener('mouseup', parar);
+  c.addEventListener('mouseleave', parar);
+
+  // Touch (dedo no celular/tablet)
+  c.addEventListener('touchstart', iniciar, { passive: false });
+  c.addEventListener('touchmove', desenhar, { passive: false });
+  c.addEventListener('touchend', parar, { passive: false });
+
+  // Pointer Events — caneta Wacom, Surface Pen, Apple Pencil, stylus genérico
+  c.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
+      c.setPointerCapture(e.pointerId);
+      iniciar(e);
+    }
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'pen' || e.pointerType === 'mouse') desenhar(e);
+  });
+  c.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'pen' || e.pointerType === 'mouse') parar(e);
+  });
+  c.addEventListener('pointercancel', parar);
+
+  // Estilo cursor para indicar área de assinatura
+  c.style.touchAction = 'none'; // essencial para canetas funcionarem
+  c.style.cursor = 'crosshair';
 }
 
 function limparAssinatura() {
