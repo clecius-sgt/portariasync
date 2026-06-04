@@ -1102,9 +1102,9 @@ function abrirModalRetirada(enc) {
         👤 ${enc.moradorNome}
       </div>
 
-      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Assinatura <span style="font-weight:400;color:#aaa;">(assine com o dedo)</span></label>
+      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Assinatura <span style="font-weight:400;color:#aaa;">(dedo, caneta touch ou mouse)</span></label>
       <canvas id="canvasAssinatura" width="360" height="120"
-        style="width:100%;height:120px;border:1px solid #dadce0;border-radius:8px;background:#f8f9fa;touch-action:none;cursor:crosshair;display:block;"></canvas>
+        style="width:100%;height:140px;border:1px solid #dadce0;border-radius:8px;background:#f8f9fa;touch-action:none;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;"></canvas>
       <button onclick="limparAssinatura()" style="margin-top:4px;background:none;border:none;color:#1a73e8;font-size:13px;cursor:pointer;padding:0;">🗑️ Limpar assinatura</button>
 
       <div style="display:flex;gap:10px;margin-top:16px;">
@@ -1153,99 +1153,98 @@ function fecharModalRetirada() {
 
 // ========== ASSINATURA DIGITAL ==========
 function iniciarAssinatura() {
-  const canvas = document.getElementById('canvasAssinatura');
+  const canvasAntigo = document.getElementById('canvasAssinatura');
+  if (!canvasAntigo) return;
+
+  // Remove listeners antigos sem manter referencias para o canvas removido.
+  const canvas = canvasAntigo.cloneNode(true);
+  canvasAntigo.parentNode.replaceChild(canvas, canvasAntigo);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  // Ajustar resolução real do canvas ao tamanho exibido
+
+  // Ajustar resolucao real do canvas ao tamanho exibido.
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * window.devicePixelRatio;
-  canvas.height = rect.height * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.strokeStyle = '#1a1a1a';
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  canvas.style.touchAction = 'none';
+  canvas.style.cursor = 'crosshair';
 
   let desenhando = false;
   let temAssinatura = false;
+  let ultimoPonto = null;
 
   function posRelativa(e) {
     const r = canvas.getBoundingClientRect();
-    // Suporta mouse, touch e caneta digitalizadora (Wacom, stylus)
-    if (e.touches && e.touches.length > 0) {
-      return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
-    }
+    if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+    if (e.changedTouches && e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX - r.left, y: e.changedTouches[0].clientY - r.top };
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
   function iniciar(e) {
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     desenhando = true;
-    const p = posRelativa(e);
+    ultimoPonto = posRelativa(e);
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
+    ctx.moveTo(ultimoPonto.x, ultimoPonto.y);
+    ctx.lineTo(ultimoPonto.x + 0.1, ultimoPonto.y + 0.1);
+    ctx.stroke();
+    temAssinatura = true;
+    window._assinaturaData = canvas.toDataURL('image/png');
   }
 
   function desenhar(e) {
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     if (!desenhando) return;
     const p = posRelativa(e);
-    // Pressão da caneta Wacom (se disponível) — linha mais grossa com mais pressão
-    if (e.pressure && e.pressure > 0) {
-      ctx.lineWidth = Math.max(1, e.pressure * 4);
-    } else {
-      ctx.lineWidth = 2.5;
-    }
+    if (e.pressure && e.pressure > 0) ctx.lineWidth = Math.max(1.8, e.pressure * 4);
+    else ctx.lineWidth = 2.5;
+
+    if (!ultimoPonto) ultimoPonto = p;
+    ctx.beginPath();
+    ctx.moveTo(ultimoPonto.x, ultimoPonto.y);
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
+    ultimoPonto = p;
     temAssinatura = true;
+    window._assinaturaData = canvas.toDataURL('image/png');
   }
 
   function parar(e) {
-    e.preventDefault();
+    if (e && e.cancelable) e.preventDefault();
     desenhando = false;
+    ultimoPonto = null;
     if (temAssinatura) window._assinaturaData = canvas.toDataURL('image/png');
   }
 
-  // Remover listeners anteriores clonando o canvas
-  const novo = canvas.cloneNode(true);
-  canvas.parentNode.replaceChild(novo, canvas);
-  const c = document.getElementById('canvasAssinatura');
-  const cx = c.getContext('2d');
-  cx.scale(window.devicePixelRatio, window.devicePixelRatio);
-  cx.strokeStyle = '#1a1a1a';
-  cx.lineWidth = 2.5;
-  cx.lineCap = 'round';
-  cx.lineJoin = 'round';
+  if (window.PointerEvent) {
+    canvas.addEventListener('pointerdown', (e) => {
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      iniciar(e);
+    }, { passive: false });
+    canvas.addEventListener('pointermove', desenhar, { passive: false });
+    canvas.addEventListener('pointerup', (e) => {
+      try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      parar(e);
+    }, { passive: false });
+    canvas.addEventListener('pointercancel', parar, { passive: false });
+    canvas.addEventListener('pointerleave', parar, { passive: false });
+    return;
+  }
 
-  // Mouse (computador)
-  c.addEventListener('mousedown', iniciar);
-  c.addEventListener('mousemove', desenhar);
-  c.addEventListener('mouseup', parar);
-  c.addEventListener('mouseleave', parar);
+  canvas.addEventListener('mousedown', iniciar, { passive: false });
+  canvas.addEventListener('mousemove', desenhar, { passive: false });
+  window.addEventListener('mouseup', parar, { passive: false });
 
-  // Touch (dedo no celular/tablet)
-  c.addEventListener('touchstart', iniciar, { passive: false });
-  c.addEventListener('touchmove', desenhar, { passive: false });
-  c.addEventListener('touchend', parar, { passive: false });
-
-  // Pointer Events — caneta Wacom, Surface Pen, Apple Pencil, stylus genérico
-  // Aceita qualquer objeto: dedo, caneta, tampa de caneta, stylus, etc.
-  c.addEventListener('pointerdown', (e) => {
-    c.setPointerCapture(e.pointerId);
-    iniciar(e);
-  });
-  c.addEventListener('pointermove', (e) => {
-    desenhar(e);
-  });
-  c.addEventListener('pointerup', (e) => {
-    parar(e);
-  });
-  c.addEventListener('pointercancel', parar);
-
-  // Estilo cursor para indicar área de assinatura
-  c.style.touchAction = 'none'; // essencial para canetas funcionarem
-  c.style.cursor = 'crosshair';
+  canvas.addEventListener('touchstart', iniciar, { passive: false });
+  canvas.addEventListener('touchmove', desenhar, { passive: false });
+  canvas.addEventListener('touchend', parar, { passive: false });
+  canvas.addEventListener('touchcancel', parar, { passive: false });
 }
 
 function limparAssinatura() {
