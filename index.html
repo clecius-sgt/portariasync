@@ -1230,17 +1230,16 @@ function iniciarAssinatura() {
   c.addEventListener('touchend', parar, { passive: false });
 
   // Pointer Events — caneta Wacom, Surface Pen, Apple Pencil, stylus genérico
+  // Aceita qualquer objeto: dedo, caneta, tampa de caneta, stylus, etc.
   c.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
-      c.setPointerCapture(e.pointerId);
-      iniciar(e);
-    }
+    c.setPointerCapture(e.pointerId);
+    iniciar(e);
   });
   c.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'pen' || e.pointerType === 'mouse') desenhar(e);
+    desenhar(e);
   });
   c.addEventListener('pointerup', (e) => {
-    if (e.pointerType === 'pen' || e.pointerType === 'mouse') parar(e);
+    parar(e);
   });
   c.addEventListener('pointercancel', parar);
 
