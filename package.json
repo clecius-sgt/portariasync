@@ -1,0 +1,9 @@
+{
+  "name": "portariasync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PortariaSync para Associacao de Moradores",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

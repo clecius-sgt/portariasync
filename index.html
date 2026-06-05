@@ -650,12 +650,21 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 
 <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// ========== SUPABASE ==========
-const SUPABASE_URL = 'https://bpkpmpwwpfipfhloqifo.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwa3BtcHd3cGZpcGZoaW9xaWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwOTMxNTMsImV4cCI6MjA5NTY2OTE1M30.ssWeWVC3ZLjqJ2OQGxKBrZ9MuRS0FI_KQVGonrHnS0k';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ========== BACKEND ==========
+const API_BASE = localStorage.getItem('apiBaseUrl') || '';
+
+async function apiFetch(path, options = {}) {
+  const resp = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  if (!resp.ok) throw new Error('Servidor respondeu ' + resp.status);
+  return resp.json();
+}
 
 // ========== MEMÓRIA DE REMETENTES ==========
 // Armazena: { remetente -> { moradorId, moradorNome, moradorCasa } }
@@ -674,9 +683,10 @@ function salvarMemoriaRemetente(remetente, morador) {
     ultimaEntrega: new Date().toLocaleString('pt-BR')
   };
   localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
-  // Salvar no Supabase também
-  sb.from('remetentes').upsert({ remetente: rem, morador_id: morador.id,
-    morador_nome: morador.nome, morador_casa: morador.casa }).then(() => {}).catch(() => {});
+  apiFetch('/api/remetentes', {
+    method: 'POST',
+    body: JSON.stringify({ remetente: rem, morador_id: morador.id, morador_nome: morador.nome, morador_casa: morador.casa })
+  }).catch(() => {});
   console.log('Remetente memorizado:', remetente, '->', morador.nome);
 }
 
@@ -711,7 +721,7 @@ function limparRemetentesInvalidos() {
 
 async function carregarMemoriaSupabase() {
   try {
-    const { data } = await sb.from('remetentes').select('*');
+    const { remetentes: data } = await apiFetch('/api/sync-data');
     if (data) {
       data.forEach(r => {
         _memoriaRemetentes[r.remetente] = {
@@ -722,12 +732,6 @@ async function carregarMemoriaSupabase() {
     }
   } catch(e) { console.warn('Memória remetentes offline'); }
 }
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwa3BtcHd3cGZpcGZoaW9xaWZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDA5MzE1MywiZXhwIjoyMDk1NjY5MTUzfQ.vlfwfpVq1HFooPY1nZ2vL_Mjwe7yICnhgFOkC33j_xc';
-
-// ========== Z-API ==========
-const ZAPI_URL    = 'https://api.z-api.io/instances/3F27E32E6A01D1A67C06D217A5857A3E/token/38BC8B4E38D967C4EC267A91';
-const ZAPI_CLIENT = 'F24267a05255f4573b0f8ae3b466314b0S';
-
 // Salva/carrega do Supabase quando disponível, senão cai no localStorage
 async function carregarDoSupabase() {
   if (localStorage.getItem('usarBackupLocal') === 'true') {
@@ -737,8 +741,7 @@ async function carregarDoSupabase() {
   }
 
   try {
-    const { data: enc } = await sb.from('encomendas').select('*').order('created_at', { ascending: false });
-    const { data: mor } = await sb.from('moradores').select('*');
+    const { encomendas: enc, moradores: mor } = await apiFetch('/api/sync-data');
     if (enc) {
       encomendas = enc.map(e => ({
         id: e.id,
@@ -792,14 +795,17 @@ async function salvarEncomendasSupabase(enc) {
       retirado_por: enc.retiradoPor || null,
       assinatura: enc.assinatura || null
     };
-    await sb.from('encomendas').upsert(row);
+    await apiFetch('/api/encomendas', {
+      method: 'POST',
+      body: JSON.stringify(row)
+    });
   } catch(e) {
-    console.warn('Erro ao salvar encomenda no Supabase:', e);
+    console.warn('Servidor offline; encomenda ficou apenas local:', e);
   }
 }
 
 async function excluirEncomendasSupabase(id) {
-  try { await sb.from('encomendas').delete().eq('id', id); } catch(e) {}
+  console.warn('Exclusão definitiva desativada; use cancelamento com motivo.');
 }
 
 // ========== ESTADO ==========
@@ -2113,51 +2119,32 @@ async function enviarWhatsApp(morador, enc) {
 
 async function chamarEvolutionAPI(numero, mensagem) {
   try {
-    const num = (numero||'').replace(/\D/g,'');
-    const dest = num.startsWith('55') ? num : '55' + num;
-    const resp = await fetch(ZAPI_URL + '/send-text', {
+    const resp = await apiFetch('/api/whatsapp/text', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Client-Token': ZAPI_CLIENT },
-      body: JSON.stringify({ phone: dest, message: mensagem })
+      body: JSON.stringify({ numero, mensagem })
     });
-    console.log('Z-API texto status:', resp.status);
-    return resp.ok;
+    return !!resp.ok;
   } catch(e) {
-    console.error('Z-API erro:', e);
+    console.error('WhatsApp backend erro:', e);
     return false;
   }
 }
 
 async function chamarEvolutionAPIMedia(numero, imagemBase64, caption) {
   try {
-    const num = (numero||'').replace(/\D/g,'');
-    const dest = num.startsWith('55') ? num : '55' + num;
-    const base64 = imagemBase64.replace(/^data:image\/\w+;base64,/, '');
-    const resp = await fetch(ZAPI_URL + '/send-image', {
+    const resp = await apiFetch('/api/whatsapp/image', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Client-Token': ZAPI_CLIENT },
-      body: JSON.stringify({ phone: dest, image: 'data:image/jpeg;base64,' + base64, caption })
+      body: JSON.stringify({ numero, imagemBase64, caption })
     });
-    return resp.ok;
+    return !!resp.ok;
   } catch(e) {
     return chamarEvolutionAPI(numero, caption);
   }
 }
 
 async function uploadFotoSupabase(base64, encId) {
-  try {
-    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
-    const byteChars = atob(base64Data);
-    const byteArr = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
-    const blob = new Blob([byteArr], { type: 'image/jpeg' });
-    const fileName = 'etiqueta_' + encId + '_' + Date.now() + '.jpg';
-    const sbAdmin = supabase.createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const { error } = await sbAdmin.storage.from('etiquetas').upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
-    if (error) return null;
-    const { data: urlData } = sbAdmin.storage.from('etiquetas').getPublicUrl(fileName);
-    return urlData.publicUrl;
-  } catch(e) { return null; }
+  console.warn('Upload direto ao Supabase foi desativado no frontend.');
+  return null;
 }
 
 // ========== PERSIST ==========
