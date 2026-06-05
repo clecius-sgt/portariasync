@@ -1832,7 +1832,8 @@ function processarCodigoLido(val) {
   let moradorEncontrado = null;
   const ehJson = val.trim().startsWith('{');
   if (!ehJson && val.length > 20) {
-    moradorEncontrado = identificarMorador(val);
+    const resultadoNome = identificarMoradorOCR(val);
+    moradorEncontrado = resultadoNome.confiavel ? resultadoNome.morador : null;
   }
 
   if (moradorEncontrado) {
@@ -2077,23 +2078,43 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
       }
     }
 
-    // 2ª prioridade: endereço exato
-    const moradorPorEnd = identificarMoradorPorEndereco(textoNormBusca);
+    // 2ª prioridade: nome confiável. Endereço compartilhado nunca seleciona automaticamente.
+    const enderecoOCR = identificarMoradorPorEndereco(textoNormBusca);
     const resultOCR = identificarMoradorOCR(textoOCR);
     const { nomeExtraido, debug } = resultOCR;
-    const morador = moradorPorEnd || resultOCR.morador;
+    console.log('OCR debug:', debug, 'Endereco:', enderecoOCR);
+
+    let morador = null;
+    let origem = '';
+    let candidatosPreferenciais = [];
+
+    if (resultOCR.confiavel && resultOCR.morador) {
+      morador = resultOCR.morador;
+      origem = 'nome';
+    } else if (enderecoOCR.confiavel && enderecoOCR.morador && !resultOCR.candidatoPrincipal) {
+      morador = enderecoOCR.morador;
+      origem = 'endereco-unico';
+    } else {
+      candidatosPreferenciais = [
+        ...(resultOCR.candidatos || []).map(c => c.morador),
+        ...(enderecoOCR.candidatos || [])
+      ].filter(Boolean);
+    }
 
     if (morador) {
       selecionarMorador(morador.id);
       // Memorizar o remetente para futuras entregas
       if (remetenteOCR) salvarMemoriaRemetente(remetenteOCR, morador);
       const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
-      const aviso = moradorPorEnd ? ' 📍 (identificado pelo endereço)' : '';
+      const aviso = origem === 'endereco-unico' ? ' 📍 (endereço único)' : ' 👤 (nome confirmado)';
       mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo + aviso);
     } else {
-      // Não identificou — abrir modal com moradores da rua
-      mostrarStatusOCR(statusEl, 'aviso', '⚠️ Morador não identificado. ' + (nomeExtraido ? 'Nome lido: "' + nomeExtraido + '"' : ''));
-      abrirModalSugestaoMorador(nomeExtraido || '', textoOCR, remetenteOCR);
+      // Não identificou com segurança — abrir modal e obrigar escolha humana.
+      const motivo = enderecoOCR.motivo === 'endereco-compartilhado'
+        ? 'Endereço compartilhado por mais de um morador. Confirme pelo nome da etiqueta.'
+        : 'Leitura sem confiança suficiente.';
+      mostrarStatusOCR(statusEl, 'aviso', '⚠️ Confirme o morador. ' + motivo + ' ' + (nomeExtraido ? 'Nome lido: "' + nomeExtraido + '"' : ''));
+      abrirModalSugestaoMorador(nomeExtraido || '', textoOCR, remetenteOCR, candidatosPreferenciais);
     }
 
   } catch(e) {
@@ -2150,133 +2171,142 @@ function resizarImagem(file, maxDim) {
   });
 }
 
-function identificarMoradorOCR(textoOCR) {
-  const norm = (s) => (s || '').toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+function normalizarTextoOCR(s) {
+  return (s || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ').trim();
+}
 
-  // Juntar linhas consecutivas que formam "nome\n(NOMEJUNTO)" em uma só
+function distanciaLevenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a || !b) return Math.max((a || '').length, (b || '').length);
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + custo);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function tokensNome(nome) {
+  return normalizarTextoOCR(nome).split(' ').filter(p => p.length > 3);
+}
+
+function tokenParecido(a, b) {
+  if (a === b) return true;
+  if (a.length < 5 || b.length < 5) return false;
+  const dist = distanciaLevenshtein(a, b);
+  return Math.max(a.length, b.length) >= 8 ? dist <= 2 : dist <= 1;
+}
+
+function frequenciaTokensMoradores() {
+  const freq = {};
+  for (const mor of moradores) {
+    for (const t of new Set(tokensNome(mor.nome))) freq[t] = (freq[t] || 0) + 1;
+  }
+  return freq;
+}
+
+function identificarMoradorOCR(textoOCR) {
+  const norm = normalizarTextoOCR;
   const textoJuntado = textoOCR.replace(/([^\n]{4,})\n(\([A-Z]{6,}\))/g, '$1 $2');
-
   const linhas = textoJuntado.split(/\n/).map(l => l.trim()).filter(l => l.length > 3);
   const linhasNorm = linhas.map(norm);
   const textoNorm = norm(textoOCR);
-
-  // --- PASSO 1: extrair candidatos a nome ---
-  let candidatosNome = [];
-
+  const freqTokens = frequenciaTokensMoradores();
+  const candidatosNome = [];
   const prefixosIgnorar = /^(endere[cç]o|cep|cidade|complemento|bairro|estado|rua|avenida|av\.|pack|nf:|nota|despachar|seg|ter|qua|qui|sex|sab|dom|\d)/i;
 
   for (let i = 0; i < linhas.length; i++) {
     const l = linhas[i];
     const ln = linhasNorm[i];
-
     if (prefixosIgnorar.test(l.trim())) continue;
     if (ln.replace(/\s/g,'').length < 6) continue;
     if (l.includes('>')) continue;
 
-    // Padrão ML: "lucimara Gonçalves Salomé (LUCIMARAGONVESSALOM)" — mesmo após junção de linhas
     const parMatch = l.match(/^(.{4,}?)\s*\([A-Z]{4,}\)/);
     if (parMatch) {
       const nomeParte = parMatch[1].trim();
       if (nomeParte.split(/\s+/).length >= 2 && !prefixosIgnorar.test(nomeParte)) {
-        candidatosNome.push({ texto: norm(nomeParte), peso: 15 });
+        candidatosNome.push({ texto: norm(nomeParte), peso: 18 });
         continue;
       }
     }
 
-    // Palavra-chave de destinatário
     if (/destinat[aá]rio|para\s*:|nome\s*:|recipient/i.test(l)) {
       const resto = l.replace(/destinat[aá]rio|para\s*:|nome\s*:|recipient/gi, '').trim();
-      if (resto.length > 4) candidatosNome.push({ texto: norm(resto), peso: 12 });
+      if (resto.length > 4) candidatosNome.push({ texto: norm(resto), peso: 16 });
       if (i + 1 < linhas.length && !prefixosIgnorar.test(linhas[i+1])) {
-        candidatosNome.push({ texto: linhasNorm[i + 1], peso: 11 });
+        candidatosNome.push({ texto: linhasNorm[i + 1], peso: 15 });
       }
     }
 
-    // Linha toda em maiúsculas com espaços (ex: "LUCIMARA GONCALVES SALOME")
     if (/^[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÇ\s]{8,}$/.test(l) && l.split(/\s+/).length >= 2) {
-      candidatosNome.push({ texto: ln, peso: 10 });
+      candidatosNome.push({ texto: ln, peso: 12 });
     }
 
-    // Linha mista com pelo menos 2 palavras iniciando em maiúscula (ex: "lucimara Gonçalves Salomé")
     if (/([A-ZÁÉÍÓÚÂÊÎÔÛÃÕÀÇ][a-záéíóúâêîôûãõàç]{2,}\s+){2,}/.test(l)) {
-      candidatosNome.push({ texto: ln, peso: 9 });
+      candidatosNome.push({ texto: ln, peso: 12 });
     }
   }
 
-  // --- PASSO 1b: busca direta — procura pares de palavras do nome no texto OCR ---
-  // Conta quantos pares consecutivos de palavras do nome aparecem no texto
-  // Quanto mais pares, mais confiante a identificação
-  for (const m of moradores) {
-    const nomeN = norm(m.nome);
-    const partes = nomeN.split(' ').filter(p => p.length > 3);
-    if (partes.length < 2) continue;
-    let paresEncontrados = 0;
-    for (let k = 0; k < partes.length - 1; k++) {
-      const par = partes[k] + ' ' + partes[k + 1];
-      if (textoNorm.includes(par)) paresEncontrados++;
-    }
-    if (paresEncontrados > 0) {
-      // Peso proporcional aos pares encontrados — mais pares = mais certeza
-      candidatosNome.push({ texto: nomeN, peso: 10 + paresEncontrados * 5, moradorDireto: m.id });
-    }
-  }
+  const idxDest = textoNorm.search(/destinatario|recipient|nome/);
+  const textoFoco = idxDest >= 0 ? textoNorm.substring(idxDest, idxDest + 260) : textoNorm;
+  const tokensFoco = textoFoco.split(' ').filter(p => p.length > 3);
+  const resultados = [];
 
-  // --- PASSO 2: pontuar moradores ---
-  let melhor = null;
-  let melhorScore = 0;
-  let nomeExtraido = null;
-
-  // Checar candidatos com moradorDireto — escolhe o de maior peso
-  const candsDiretos = candidatosNome.filter(c => c.moradorDireto).sort((a, b) => b.peso - a.peso);
-  if (candsDiretos.length > 0) {
-    const melhorCand = candsDiretos[0];
-    // Só usa direto se tiver vantagem clara sobre o segundo (evita empate por endereço compartilhado)
-    const segundo = candsDiretos[1];
-    if (!segundo || melhorCand.peso > segundo.peso) {
-      melhor = moradores.find(m => m.id === melhorCand.moradorDireto) || null;
-      if (melhor) {
-        const debug = candidatosNome.map(c => '"' + c.texto + '" (peso:' + c.peso + ')').join(' | ');
-        return { morador: melhor, nomeExtraido: melhorCand.texto, debug };
-      }
-    }
-  }
-
-  for (const m of moradores) {
+  for (const mor of moradores) {
+    const partesNome = tokensNome(mor.nome);
+    const partesUnicas = partesNome.filter(p => (freqTokens[p] || 0) === 1);
     let score = 0;
-    const nomeNorm = norm(m.nome);
-    const partesNome = nomeNorm.split(' ').filter(p => p.length > 3);
+    let nomeExtraido = null;
 
     for (const cand of candidatosNome) {
       const palavrasCand = cand.texto.split(' ').filter(p => p.length > 3);
-      const matches = partesNome.filter(p => palavrasCand.includes(p));
-      if (matches.length >= 2) {
-        score += matches.length * cand.peso;
-        if (!nomeExtraido) nomeExtraido = cand.texto;
+      const matches = partesNome.filter(parte => palavrasCand.some(pc => tokenParecido(parte, pc)));
+      const matchesUnicos = matches.filter(p => partesUnicas.includes(p));
+      const coberturaNome = matches.length / Math.max(partesNome.length, 1);
+      const coberturaCand = matches.length / Math.max(palavrasCand.length, 1);
+
+      if (matches.length >= 2 && matchesUnicos.length >= 1 && coberturaCand >= 0.55) {
+        const pontos = cand.peso + matches.length * 14 + matchesUnicos.length * 12 + Math.round(coberturaNome * 10);
+        if (pontos > score) {
+          score = pontos;
+          nomeExtraido = cand.texto;
+        }
       }
     }
 
-    // Presença no texto geral (peso baixo)
-    for (const parte of partesNome) {
-      if (textoNorm.includes(parte)) score += 1;
+    const matchesFoco = partesNome.filter(parte => tokensFoco.some(tf => tokenParecido(parte, tf)));
+    const matchesFocoUnicos = matchesFoco.filter(p => partesUnicas.includes(p));
+    if (matchesFoco.length >= 2 && matchesFocoUnicos.length >= 1) {
+      score += matchesFoco.length * 8 + matchesFocoUnicos.length * 8;
+      if (!nomeExtraido) nomeExtraido = matchesFoco.join(' ');
     }
 
-    // Endereço — ignorado na pontuação (evita identificar vizinhos errados)
-
-    if (score > melhorScore && score >= 8) {
-      melhorScore = score;
-      melhor = m;
-    }
+    if (score > 0) resultados.push({ morador: mor, score, nomeExtraido });
   }
 
-  if (!melhor && candidatosNome.length > 0) {
-    nomeExtraido = candidatosNome.sort((a, b) => b.peso - a.peso)[0].texto;
-  }
+  resultados.sort((a, b) => b.score - a.score);
+  const melhor = resultados[0] || null;
+  const segundo = resultados[1] || null;
+  const nomeExtraido = melhor?.nomeExtraido || (candidatosNome.length ? candidatosNome.sort((a, b) => b.peso - a.peso)[0].texto : null);
+  const confiavel = !!melhor && melhor.score >= 48 && (!segundo || melhor.score - segundo.score >= 18);
+  const debug = candidatosNome.map(c => '"' + c.texto + '" (peso:' + c.peso + ')').join(' | ') +
+    ' || scores: ' + resultados.slice(0, 5).map(r => r.morador.nome + '=' + r.score).join(' | ');
 
-  const debug = candidatosNome.map(c => '"' + c.texto + '" (peso:' + c.peso + ')').join(' | ');
-  return { morador: melhor, nomeExtraido, debug };
+  return {
+    morador: confiavel ? melhor.morador : null,
+    candidatoPrincipal: melhor ? melhor.morador : null,
+    candidatos: resultados.slice(0, 5).map(r => ({ morador: r.morador, score: r.score })),
+    nomeExtraido,
+    debug,
+    confiavel
+  };
 }
 
 // ========== BACKUP AUTOMÁTICO ÀS 02H ==========
@@ -2669,18 +2699,26 @@ function identificarMoradorPorEndereco(textoNorm) {
   }
   console.log('Enderecos OCR:', JSON.stringify(endOCR));
   for (const end of endOCR) {
+    const encontrados = [];
     for (const mor of moradores) {
       const casa = norm(mor.casa);
       const rm = casa.match(/rua\s+([a-z]+)/);
       const nm = casa.match(/,?\s*(\d{2,4})(?:\s|$)/);
       if (!rm || !nm) continue;
       if (rm[1] === end.rua && nm[1] === end.num) {
-        console.log('Match exato:', mor.nome);
-        return mor;
+        encontrados.push(mor);
       }
     }
+    if (encontrados.length === 1) {
+      console.log('Match exato endereco unico:', encontrados[0].nome);
+      return { morador: encontrados[0], confiavel: true, candidatos: encontrados };
+    }
+    if (encontrados.length > 1) {
+      console.log('Endereco compartilhado, exigindo confirmacao:', encontrados.map(m => m.nome).join(', '));
+      return { morador: null, confiavel: false, candidatos: encontrados, motivo: 'endereco-compartilhado' };
+    }
   }
-  return null;
+  return { morador: null, confiavel: false, candidatos: [] };
 }
 
 function moradesDaRua(textoNorm) {
@@ -2700,32 +2738,41 @@ function moradesDaRua(textoNorm) {
 }
 
 // ========== MODAL SUGESTÃO DE MORADOR ==========
-function abrirModalSugestaoMorador(nomeExtraido, textoOCR, remetenteOCR) {
+function abrirModalSugestaoMorador(nomeExtraido, textoOCR, remetenteOCR, candidatosPreferenciais = []) {
   const ant = document.getElementById('modalSugestaoMorador');
   if (ant) ant.remove();
 
-  // Moradores da mesma rua (ordenados alfabeticamente)
+  const ids = new Set();
+  const preferenciais = (candidatosPreferenciais || []).filter(m => {
+    if (!m || ids.has(m.id)) return false;
+    ids.add(m.id);
+    return true;
+  });
+
+  // Moradores da mesma rua (ordenados alfabeticamente), usados como apoio quando a leitura nao e segura.
   const porRua = moradesDaRua(textoOCR)
+    .filter(m => !ids.has(m.id))
     .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const baseSugestoes = [...preferenciais, ...porRua];
 
   const modal = document.createElement('div');
   modal.id = 'modalSugestaoMorador';
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
 
-  const listaSugestoes = porRua.length > 0
-    ? porRua.map(m => `
+  const listaSugestoes = baseSugestoes.length > 0
+    ? baseSugestoes.map((m, idx) => `
         <div onclick="selecionarMoradorSugestao('${m.id}', '${(remetenteOCR||'').replace(/'/g,'')}')"
-          style="padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;background:white;"
-          onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background='white'">
-          <div style="font-weight:600;color:#1a1f3a;">${m.nome}</div>
+          style="padding:12px;border:1px solid ${idx < preferenciais.length ? '#1a73e8' : 'var(--border)'};border-radius:8px;cursor:pointer;margin-bottom:6px;background:${idx < preferenciais.length ? '#e8f0fe' : 'white'};"
+          onmouseover="this.style.background='#f0f4f8'" onmouseout="this.style.background='${idx < preferenciais.length ? '#e8f0fe' : 'white'}'">
+          <div style="font-weight:600;color:#1a1f3a;">${idx < preferenciais.length ? '⭐ ' : ''}${m.nome}</div>
           <div style="font-size:12px;color:var(--muted);">🏠 ${m.casa}</div>
         </div>`).join('')
-    : '<div style="color:var(--muted);text-align:center;padding:12px;">Nenhum morador encontrado pela rua</div>';
+    : '<div style="color:var(--muted);text-align:center;padding:12px;">Nenhum candidato seguro. Use a busca manual abaixo.</div>';
 
   modal.innerHTML = `
     <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:85vh;overflow-y:auto;">
-      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔍 Selecione o Morador ou filtre pela Rua</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Moradores da Rua Londres — em ordem alfabética. Use o campo abaixo para filtrar por nome ou rua.</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🔍 Confirme o morador</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">${nomeExtraido ? 'Nome lido: <strong>' + nomeExtraido + '</strong><br>' : ''}A leitura não teve segurança suficiente para selecionar automaticamente.</div>
       <div style="margin-bottom:8px;">
         <input type="text" placeholder="🔍 Filtrar por nome..." oninput="filtrarModalSugestao(this.value)"
           style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:8px;">
@@ -2741,7 +2788,7 @@ function abrirModalSugestaoMorador(nomeExtraido, textoOCR, remetenteOCR) {
   `;
   document.body.appendChild(modal);
   // Guardar moradores para filtro
-  modal._moradores = porRua;
+  modal._moradores = baseSugestoes;
   modal._remetente = remetenteOCR;
 }
 
