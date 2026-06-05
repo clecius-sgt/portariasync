@@ -312,6 +312,7 @@
   <button onclick="showPage('encomendas')">📦 Encomendas</button>
   <button onclick="showPage('consultas')">🔍 Consultas</button>
   <button onclick="showPage('moradores')" id="navMoradores">👥 Moradores</button>
+  <button onclick="showPage('auditoria')" id="navAuditoria">🧾 Auditoria</button>
   <button onclick="showPage('config')" id="navConfig">⚙️ Config</button>
   <button onclick="fazerLogout()" style="color:#ea4335;">🔒 Sair</button>
 </nav>
@@ -432,9 +433,21 @@
   <div class="filter-tabs">
     <button class="filter-tab active" onclick="setFiltro('pendente', this)">📬 Aguardando</button>
     <button class="filter-tab" onclick="setFiltro('retirado', this)">✅ Retirados</button>
+    <button class="filter-tab" onclick="setFiltro('cancelado', this)">🚫 Canceladas</button>
     <button class="filter-tab" onclick="setFiltro('todos', this)">📋 Todos</button>
   </div>
   <div id="listaEncomendas"></div>
+</div>
+
+<!-- AUDITORIA -->
+<div id="page-auditoria" class="page">
+  <div class="card">
+    <h2>🧾 Auditoria do sistema</h2>
+    <div class="search-box">
+      <input type="text" id="searchAuditoria" placeholder="Buscar por ação, usuário, morador ou código..." oninput="renderAuditoria()">
+    </div>
+  </div>
+  <div id="listaAuditoria"></div>
 </div>
 
 <!-- MORADORES -->
@@ -595,6 +608,7 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
       <option value="">Todos</option>
       <option value="pendente">Aguardando retirada</option>
       <option value="retirado">Retirados</option>
+      <option value="cancelado">Canceladas</option>
     </select>
 
     <div style="display:flex;gap:8px;margin-top:16px;">
@@ -769,6 +783,7 @@ for (const m of _moradores_default) {
 localStorage.setItem('moradores', JSON.stringify(moradores));
 let encomendas = JSON.parse(localStorage.getItem('encomendas') || '[]');
 let retirantesRelacionados = JSON.parse(localStorage.getItem('retirantesRelacionados') || '[]');
+let auditoria = JSON.parse(localStorage.getItem('auditoria') || '[]');
 let config = JSON.parse(localStorage.getItem('config') || '{}');
 let filtroAtivo = 'pendente';
 let moradorSelecionadoId = null;
@@ -788,7 +803,10 @@ function salvarDetalhesRetiradaLocal(enc) {
   mapa[enc.id] = {
     retiranteTipo: enc.retiranteTipo || 'proprio',
     retiranteRg: enc.retiranteRg || null,
-    retiradoPor: enc.retiradoPor || null
+    retiradoPor: enc.retiradoPor || null,
+    dataCancelamento: enc.dataCancelamento || null,
+    canceladoPor: enc.canceladoPor || null,
+    motivoCancelamento: enc.motivoCancelamento || null
   };
   localStorage.setItem('detalhesRetirada', JSON.stringify(mapa));
 }
@@ -830,6 +848,64 @@ function retirantesDoMorador(moradorId) {
     .sort((a, b) => (b.ultimaRetirada || '').localeCompare(a.ultimaRetirada || ''));
 }
 
+function labelStatus(status) {
+  if (status === 'retirado') return 'Retirado';
+  if (status === 'cancelado') return 'Cancelada';
+  return 'Aguardando';
+}
+
+function registrarAuditoria(acao, detalhes = {}) {
+  const item = {
+    id: 'aud_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    data: new Date().toLocaleString('pt-BR'),
+    usuarioId: usuarioLogado ? usuarioLogado.id : null,
+    usuarioNome: usuarioLogado ? usuarioLogado.nome : 'Sistema',
+    usuarioPerfil: usuarioLogado ? usuarioLogado.perfil : 'sistema',
+    acao,
+    detalhes
+  };
+  auditoria.unshift(item);
+  auditoria = auditoria.slice(0, 1000);
+  localStorage.setItem('auditoria', JSON.stringify(auditoria));
+}
+
+function textoAuditoria(a) {
+  const d = a.detalhes || {};
+  const partes = [a.acao, a.usuarioNome, d.usuarioAlvo, d.moradorNome, d.casa, d.codigo, d.motivo, d.retiradoPor]
+    .filter(Boolean);
+  return partes.join(' ').toLowerCase();
+}
+
+function renderAuditoria() {
+  const div = document.getElementById('listaAuditoria');
+  if (!div) return;
+  const q = (document.getElementById('searchAuditoria')?.value || '').toLowerCase();
+  const lista = auditoria.filter(a => !q || textoAuditoria(a).includes(q));
+  if (lista.length === 0) {
+    div.innerHTML = '<div class="empty-state"><div class="icon">🧾</div><p>Nenhum registro de auditoria encontrado</p></div>';
+    return;
+  }
+  div.innerHTML = lista.map(a => {
+    const d = a.detalhes || {};
+    const alvo = d.moradorNome ? `<div style="font-size:13px;color:#5f6368;margin-top:4px;">${d.moradorNome}${d.codigo ? ' · ' + d.codigo : ''}</div>` : '';
+    const usuarioAlvo = d.usuarioAlvo ? `<div style="font-size:13px;color:#5f6368;margin-top:4px;">Usuário: ${d.usuarioAlvo}${d.perfil ? ' · ' + d.perfil : ''}</div>` : '';
+    const casa = d.casa ? `<div style="font-size:13px;color:#5f6368;margin-top:4px;">Casa: ${d.casa}</div>` : '';
+    const extra = d.motivo ? `<div style="font-size:13px;color:#92400e;margin-top:4px;">Motivo: ${d.motivo}</div>` : '';
+    const retirada = d.retiradoPor ? `<div style="font-size:13px;color:#5f6368;margin-top:4px;">Retirado por: ${d.retiradoPor}${d.retiranteRg ? ' · RG ' + d.retiranteRg : ''}</div>` : '';
+    return `<div class="card" style="padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-weight:700;color:#1a1f3a;">${a.acao}</div>
+          ${alvo}${usuarioAlvo}${casa}${retirada}${extra}
+        </div>
+        <div style="text-align:right;font-size:12px;color:#6b7280;min-width:110px;">
+          ${a.data}<br>${a.usuarioNome}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // ========== USUÁRIOS & LOGIN ==========
 let _usuarios_default = [
   { id: 'u1', nome: 'Administrador', perfil: 'admin', senha: 'admin123' }
@@ -853,6 +929,7 @@ function fazerLogin() {
   if (!usuario) { erroEl.style.display = 'block'; return; }
   erroEl.style.display = 'none';
   usuarioLogado = usuario;
+  registrarAuditoria('Login realizado', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainHeader').style.display = 'flex';
   document.getElementById('mainNav').style.display = 'flex';
@@ -861,9 +938,11 @@ function fazerLogin() {
   if (usuario.perfil !== 'admin') {
     document.getElementById('navConfig').style.display = 'none';
     document.getElementById('navMoradores').style.display = 'none';
+    document.getElementById('navAuditoria').style.display = 'none';
   } else {
     document.getElementById('navConfig').style.display = '';
     document.getElementById('navMoradores').style.display = '';
+    document.getElementById('navAuditoria').style.display = '';
     document.getElementById('painelUsuarios').style.display = 'block';
   }
   renderDashboard();
@@ -875,6 +954,7 @@ function fazerLogin() {
 
 function fazerLogout() {
   if (!confirm('Deseja sair do sistema?')) return;
+  registrarAuditoria('Logout realizado', {});
   usuarioLogado = null;
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('mainHeader').style.display = 'none';
@@ -889,8 +969,10 @@ function criarUsuario() {
   const senha = document.getElementById('novoUsuarioSenha').value;
   if (!nome) { toast('⚠️ Informe o nome'); return; }
   if (senha.length < 4) { toast('⚠️ Senha mínima: 4 caracteres'); return; }
-  usuarios.push({ id: 'u' + Date.now(), nome, perfil, senha });
+  const novoUsuario = { id: 'u' + Date.now(), nome, perfil, senha };
+  usuarios.push(novoUsuario);
   localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  registrarAuditoria('Usuário criado', { usuarioAlvo: novoUsuario.nome, perfil: novoUsuario.perfil });
   document.getElementById('novoUsuarioNome').value = '';
   document.getElementById('novoUsuarioSenha').value = '';
   renderListaUsuarios();
@@ -913,9 +995,11 @@ function renderListaUsuarios() {
 }
 
 function excluirUsuario(id) {
+  const usuario = usuarios.find(u => u.id === id);
   if (!confirm('Remover este usuário?')) return;
   usuarios = usuarios.filter(u => u.id !== id);
   localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  if (usuario) registrarAuditoria('Usuário removido', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
   renderListaUsuarios();
   iniciarLogin();
   toast('Usuário removido');
@@ -935,13 +1019,15 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
-  document.querySelectorAll('nav button')[['dashboard','registrar','encomendas','consultas','moradores','config'].indexOf(id)].classList.add('active');
+  const btnAtivo = document.querySelector(`nav button[onclick="showPage('${id}')"]`);
+  if (btnAtivo) btnAtivo.classList.add('active');
 
   if (id === 'dashboard') renderDashboard();
   if (id === 'registrar') limparFormRegistrar();
   if (id === 'encomendas') renderEncomendas();
   if (id === 'consultas') iniciarConsulta();
   if (id === 'moradores') renderMoradores();
+  if (id === 'auditoria') renderAuditoria();
   if (id === 'config') carregarConfig();
 }
 
@@ -958,9 +1044,10 @@ function renderDashboard() {
   const hoje = new Date().toLocaleDateString('pt-BR');
   const pendentes = encomendas.filter(e => e.status === 'pendente');
   const retiradosHoje = encomendas.filter(e => e.status === 'retirado' && e.dataRetirada && e.dataRetirada.startsWith(hoje));
+  const totalOperacional = encomendas.filter(e => e.status !== 'cancelado').length;
   document.getElementById('statPendente').textContent = pendentes.length;
   document.getElementById('statRetirado').textContent = retiradosHoje.length;
-  document.getElementById('statTotal').textContent = encomendas.length;
+  document.getElementById('statTotal').textContent = totalOperacional;
 
   const div = document.getElementById('dashPendentes');
   if (pendentes.length === 0) {
@@ -1059,6 +1146,13 @@ async function registrarEncomenda() {
   encomendas.unshift(enc);
   salvarEncomendas();
   salvarEncomendasSupabase(enc); // sync Supabase
+  registrarAuditoria('Encomenda registrada', {
+    encomendaId: enc.id,
+    codigo: enc.codigo,
+    moradorId: enc.moradorId,
+    moradorNome: enc.moradorNome,
+    transportadora: enc.transportadora
+  });
 
   // Limpar form
   document.getElementById('inputCodigo').value = '';
@@ -1089,6 +1183,7 @@ function renderEncomendas() {
   let lista = encomendas.filter(e => {
     if (filtroAtivo === 'pendente') return e.status === 'pendente';
     if (filtroAtivo === 'retirado') return e.status === 'retirado';
+    if (filtroAtivo === 'cancelado') return e.status === 'cancelado';
     return true;
   }).filter(e =>
     !q || e.moradorNome.toLowerCase().includes(q) || e.codigo.toLowerCase().includes(q)
@@ -1103,22 +1198,27 @@ function renderEncomendas() {
 }
 
 function itemEncomendaHTML(e) {
-  return `<div class="encomenda-item ${e.status === 'retirado' ? 'retirada' : ''}">
+  const statusLabel = labelStatus(e.status);
+  const badgeClass = e.status === 'retirado' ? 'badge-done' : (e.status === 'cancelado' ? 'badge-pending' : 'badge-pending');
+  const cancelInfo = e.status === 'cancelado'
+    ? '<br>🚫 Cancelada: ' + (e.dataCancelamento || '') + (e.canceladoPor ? ' · por <strong>' + e.canceladoPor + '</strong>' : '') + (e.motivoCancelamento ? '<br>Motivo: ' + e.motivoCancelamento : '')
+    : '';
+  return `<div class="encomenda-item ${e.status === 'retirado' ? 'retirada' : ''}" ${e.status === 'cancelado' ? 'style="border-left-color:#c0392b;opacity:0.75;"' : ''}>
     <div class="top">
       <div>
         <div class="morador">${e.moradorNome}</div>
         <div class="casa">🏠 ${e.moradorCasa}</div>
         <div class="codigo">📦 ${e.codigo} · ${e.transportadora}</div>
-        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' + (e.retiranteRg ? ' · RG ' + e.retiranteRg : '') : '') : ''}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
+        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' + (e.retiranteRg ? ' · RG ' + e.retiranteRg : '') : '') : ''}${cancelInfo}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
         ${e.obs ? `<div class="data">📝 ${e.obs}</div>` : ''}
       </div>
-      <span class="badge ${e.status === 'retirado' ? 'badge-done' : 'badge-pending'}">${e.status === 'retirado' ? 'Retirado' : 'Aguardando'}</span>
+      <span class="badge ${badgeClass}">${statusLabel}</span>
     </div>
     <div class="actions">
       ${e.status === 'pendente' ? `
       <button class="btn btn-success btn-sm" onclick="darBaixa('${e.id}')">✅ Confirmar retirada</button>
       <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="reenviarWhats('${e.id}')">📲 Reenviar aviso</button>` : ''}
-      <button class="btn btn-danger btn-sm" onclick="excluirEncomenda('${e.id}')">🗑️ Excluir</button>
+      ${e.status !== 'cancelado' ? `<button class="btn btn-danger btn-sm" onclick="abrirModalCancelarEncomenda('${e.id}')">🚫 Cancelar</button>` : ''}
     </div>
   </div>`;
 }
@@ -1399,6 +1499,14 @@ function confirmarRetirada(id) {
   salvarDetalhesRetiradaLocal(enc);
   salvarEncomendas();
   salvarEncomendasSupabase(enc); // sync Supabase
+  registrarAuditoria('Retirada confirmada', {
+    encomendaId: enc.id,
+    codigo: enc.codigo,
+    moradorId: enc.moradorId,
+    moradorNome: enc.moradorNome,
+    retiradoPor: enc.retiradoPor,
+    retiranteRg: enc.retiranteRg || null
+  });
   fecharModalRetirada();
   renderEncomendas();
   renderDashboard();
@@ -1411,6 +1519,12 @@ async function reenviarWhats(id) {
   const morador = moradores.find(m => m.id === enc.moradorId);
   if (!morador) { toast('⚠️ Dados do morador não encontrados'); return; }
   await enviarWhatsApp(morador, enc);
+  registrarAuditoria('Aviso reenviado', {
+    encomendaId: enc.id,
+    codigo: enc.codigo,
+    moradorId: enc.moradorId,
+    moradorNome: enc.moradorNome
+  });
 }
 
 // ========== MORADORES ==========
@@ -1422,8 +1536,14 @@ function cadastrarMorador() {
   if (!nome || !casa || !whats) { toast('⚠️ Preencha todos os campos'); return; }
   if (whats.length < 10) { toast('⚠️ WhatsApp inválido (mínimo 10 dígitos com DDD)'); return; }
 
-  moradores.push({ id: Date.now().toString(), nome, casa, whats });
+  const morador = { id: Date.now().toString(), nome, casa, whats };
+  moradores.push(morador);
   salvarMoradores();
+  registrarAuditoria('Morador cadastrado', {
+    moradorId: morador.id,
+    moradorNome: morador.nome,
+    casa: morador.casa
+  });
   document.getElementById('novoNome').value = '';
   document.getElementById('novoCasa').value = '';
   document.getElementById('novoWhats').value = '';
@@ -1451,9 +1571,15 @@ function renderMoradores() {
 }
 
 function excluirMorador(id) {
+  const morador = moradores.find(m => m.id === id);
   if (!confirm('Remover este morador?')) return;
   moradores = moradores.filter(m => m.id !== id);
   salvarMoradores();
+  if (morador) registrarAuditoria('Morador removido', {
+    moradorId: morador.id,
+    moradorNome: morador.nome,
+    casa: morador.casa
+  });
   renderMoradores();
   toast('Morador removido');
 }
@@ -1480,6 +1606,10 @@ function salvarConfig() {
   config.mensagem = document.getElementById('cfgMensagem').value;
   localStorage.setItem('config', JSON.stringify(config));
   document.getElementById('headerCondominio').textContent = config.condominio;
+  registrarAuditoria('Configurações alteradas', {
+    condominio: config.condominio,
+    whatsAuto: config.whatsAuto
+  });
   toast('✅ Configurações salvas!');
 }
 
@@ -1565,7 +1695,7 @@ async function syncEncomendaSupabase(id) {
 
 // ========== EXPORT / CLEAR ==========
 function exportarDados() {
-  const data = { moradores, encomendas, retirantesRelacionados, exportadoEm: new Date().toISOString() };
+  const data = { moradores, encomendas, retirantesRelacionados, auditoria, exportadoEm: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1576,9 +1706,10 @@ function exportarDados() {
 function limparDados() {
   if (!confirm('Isso apagará TODOS os dados. Tem certeza?')) return;
   if (!confirm('Confirme novamente: apagar tudo?')) return;
-  moradores = []; encomendas = []; retirantesRelacionados = [];
+  moradores = []; encomendas = []; retirantesRelacionados = []; auditoria = [];
   localStorage.removeItem('retirantesRelacionados');
   localStorage.removeItem('detalhesRetirada');
+  localStorage.removeItem('auditoria');
   salvarMoradores(); salvarEncomendas();
   renderDashboard();
   toast('Dados apagados');
@@ -1604,17 +1735,68 @@ function desbloquear() {
   }
 }
 
-// ========== EXCLUIR ENCOMENDA ==========
-function excluirEncomenda(id) {
+// ========== CANCELAR ENCOMENDA ==========
+function abrirModalCancelarEncomenda(id) {
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
-  if (!confirm('Excluir encomenda de ' + enc.moradorNome + '?')) return;
-  encomendas = encomendas.filter(e => e.id !== id);
+
+  const anterior = document.getElementById('modalCancelarEncomenda');
+  if (anterior) anterior.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalCancelarEncomenda';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">🚫 Cancelar encomenda</div>
+      <div style="font-size:14px;color:#5f6368;margin-bottom:16px;">
+        Esta encomenda ficará no histórico como cancelada.<br>
+        Morador: <strong>${enc.moradorNome}</strong><br>
+        Código: <strong>${enc.codigo}</strong>
+      </div>
+      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Motivo do cancelamento</label>
+      <textarea id="motivoCancelamento" rows="3" placeholder="Ex: cadastro em duplicidade, encomenda lançada para morador errado..."
+        style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:15px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button onclick="fecharModalCancelarEncomenda()" style="flex:1;padding:12px;border-radius:8px;border:1px solid #dadce0;background:white;color:#5f6368;font-weight:600;cursor:pointer;font-size:15px;">Voltar</button>
+        <button onclick="confirmarCancelamentoEncomenda('${enc.id}')" style="flex:1;padding:12px;border-radius:8px;border:none;background:#c0392b;color:white;font-weight:700;cursor:pointer;font-size:15px;">🚫 Cancelar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('motivoCancelamento')?.focus(), 100);
+}
+
+function fecharModalCancelarEncomenda() {
+  const modal = document.getElementById('modalCancelarEncomenda');
+  if (modal) modal.remove();
+}
+
+function confirmarCancelamentoEncomenda(id) {
+  const enc = encomendas.find(e => e.id === id);
+  if (!enc) return;
+  const motivo = (document.getElementById('motivoCancelamento')?.value || '').trim();
+  if (!motivo) { toast('⚠️ Informe o motivo do cancelamento'); return; }
+
+  enc.status = 'cancelado';
+  enc.dataCancelamento = new Date().toLocaleString('pt-BR');
+  enc.canceladoPor = usuarioLogado ? usuarioLogado.nome : 'Sistema';
+  enc.motivoCancelamento = motivo;
+
+  salvarDetalhesRetiradaLocal(enc);
   salvarEncomendas();
-  excluirEncomendasSupabase(id); // sync Supabase
+  salvarEncomendasSupabase(enc);
+  registrarAuditoria('Encomenda cancelada', {
+    encomendaId: enc.id,
+    codigo: enc.codigo,
+    moradorId: enc.moradorId,
+    moradorNome: enc.moradorNome,
+    motivo
+  });
+  fecharModalCancelarEncomenda();
   renderEncomendas();
   renderDashboard();
-  toast('🗑️ Encomenda excluída');
+  toast('🚫 Encomenda cancelada');
 }
 
 // ========== PROCESSAR CÓDIGO LIDO ==========
@@ -2116,7 +2298,8 @@ function executarBackup() {
     exportadoEm: new Date().toISOString(),
     moradores,
     encomendas,
-    retirantesRelacionados
+    retirantesRelacionados,
+    auditoria
   };
   const json = JSON.stringify(data, null, 2);
   const emailDestino = config.emailBackup || '';
@@ -2207,8 +2390,9 @@ function renderConsulta() {
   const textoResumo = document.getElementById('textoResumo');
   const pendentes = lista.filter(e => e.status === 'pendente').length;
   const retirados = lista.filter(e => e.status === 'retirado').length;
+  const cancelados = lista.filter(e => e.status === 'cancelado').length;
   resumo.style.display = 'block';
-  textoResumo.innerHTML = `<strong>${lista.length}</strong> encomenda(s) encontrada(s) &nbsp;·&nbsp; <span style="color:#fbbc04;">⏳ ${pendentes} aguardando</span> &nbsp;·&nbsp; <span style="color:#34a853;">✅ ${retirados} retiradas</span>`;
+  textoResumo.innerHTML = `<strong>${lista.length}</strong> encomenda(s) encontrada(s) &nbsp;·&nbsp; <span style="color:#fbbc04;">⏳ ${pendentes} aguardando</span> &nbsp;·&nbsp; <span style="color:#34a853;">✅ ${retirados} retiradas</span> &nbsp;·&nbsp; <span style="color:#c0392b;">🚫 ${cancelados} canceladas</span>`;
 
   const div = document.getElementById('listaConsulta');
   if (lista.length === 0) {
@@ -2241,6 +2425,7 @@ function gerarRelatorio() {
 
   const pendentes = lista.filter(e => e.status === 'pendente').length;
   const retirados = lista.filter(e => e.status === 'retirado').length;
+  const cancelados = lista.filter(e => e.status === 'cancelado').length;
 
   const periodoTexto = ini && fim
     ? new Date(ini+'T12:00:00').toLocaleDateString('pt-BR') + ' a ' + new Date(fim+'T12:00:00').toLocaleDateString('pt-BR')
@@ -2255,8 +2440,8 @@ function gerarRelatorio() {
       <td>${e.transportadora}</td>
       <td style="font-family:monospace;font-size:11px;">${e.codigo}</td>
       <td style="text-align:center;">
-        <span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${e.status==='retirado'?'#d1e7dd':'#fff3cd'};color:${e.status==='retirado'?'#0f5132':'#856404'};">
-          ${e.status === 'retirado' ? 'Retirado' : 'Aguardando'}
+        <span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${e.status==='retirado'?'#d1e7dd':(e.status==='cancelado'?'#f8d7da':'#fff3cd')};color:${e.status==='retirado'?'#0f5132':(e.status==='cancelado'?'#842029':'#856404')};">
+          ${labelStatus(e.status)}
         </span>
       </td>
       <td>${e.dataRetirada || '—'}</td>
@@ -2336,7 +2521,7 @@ function gerarRelatorio() {
     <div class="cab-titulo">
       <h1>Relatório de Controle de Encomendas</h1>
       <div class="sub">${nomeCondominio}</div>
-      <div class="periodo">Período: <strong>${periodoTexto}</strong>${transp ? ' &nbsp;·&nbsp; Transportadora: <strong>'+transp+'</strong>' : ''}${status ? ' &nbsp;·&nbsp; Status: <strong>'+(status==='pendente'?'Aguardando':'Retiradas')+'</strong>' : ''}</div>
+      <div class="periodo">Período: <strong>${periodoTexto}</strong>${transp ? ' &nbsp;·&nbsp; Transportadora: <strong>'+transp+'</strong>' : ''}${status ? ' &nbsp;·&nbsp; Status: <strong>'+labelStatus(status)+'</strong>' : ''}</div>
     </div>
   </div>
   <div class="cab-right">
@@ -2348,6 +2533,7 @@ function gerarRelatorio() {
 <div class="resumo">
   <div class="resumo-item r-aguard">⏳ Aguardando retirada: ${pendentes}</div>
   <div class="resumo-item r-ret">✅ Retiradas no período: ${retirados}</div>
+  <div class="resumo-item r-total" style="background:#fef2f2;color:#991b1b;border-color:#fecaca;">🚫 Canceladas: ${cancelados}</div>
   <div class="resumo-item r-total">📦 Total no período: ${lista.length}</div>
 </div>
 
