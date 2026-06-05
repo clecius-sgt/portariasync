@@ -154,6 +154,10 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     border-left: 4px solid var(--warning);
   }
+  .encomenda-item.atrasada {
+    border-left-color: #c0392b;
+    background: #fff8f7;
+  }
   .encomenda-item.retirada { border-left-color: var(--success); opacity: 0.7; }
   .encomenda-item .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .encomenda-item .morador { font-size: 17px; font-weight: 700; }
@@ -175,7 +179,7 @@
 
   .stats {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     margin-bottom: 16px;
   }
@@ -191,6 +195,7 @@
   .stat-pending .number { color: var(--warning); }
   .stat-done .number { color: var(--success); }
   .stat-total .number { color: var(--primary); }
+  .stat-alert .number { color: #c0392b; }
 
   .config-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
   .config-item:last-child { border-bottom: none; }
@@ -253,7 +258,7 @@
   .filter-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
 
   @media (max-width: 480px) {
-    .stats { grid-template-columns: repeat(3, 1fr); }
+    .stats { grid-template-columns: repeat(2, 1fr); }
     .stat-card .number { font-size: 24px; }
   }
 </style>
@@ -297,7 +302,7 @@
 <header id="mainHeader" style="display:none;">
   <div>
     <h1>📦 Portaria<span style="color:var(--gold);">Sync</span></h1>
-    <div class="header-sub" id="headerCondominio">Residencial D'Italia</div>
+    <div class="header-sub" id="headerAssociacao">Associação de Moradores</div>
   </div>
   <div class="header-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
       <div id="whatsStatusBadge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.1);color:#aaa;">⏳ Verificando WhatsApp...</div>
@@ -308,7 +313,7 @@
 
 <nav id="mainNav" style="display:none;">
   <button class="active" onclick="showPage('dashboard')">🏠 Início</button>
-  <button onclick="showPage('registrar')">➕ Registrar</button>
+  <button onclick="showPage('registrar')" id="navRegistrar">➕ Registrar</button>
   <button onclick="showPage('encomendas')">📦 Encomendas</button>
   <button onclick="showPage('consultas')">🔍 Consultas</button>
   <button onclick="showPage('moradores')" id="navMoradores">👥 Moradores</button>
@@ -324,6 +329,10 @@
       <div class="number" id="statPendente">0</div>
       <div class="label">Aguardando</div>
     </div>
+    <div class="stat-card stat-alert">
+      <div class="number" id="statAtrasada">0</div>
+      <div class="label" id="labelStatAtrasada">+3 dias</div>
+    </div>
     <div class="stat-card stat-done">
       <div class="number" id="statRetirado">0</div>
       <div class="label">Retirados hoje</div>
@@ -334,7 +343,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="cardAcaoRapida">
     <h2>⚡ Ação rápida</h2>
     <button class="btn btn-primary btn-full" style="font-size:18px; padding:16px;" onclick="showPage('registrar')">
       📷 Registrar nova encomenda
@@ -432,6 +441,7 @@
   </div>
   <div class="filter-tabs">
     <button class="filter-tab active" onclick="setFiltro('pendente', this)">📬 Aguardando</button>
+    <button class="filter-tab" onclick="setFiltro('atrasada', this)">⚠️ +3 dias</button>
     <button class="filter-tab" onclick="setFiltro('retirado', this)">✅ Retirados</button>
     <button class="filter-tab" onclick="setFiltro('cancelado', this)">🚫 Canceladas</button>
     <button class="filter-tab" onclick="setFiltro('todos', this)">📋 Todos</button>
@@ -458,7 +468,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="cardCadastroMorador">
     <h2>➕ Cadastrar morador</h2>
     <label>Nome completo</label>
     <input type="text" id="novoNome" placeholder="Ex: Carlos Augusto">
@@ -482,11 +492,11 @@
 
     <div class="config-item">
       <div>
-        <div class="config-label">Nome do condomínio</div>
+        <div class="config-label">Nome da associação</div>
         <div class="config-desc">Aparece no cabeçalho e nos relatórios</div>
       </div>
     </div>
-    <input type="text" id="cfgCondominio" placeholder="Ex: Residencial D'Italia" style="margin-bottom:12px;">
+    <input type="text" id="cfgAssociacao" placeholder="Ex: Associação de Moradores" style="margin-bottom:12px;">
 
     <div class="config-item">
       <div>
@@ -495,6 +505,14 @@
       </div>
     </div>
     <input type="email" id="cfgEmailBackup" placeholder="seu@email.com" style="margin-bottom:12px;">
+
+    <div class="config-item">
+      <div>
+        <div class="config-label">Alerta de retirada atrasada</div>
+        <div class="config-desc">Quantidade de dias para destacar encomendas pendentes</div>
+      </div>
+    </div>
+    <input type="number" id="cfgDiasAlertaRetirada" min="1" max="30" step="1" inputmode="numeric" style="margin-bottom:12px;">
 
     <div class="config-item">
       <div>
@@ -559,6 +577,7 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
       <label>Perfil</label>
       <select id="novoUsuarioPerfil">
         <option value="porteiro">Porteiro</option>
+        <option value="supervisor">Supervisor</option>
         <option value="admin">Administrador</option>
       </select>
       <label>Senha</label>
@@ -569,7 +588,11 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 
   <div class="card">
     <h2>🗃️ Dados</h2>
+    <div id="statusBackupLocal" style="display:none;background:#fff8e1;border:1px solid #f5d36a;color:#7a5600;border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px;line-height:1.35;"></div>
     <button class="btn btn-full" style="background:#eee;" onclick="exportarDados()">📥 Exportar histórico (JSON)</button>
+    <input type="file" id="inputImportarBackup" accept="application/json,.json" style="display:none;" onchange="importarDadosBackup(this)">
+    <button class="btn btn-full" style="background:#e8f0fe;color:#1a73e8;margin-top:8px;" onclick="document.getElementById('inputImportarBackup').click()">📤 Importar backup (JSON)</button>
+    <button id="btnReativarServidor" class="btn btn-full" style="display:none;background:#e7f5ec;color:#127333;margin-top:8px;" onclick="reativarSincronizacaoServidor()">🔄 Voltar a carregar dados do servidor</button>
     <button class="btn btn-danger btn-full" style="margin-top:8px;" onclick="limparDados()">🗑️ Limpar todos os dados</button>
   </div>
 </div>
@@ -707,6 +730,12 @@ const ZAPI_CLIENT = 'F24267a05255f4573b0f8ae3b466314b0S';
 
 // Salva/carrega do Supabase quando disponível, senão cai no localStorage
 async function carregarDoSupabase() {
+  if (localStorage.getItem('usarBackupLocal') === 'true') {
+    console.warn('Backup local restaurado; carga do Supabase ignorada.');
+    atualizarPainelBackupLocal();
+    return;
+  }
+
   try {
     const { data: enc } = await sb.from('encomendas').select('*').order('created_at', { ascending: false });
     const { data: mor } = await sb.from('moradores').select('*');
@@ -739,6 +768,7 @@ async function carregarDoSupabase() {
       localStorage.setItem('moradores', JSON.stringify(moradores));
     }
     renderDashboard();
+    atualizarPainelBackupLocal();
     console.log('✅ Dados carregados do Supabase');
   } catch(e) {
     console.warn('Supabase offline, usando localStorage:', e);
@@ -804,6 +834,7 @@ function salvarDetalhesRetiradaLocal(enc) {
     retiranteTipo: enc.retiranteTipo || 'proprio',
     retiranteRg: enc.retiranteRg || null,
     retiradoPor: enc.retiradoPor || null,
+    fotoRetirante: enc.fotoRetirante || null,
     dataCancelamento: enc.dataCancelamento || null,
     canceladoPor: enc.canceladoPor || null,
     motivoCancelamento: enc.motivoCancelamento || null
@@ -814,6 +845,27 @@ function salvarDetalhesRetiradaLocal(enc) {
 function mesclarDetalhesRetiradaLocais(lista) {
   const mapa = JSON.parse(localStorage.getItem('detalhesRetirada') || '{}');
   return lista.map(enc => mapa[enc.id] ? { ...enc, ...mapa[enc.id] } : enc);
+}
+
+function reconstruirDetalhesRetiradaLocais(lista) {
+  const mapa = {};
+  for (const enc of lista || []) {
+    if (
+      enc.retiranteTipo || enc.retiranteRg || enc.retiradoPor ||
+      enc.fotoRetirante || enc.dataCancelamento || enc.canceladoPor || enc.motivoCancelamento
+    ) {
+      mapa[enc.id] = {
+        retiranteTipo: enc.retiranteTipo || null,
+        retiranteRg: enc.retiranteRg || null,
+        retiradoPor: enc.retiradoPor || null,
+        fotoRetirante: enc.fotoRetirante || null,
+        dataCancelamento: enc.dataCancelamento || null,
+        canceladoPor: enc.canceladoPor || null,
+        motivoCancelamento: enc.motivoCancelamento || null
+      };
+    }
+  }
+  localStorage.setItem('detalhesRetirada', JSON.stringify(mapa));
 }
 
 function salvarRetiranteRelacionado(morador, nome, rg) {
@@ -846,6 +898,17 @@ function retirantesDoMorador(moradorId) {
   return retirantesRelacionados
     .filter(r => r.moradorId === moradorId)
     .sort((a, b) => (b.ultimaRetirada || '').localeCompare(a.ultimaRetirada || ''));
+}
+
+function retiradasPorTerceiro(moradorId, rg) {
+  const rgLimpo = normalizarDocumento(rg);
+  return encomendas
+    .filter(e =>
+      e.moradorId === moradorId &&
+      e.retiranteTipo === 'outro' &&
+      normalizarDocumento(e.retiranteRg) === rgLimpo
+    )
+    .sort((a, b) => parseDateBR(b.dataRetirada) - parseDateBR(a.dataRetirada));
 }
 
 function labelStatus(status) {
@@ -915,10 +978,36 @@ if (!localStorage.getItem('usuarios')) localStorage.setItem('usuarios', JSON.str
 
 let usuarioLogado = null;
 
+function labelPerfil(perfil) {
+  if (perfil === 'admin') return 'Admin';
+  if (perfil === 'supervisor') return 'Supervisor';
+  return 'Porteiro';
+}
+
+function iconePerfil(perfil) {
+  if (perfil === 'admin') return '🔑 Admin';
+  if (perfil === 'supervisor') return '👁️ Supervisor';
+  return '👷 Porteiro';
+}
+
+function temPerfil(perfis) {
+  return !!usuarioLogado && perfis.includes(usuarioLogado.perfil);
+}
+
+function exigirPerfil(perfis, mensagem = '⚠️ Seu perfil não tem permissão para esta ação.') {
+  if (temPerfil(perfis)) return true;
+  toast(mensagem, 5000);
+  registrarAuditoria('Ação bloqueada por permissão', {
+    perfisPermitidos: perfis.join(', '),
+    perfilAtual: usuarioLogado ? usuarioLogado.perfil : 'sem login'
+  });
+  return false;
+}
+
 function iniciarLogin() {
   const sel = document.getElementById('loginUsuario');
   sel.innerHTML = '<option value="">Selecione...</option>' +
-    usuarios.map(u => `<option value="${u.id}">${u.nome} (${u.perfil === 'admin' ? 'Admin' : 'Porteiro'})</option>`).join('');
+    usuarios.map(u => `<option value="${u.id}">${u.nome} (${labelPerfil(u.perfil)})</option>`).join('');
 }
 
 function fazerLogin() {
@@ -933,19 +1022,11 @@ function fazerLogin() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainHeader').style.display = 'flex';
   document.getElementById('mainNav').style.display = 'flex';
-  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome;
-  // Porteiro não vê Config nem Moradores
-  if (usuario.perfil !== 'admin') {
-    document.getElementById('navConfig').style.display = 'none';
-    document.getElementById('navMoradores').style.display = 'none';
-    document.getElementById('navAuditoria').style.display = 'none';
-  } else {
-    document.getElementById('navConfig').style.display = '';
-    document.getElementById('navMoradores').style.display = '';
-    document.getElementById('navAuditoria').style.display = '';
-    document.getElementById('painelUsuarios').style.display = 'block';
-  }
+  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome + ' · ' + labelPerfil(usuario.perfil);
+  document.getElementById('headerAssociacao').textContent = nomeAssociacaoAtual();
+  aplicarPermissoesInterface();
   renderDashboard();
+  atualizarPainelBackupLocal();
   agendarBackup();
   carregarDoSupabase(); // carrega dados do servidor
   carregarMemoriaSupabase(); // carrega memória de remetentes
@@ -963,7 +1044,29 @@ function fazerLogout() {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 }
 
+function aplicarPermissoesInterface() {
+  const perfil = usuarioLogado ? usuarioLogado.perfil : null;
+  const admin = perfil === 'admin';
+  const supervisor = perfil === 'supervisor';
+  const operacional = perfil === 'admin' || perfil === 'porteiro';
+
+  document.getElementById('navRegistrar').style.display = operacional ? '' : 'none';
+  document.getElementById('navConfig').style.display = admin ? '' : 'none';
+  document.getElementById('navMoradores').style.display = (admin || supervisor) ? '' : 'none';
+  document.getElementById('navAuditoria').style.display = (admin || supervisor) ? '' : 'none';
+
+  const painelUsuarios = document.getElementById('painelUsuarios');
+  if (painelUsuarios) painelUsuarios.style.display = admin ? 'block' : 'none';
+
+  const cardCadastroMorador = document.getElementById('cardCadastroMorador');
+  if (cardCadastroMorador) cardCadastroMorador.style.display = admin ? 'block' : 'none';
+
+  const cardAcaoRapida = document.getElementById('cardAcaoRapida');
+  if (cardAcaoRapida) cardAcaoRapida.style.display = operacional ? 'block' : 'none';
+}
+
 function criarUsuario() {
+  if (!exigirPerfil(['admin'])) return;
   const nome = document.getElementById('novoUsuarioNome').value.trim();
   const perfil = document.getElementById('novoUsuarioPerfil').value;
   const senha = document.getElementById('novoUsuarioSenha').value;
@@ -987,7 +1090,7 @@ function renderListaUsuarios() {
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
       <div>
         <strong>${u.nome}</strong>
-        <span style="font-size:12px;color:var(--muted);margin-left:8px;">${u.perfil === 'admin' ? '🔑 Admin' : '👷 Porteiro'}</span>
+        <span style="font-size:12px;color:var(--muted);margin-left:8px;">${iconePerfil(u.perfil)}</span>
       </div>
       ${u.id !== 'u1' ? `<button class="btn btn-danger btn-sm" onclick="excluirUsuario('${u.id}')">🗑️</button>` : '<span style="font-size:11px;color:var(--muted);">padrão</span>'}
     </div>
@@ -995,6 +1098,7 @@ function renderListaUsuarios() {
 }
 
 function excluirUsuario(id) {
+  if (!exigirPerfil(['admin'])) return;
   const usuario = usuarios.find(u => u.id === id);
   if (!confirm('Remover este usuário?')) return;
   usuarios = usuarios.filter(u => u.id !== id);
@@ -1016,6 +1120,10 @@ atualizarRelogio();
 
 // ========== NAVEGAÇÃO ==========
 function showPage(id) {
+  if (id === 'registrar' && !exigirPerfil(['admin', 'porteiro'])) return;
+  if (id === 'config' && !exigirPerfil(['admin'])) return;
+  if ((id === 'moradores' || id === 'auditoria') && !exigirPerfil(['admin', 'supervisor'])) return;
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
@@ -1040,12 +1148,43 @@ function toast(msg, dur = 3000) {
 }
 
 // ========== DASHBOARD ==========
+const DIAS_ALERTA_RETIRADA_PADRAO = 3;
+
+function diasAlertaRetirada() {
+  const valor = Number(config.diasAlertaRetirada || DIAS_ALERTA_RETIRADA_PADRAO);
+  if (!Number.isFinite(valor)) return DIAS_ALERTA_RETIRADA_PADRAO;
+  return Math.min(30, Math.max(1, Math.round(valor)));
+}
+
+function inicioDoDia(data) {
+  const d = new Date(data);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function diasAguardandoRetirada(enc) {
+  if (!enc || enc.status !== 'pendente' || !enc.dataEntrada) return 0;
+  const entrada = parseDateBR(enc.dataEntrada);
+  if (!entrada || isNaN(entrada.getTime())) return 0;
+  const diff = inicioDoDia(new Date()) - inicioDoDia(entrada);
+  return Math.max(0, Math.floor(diff / 86400000));
+}
+
+function encomendaEmAtencao(enc) {
+  return enc && enc.status === 'pendente' && diasAguardandoRetirada(enc) >= diasAlertaRetirada();
+}
+
 function renderDashboard() {
+  const diasAlerta = diasAlertaRetirada();
   const hoje = new Date().toLocaleDateString('pt-BR');
   const pendentes = encomendas.filter(e => e.status === 'pendente');
+  const atrasadas = pendentes.filter(encomendaEmAtencao).sort((a, b) => diasAguardandoRetirada(b) - diasAguardandoRetirada(a));
   const retiradosHoje = encomendas.filter(e => e.status === 'retirado' && e.dataRetirada && e.dataRetirada.startsWith(hoje));
   const totalOperacional = encomendas.filter(e => e.status !== 'cancelado').length;
   document.getElementById('statPendente').textContent = pendentes.length;
+  document.getElementById('statAtrasada').textContent = atrasadas.length;
+  const labelAtrasada = document.getElementById('labelStatAtrasada');
+  if (labelAtrasada) labelAtrasada.textContent = '+' + diasAlerta + ' dias';
   document.getElementById('statRetirado').textContent = retiradosHoje.length;
   document.getElementById('statTotal').textContent = totalOperacional;
 
@@ -1054,7 +1193,16 @@ function renderDashboard() {
     div.innerHTML = '<div class="empty-state"><div class="icon">✅</div><p>Nenhuma encomenda aguardando retirada</p></div>';
     return;
   }
-  div.innerHTML = pendentes.slice(0, 5).map(e => itemEncomendaHTML(e)).join('');
+  const listaDashboard = [...atrasadas, ...pendentes.filter(e => !encomendaEmAtencao(e))];
+  const acaoAtrasadas = atrasadas.length > 0
+    ? `<div style="background:#fff8f7;border:1px solid #f1b6ae;border-radius:8px;padding:12px;margin-bottom:12px;">
+        <div style="font-size:13px;color:#8a2d22;margin-bottom:10px;">
+          ${atrasadas.length} encomenda(s) aguardando retirada há ${diasAlerta} dias ou mais.
+        </div>
+        ${temPerfil(['admin', 'porteiro']) ? '<button class="btn btn-danger btn-full" style="margin-top:0;" onclick="reenviarAvisosAtrasados()">📲 Reenviar lembretes dessas pendências</button>' : ''}
+      </div>`
+    : '';
+  div.innerHTML = acaoAtrasadas + listaDashboard.slice(0, 5).map(e => itemEncomendaHTML(e)).join('');
   if (pendentes.length > 5) {
     div.innerHTML += `<p style="text-align:center;color:var(--muted);margin-top:8px;font-size:14px;">+${pendentes.length-5} encomendas aguardando <a href="#" onclick="showPage('encomendas');return false;">Ver todas</a></p>`;
   }
@@ -1112,6 +1260,7 @@ function formatarWhats(w) {
 }
 
 async function registrarEncomenda() {
+  if (!exigirPerfil(['admin', 'porteiro'])) return;
   const codigo = document.getElementById('inputCodigo').value.trim();
   const transp = document.getElementById('inputTransportadora').value;
   const obs = document.getElementById('inputObs').value.trim();
@@ -1182,12 +1331,22 @@ function renderEncomendas() {
   const q = (document.getElementById('searchEncomenda')?.value || '').toLowerCase();
   let lista = encomendas.filter(e => {
     if (filtroAtivo === 'pendente') return e.status === 'pendente';
+    if (filtroAtivo === 'atrasada') return encomendaEmAtencao(e);
     if (filtroAtivo === 'retirado') return e.status === 'retirado';
     if (filtroAtivo === 'cancelado') return e.status === 'cancelado';
     return true;
   }).filter(e =>
     !q || e.moradorNome.toLowerCase().includes(q) || e.codigo.toLowerCase().includes(q)
   );
+
+  lista.sort((a, b) => {
+    if (filtroAtivo === 'pendente' || filtroAtivo === 'atrasada') {
+      const prioridade = Number(encomendaEmAtencao(b)) - Number(encomendaEmAtencao(a));
+      if (prioridade !== 0) return prioridade;
+      return diasAguardandoRetirada(b) - diasAguardandoRetirada(a);
+    }
+    return 0;
+  });
 
   const div = document.getElementById('listaEncomendas');
   if (lista.length === 0) {
@@ -1198,32 +1357,44 @@ function renderEncomendas() {
 }
 
 function itemEncomendaHTML(e) {
+  const podeOperar = temPerfil(['admin', 'porteiro']);
+  const podeCancelar = temPerfil(['admin']);
   const statusLabel = labelStatus(e.status);
   const badgeClass = e.status === 'retirado' ? 'badge-done' : (e.status === 'cancelado' ? 'badge-pending' : 'badge-pending');
+  const atrasada = encomendaEmAtencao(e);
+  const diasEspera = diasAguardandoRetirada(e);
+  const alertaRetirada = atrasada
+    ? `<div class="data" style="color:#c0392b;font-weight:700;">⚠️ Aguardando retirada há ${diasEspera} dias</div>`
+    : (e.status === 'pendente' && diasEspera > 0 ? `<div class="data">⏳ Aguardando há ${diasEspera} dia(s)</div>` : '');
+  const fotoRetirante = e.fotoRetirante
+    ? '<br><span style="font-size:12px;color:#5f6368;">📷 Foto do retirante/documento:</span><br><img src="' + e.fotoRetirante + '" style="max-width:180px;max-height:140px;object-fit:contain;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">'
+    : '';
   const cancelInfo = e.status === 'cancelado'
     ? '<br>🚫 Cancelada: ' + (e.dataCancelamento || '') + (e.canceladoPor ? ' · por <strong>' + e.canceladoPor + '</strong>' : '') + (e.motivoCancelamento ? '<br>Motivo: ' + e.motivoCancelamento : '')
     : '';
-  return `<div class="encomenda-item ${e.status === 'retirado' ? 'retirada' : ''}" ${e.status === 'cancelado' ? 'style="border-left-color:#c0392b;opacity:0.75;"' : ''}>
+  return `<div class="encomenda-item ${e.status === 'retirado' ? 'retirada' : ''} ${atrasada ? 'atrasada' : ''}" ${e.status === 'cancelado' ? 'style="border-left-color:#c0392b;opacity:0.75;"' : ''}>
     <div class="top">
       <div>
         <div class="morador">${e.moradorNome}</div>
         <div class="casa">🏠 ${e.moradorCasa}</div>
         <div class="codigo">📦 ${e.codigo} · ${e.transportadora}</div>
-        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' + (e.retiranteRg ? ' · RG ' + e.retiranteRg : '') : '') : ''}${cancelInfo}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
+        ${alertaRetirada}
+        <div class="data">📅 Entrada: ${e.dataEntrada}${e.dataRetirada ? '<br>✅ Retirado: ' + e.dataRetirada + (e.retiradoPor ? ' · por <strong>' + e.retiradoPor + '</strong>' + (e.retiranteRg ? ' · RG ' + e.retiranteRg : '') : '') : ''}${cancelInfo}${fotoRetirante}${e.assinatura ? '<br><span style="font-size:12px;color:#5f6368;">✍️ Assinatura:</span><br><img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}</div>
         ${e.obs ? `<div class="data">📝 ${e.obs}</div>` : ''}
       </div>
       <span class="badge ${badgeClass}">${statusLabel}</span>
     </div>
     <div class="actions">
-      ${e.status === 'pendente' ? `
+      ${e.status === 'pendente' && podeOperar ? `
       <button class="btn btn-success btn-sm" onclick="darBaixa('${e.id}')">✅ Confirmar retirada</button>
       <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="reenviarWhats('${e.id}')">📲 Reenviar aviso</button>` : ''}
-      ${e.status !== 'cancelado' ? `<button class="btn btn-danger btn-sm" onclick="abrirModalCancelarEncomenda('${e.id}')">🚫 Cancelar</button>` : ''}
+      ${e.status !== 'cancelado' && podeCancelar ? `<button class="btn btn-danger btn-sm" onclick="abrirModalCancelarEncomenda('${e.id}')">🚫 Cancelar</button>` : ''}
     </div>
   </div>`;
 }
 
 function darBaixa(id) {
+  if (!exigirPerfil(['admin', 'porteiro'])) return;
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
   abrirModalRetirada(enc);
@@ -1275,6 +1446,18 @@ function abrirModalRetirada(enc) {
         <input type="text" id="inputRetiranteRg" placeholder="RG de quem está retirando..."
           inputmode="numeric" autocomplete="off"
           style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:16px;margin-top:8px;">
+        <div id="areaFotoRetirante" style="margin-top:10px;padding:10px;border:1px dashed #b7c6d8;border-radius:8px;background:#f8fbff;">
+          <div style="font-size:13px;color:#5f6368;margin-bottom:8px;">Foto de segurança do RG/CNH ou da pessoa retirante</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;" onclick="abrirCameraRetirante()">📷 Fotografar</button>
+            <label class="btn btn-sm" style="background:#eef2f7;color:#334155;margin:0;cursor:pointer;">
+              🖼️ Anexar
+              <input type="file" accept="image/*" capture="environment" onchange="anexarFotoRetirante(this)" style="display:none;">
+            </label>
+            <button type="button" id="btnLimparFotoRetirante" class="btn btn-sm" style="display:none;background:#f8d7da;color:#842029;" onclick="limparFotoRetirante()">Remover foto</button>
+          </div>
+          <img id="previewFotoRetirante" alt="Foto do retirante" style="display:none;width:100%;max-height:180px;object-fit:contain;border:1px solid #dadce0;border-radius:8px;margin-top:8px;background:white;">
+        </div>
         ${htmlRelacionados}
       </div>
 
@@ -1297,6 +1480,7 @@ function abrirModalRetirada(enc) {
   window._retirante = enc.moradorNome;
   window._retiranteTipo = 'proprio';
   window._retiranteRg = '';
+  window._fotoRetiranteData = null;
   window._moradorRetiradaAtual = { id: enc.moradorId, nome: enc.moradorNome };
   window._assinaturaData = null;
   setTimeout(iniciarAssinatura, 100);
@@ -1315,6 +1499,7 @@ function selecionarRetirante(tipo, nome) {
     window._retirante = nome;
     window._retiranteTipo = 'proprio';
     window._retiranteRg = '';
+    limparFotoRetirante();
     if (inputNome) inputNome.value = '';
     if (inputRg) inputRg.value = '';
     nomeEl.textContent = '👤 ' + nome;
@@ -1350,6 +1535,7 @@ function preencherRetiranteRelacionado(id) {
   const inputNome = document.getElementById('inputRetirante');
   const inputRg = document.getElementById('inputRetiranteRg');
   const nomeEl = document.getElementById('nomeRetirante');
+  limparFotoRetirante();
   if (inputNome) inputNome.value = r.nome;
   if (inputRg) inputRg.value = r.rg;
   window._retirante = r.nome;
@@ -1360,10 +1546,113 @@ function preencherRetiranteRelacionado(id) {
 function fecharModalRetirada() {
   const m = document.getElementById('modalRetirada');
   if (m) m.remove();
+  fecharCameraRetirante();
   window._assinaturaData = null;
   window._retiranteTipo = null;
   window._retiranteRg = '';
+  window._fotoRetiranteData = null;
   window._moradorRetiradaAtual = null;
+}
+
+// ========== FOTO DO RETIRANTE / DOCUMENTO ==========
+let fotoRetiranteStream = null;
+
+function atualizarPreviewFotoRetirante() {
+  const img = document.getElementById('previewFotoRetirante');
+  const btn = document.getElementById('btnLimparFotoRetirante');
+  if (!img || !btn) return;
+  if (window._fotoRetiranteData) {
+    img.src = window._fotoRetiranteData;
+    img.style.display = 'block';
+    btn.style.display = 'inline-flex';
+  } else {
+    img.removeAttribute('src');
+    img.style.display = 'none';
+    btn.style.display = 'none';
+  }
+}
+
+function imagemCompactadaBase64(origem, maxLado = 900, qualidade = 0.78) {
+  const largura = origem.videoWidth || origem.naturalWidth || origem.width;
+  const altura = origem.videoHeight || origem.naturalHeight || origem.height;
+  const escala = Math.min(1, maxLado / Math.max(largura, altura));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(largura * escala));
+  canvas.height = Math.max(1, Math.round(altura * escala));
+  canvas.getContext('2d').drawImage(origem, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', qualidade);
+}
+
+async function abrirCameraRetirante() {
+  if (window._retiranteTipo !== 'outro') {
+    toast('⚠️ A foto é usada apenas para retirada por terceiro.');
+    return;
+  }
+  fecharCameraRetirante();
+  const modal = document.createElement('div');
+  modal.id = 'modalCameraRetirante';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `
+    <div style="color:white;font-size:15px;margin-bottom:10px;font-weight:600;text-align:center;">📷 Fotografe o documento ou a pessoa retirante</div>
+    <video id="videoFotoRetirante" autoplay playsinline style="width:100%;max-width:430px;border-radius:12px;background:#111;"></video>
+    <canvas id="canvasFotoRetirante" style="display:none;"></canvas>
+    <div style="display:flex;gap:12px;margin-top:14px;">
+      <button class="btn" style="background:#34a853;color:white;padding:14px 28px;border-radius:10px;font-weight:700;" onclick="capturarFotoRetirante()">📸 Capturar</button>
+      <button class="btn" style="background:#333;color:white;padding:14px 20px;border-radius:10px;" onclick="fecharCameraRetirante()">Cancelar</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  try {
+    fotoRetiranteStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('videoFotoRetirante');
+    video.srcObject = fotoRetiranteStream;
+    await video.play();
+  } catch(e) {
+    fecharCameraRetirante();
+    toast('⚠️ Não foi possível acessar a câmera. Use a opção Anexar.');
+  }
+}
+
+function fecharCameraRetirante() {
+  const modal = document.getElementById('modalCameraRetirante');
+  if (modal) modal.remove();
+  if (fotoRetiranteStream) {
+    fotoRetiranteStream.getTracks().forEach(t => t.stop());
+    fotoRetiranteStream = null;
+  }
+}
+
+function capturarFotoRetirante() {
+  const video = document.getElementById('videoFotoRetirante');
+  if (!video) return;
+  window._fotoRetiranteData = imagemCompactadaBase64(video);
+  fecharCameraRetirante();
+  atualizarPreviewFotoRetirante();
+  toast('✅ Foto adicionada à retirada.');
+}
+
+function anexarFotoRetirante(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = function() {
+    window._fotoRetiranteData = imagemCompactadaBase64(img);
+    URL.revokeObjectURL(img.src);
+    atualizarPreviewFotoRetirante();
+    input.value = '';
+  };
+  img.onerror = function() {
+    input.value = '';
+    toast('⚠️ Não foi possível carregar a imagem.');
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function limparFotoRetirante() {
+  window._fotoRetiranteData = null;
+  atualizarPreviewFotoRetirante();
 }
 
 // ========== ASSINATURA DIGITAL ==========
@@ -1471,6 +1760,7 @@ function limparAssinatura() {
 }
 
 function confirmarRetirada(id) {
+  if (!exigirPerfil(['admin', 'porteiro'])) return;
   const retirante = (window._retirante || '').trim();
   if (!retirante) { toast('⚠️ Informe quem está retirando'); return; }
   const retiranteTipo = window._retiranteTipo || 'proprio';
@@ -1488,6 +1778,7 @@ function confirmarRetirada(id) {
   enc.retiradoPor = retirante;
   enc.retiranteTipo = retiranteTipo;
   enc.retiranteRg = retiranteTipo === 'outro' ? retiranteRg : null;
+  enc.fotoRetirante = retiranteTipo === 'outro' ? (window._fotoRetiranteData || null) : null;
   enc.assinatura = window._assinaturaData || null;
   if (retiranteTipo === 'outro') {
     salvarRetiranteRelacionado(
@@ -1505,7 +1796,8 @@ function confirmarRetirada(id) {
     moradorId: enc.moradorId,
     moradorNome: enc.moradorNome,
     retiradoPor: enc.retiradoPor,
-    retiranteRg: enc.retiranteRg || null
+    retiranteRg: enc.retiranteRg || null,
+    fotoRetirante: !!enc.fotoRetirante
   });
   fecharModalRetirada();
   renderEncomendas();
@@ -1514,6 +1806,7 @@ function confirmarRetirada(id) {
 }
 
 async function reenviarWhats(id) {
+  if (!exigirPerfil(['admin', 'porteiro'])) return;
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
   const morador = moradores.find(m => m.id === enc.moradorId);
@@ -1527,8 +1820,51 @@ async function reenviarWhats(id) {
   });
 }
 
+async function enviarLembreteRetirada(morador, enc) {
+  const dias = diasAguardandoRetirada(enc);
+  const msg = `Olá ${morador.nome}! 📦 Lembrete da portaria: sua encomenda ${enc.codigo} (${enc.transportadora}) está aguardando retirada há ${dias} dia(s).\n🏠 ${morador.casa}\nPor favor, retire assim que possível.`;
+  return chamarEvolutionAPI(morador.whats, msg);
+}
+
+async function reenviarAvisosAtrasados() {
+  if (!exigirPerfil(['admin', 'porteiro'])) return;
+  const atrasadas = encomendas
+    .filter(encomendaEmAtencao)
+    .sort((a, b) => diasAguardandoRetirada(b) - diasAguardandoRetirada(a));
+
+  if (atrasadas.length === 0) {
+    toast('✅ Não há pendências antigas para reenviar.');
+    return;
+  }
+
+  if (!confirm('Reenviar lembrete por WhatsApp para ' + atrasadas.length + ' encomenda(s) pendente(s) há ' + diasAlertaRetirada() + ' dias ou mais?')) return;
+
+  let enviados = 0;
+  let falhas = 0;
+  for (const enc of atrasadas) {
+    const morador = moradores.find(m => m.id === enc.moradorId) || {
+      nome: enc.moradorNome,
+      casa: enc.moradorCasa,
+      whats: enc.moradorWhats
+    };
+    const ok = morador && morador.whats ? await enviarLembreteRetirada(morador, enc) : false;
+    if (ok) enviados++;
+    else falhas++;
+  }
+
+  registrarAuditoria('Lembretes de pendências reenviados', {
+    quantidade: atrasadas.length,
+    enviados,
+    falhas,
+    codigos: atrasadas.map(e => e.codigo).join(', ')
+  });
+
+  toast(`📲 Lembretes enviados: ${enviados}. Falhas: ${falhas}.`, 6000);
+}
+
 // ========== MORADORES ==========
 function cadastrarMorador() {
+  if (!exigirPerfil(['admin'])) return;
   const nome = document.getElementById('novoNome').value.trim();
   const casa = document.getElementById('novoCasa').value.trim();
   const whats = document.getElementById('novoWhats').value.trim().replace(/\D/g,'');
@@ -1552,25 +1888,152 @@ function cadastrarMorador() {
 }
 
 function renderMoradores() {
-  const q = (document.getElementById('searchMoradorLista')?.value || '').toLowerCase();
-  const lista = moradores.filter(m => !q || m.nome.toLowerCase().includes(q) || m.casa.toLowerCase().includes(q));
+  const qRaw = (document.getElementById('searchMoradorLista')?.value || '').trim();
+  const q = qRaw.toLowerCase();
+  const qDoc = normalizarDocumento(qRaw);
+  const lista = moradores.filter(m => {
+    if (!q) return true;
+    const terceiros = retirantesDoMorador(m.id);
+    return m.nome.toLowerCase().includes(q) ||
+      m.casa.toLowerCase().includes(q) ||
+      terceiros.some(r => r.nome.toLowerCase().includes(q) || (qDoc && normalizarDocumento(r.rg).includes(qDoc)));
+  });
   const div = document.getElementById('listaMoradoresCad');
   if (lista.length === 0) {
     div.innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>Nenhum morador cadastrado</p></div>';
     return;
   }
-  div.innerHTML = lista.map(m => `
+  div.innerHTML = lista.map(m => {
+    const podeEditarMoradores = temPerfil(['admin']);
+    const terceiros = retirantesDoMorador(m.id);
+    const terceirosHtml = terceiros.length > 0
+      ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Terceiros que já retiraram:</div>
+          ${terceiros.slice(0, 3).map(r => {
+            const qtd = retiradasPorTerceiro(m.id, r.rg).length;
+            return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:4px;font-size:12px;color:#5f6368;">
+              <span>👥 ${r.nome} · RG ${r.rg} · ${qtd} retirada(s)</span>
+              <span style="white-space:nowrap;">
+                <button onclick="abrirHistoricoTerceiro('${m.id}', '${r.id}')" style="border:none;background:none;color:#1a73e8;cursor:pointer;font-size:12px;">Histórico</button>
+                ${podeEditarMoradores ? `<button onclick="removerRetiranteRelacionado('${r.id}')" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:12px;">Remover</button>` : ''}
+              </span>
+            </div>`;
+          }).join('')}
+          ${terceiros.length > 3 ? `<button onclick="abrirHistoricoMorador('${m.id}')" style="border:none;background:none;color:#1a73e8;cursor:pointer;font-size:12px;margin-top:6px;padding:0;">Ver todos (${terceiros.length})</button>` : ''}
+        </div>`
+      : '<div style="font-size:12px;color:var(--muted);margin-top:6px;">Sem terceiros registrados</div>';
+    return `
     <div class="morador-item">
       <div class="morador-info">
         <div class="nome">${m.nome}</div>
         <div class="detalhe">🏠 ${m.casa} · 📱 ${formatarWhats(m.whats)}</div>
+        ${terceirosHtml}
       </div>
-      <button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>
+      ${podeEditarMoradores ? `<button class="btn btn-danger btn-sm" onclick="excluirMorador('${m.id}')">🗑️</button>` : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
+}
+
+function abrirHistoricoTerceiro(moradorId, retiranteId) {
+  const morador = moradores.find(m => m.id === moradorId);
+  const retirante = retirantesRelacionados.find(r => r.id === retiranteId);
+  if (!morador || !retirante) return;
+  const retiradas = retiradasPorTerceiro(moradorId, retirante.rg);
+
+  const modalAntigo = document.getElementById('modalHistoricoTerceiro');
+  if (modalAntigo) modalAntigo.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalHistoricoTerceiro';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:88vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px;">
+        <div>
+          <div style="font-size:18px;font-weight:700;">👥 Histórico do terceiro</div>
+          <div style="font-size:13px;color:#5f6368;margin-top:4px;">
+            ${retirante.nome} · RG ${retirante.rg}<br>
+            Relacionado a: <strong>${morador.nome}</strong>
+          </div>
+        </div>
+        <button onclick="document.getElementById('modalHistoricoTerceiro').remove()" style="border:none;background:#f1f5f9;border-radius:8px;padding:8px 10px;cursor:pointer;">✕</button>
+      </div>
+      ${retiradas.length === 0
+        ? '<div class="empty-state"><div class="icon">📭</div><p>Nenhuma retirada encontrada para este vínculo</p></div>'
+        : retiradas.map(e => `
+          <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;">
+            <div style="font-weight:700;color:#1a1f3a;">${e.codigo}</div>
+            <div style="font-size:13px;color:#5f6368;margin-top:4px;">
+              ${e.transportadora || 'Transportadora não informada'}<br>
+              Retirada: ${e.dataRetirada || '—'}
+            </div>
+            ${e.fotoRetirante ? '<div style="font-size:12px;color:#5f6368;margin-top:8px;">📷 Foto do retirante/documento</div><img src="' + e.fotoRetirante + '" style="max-width:220px;max-height:170px;object-fit:contain;border:1px solid #dadce0;border-radius:6px;margin-top:4px;background:white;">' : ''}
+            ${e.assinatura ? '<img src="' + e.assinatura + '" style="max-width:180px;border:1px solid #dadce0;border-radius:6px;margin-top:8px;background:white;">' : ''}
+          </div>
+        `).join('')}
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function abrirHistoricoMorador(moradorId) {
+  const morador = moradores.find(m => m.id === moradorId);
+  if (!morador) return;
+  const podeEditarMoradores = temPerfil(['admin']);
+  const terceiros = retirantesDoMorador(moradorId);
+  const modalAntigo = document.getElementById('modalHistoricoMorador');
+  if (modalAntigo) modalAntigo.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modalHistoricoMorador';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:88vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px;">
+        <div>
+          <div style="font-size:18px;font-weight:700;">👥 Terceiros vinculados</div>
+          <div style="font-size:13px;color:#5f6368;margin-top:4px;">${morador.nome}<br>${morador.casa}</div>
+        </div>
+        <button onclick="document.getElementById('modalHistoricoMorador').remove()" style="border:none;background:#f1f5f9;border-radius:8px;padding:8px 10px;cursor:pointer;">✕</button>
+      </div>
+      ${terceiros.length === 0
+        ? '<div class="empty-state"><div class="icon">📭</div><p>Nenhum terceiro vinculado</p></div>'
+        : terceiros.map(r => {
+          const qtd = retiradasPorTerceiro(moradorId, r.rg).length;
+          return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;">
+            <div style="font-weight:700;color:#1a1f3a;">${r.nome}</div>
+            <div style="font-size:13px;color:#5f6368;margin-top:4px;">RG ${r.rg} · ${qtd} retirada(s)<br>Última retirada: ${r.ultimaRetirada || '—'}</div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <button class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;" onclick="abrirHistoricoTerceiro('${moradorId}', '${r.id}')">Histórico</button>
+              ${podeEditarMoradores ? `<button class="btn btn-danger btn-sm" onclick="removerRetiranteRelacionado('${r.id}')">Remover vínculo</button>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function removerRetiranteRelacionado(id) {
+  if (!exigirPerfil(['admin'])) return;
+  const r = retirantesRelacionados.find(x => x.id === id);
+  if (!r) return;
+  if (!confirm('Remover o vínculo de ' + r.nome + ' com este morador? O histórico das encomendas já retiradas será preservado.')) return;
+  retirantesRelacionados = retirantesRelacionados.filter(x => x.id !== id);
+  localStorage.setItem('retirantesRelacionados', JSON.stringify(retirantesRelacionados));
+  registrarAuditoria('Vínculo de terceiro removido', {
+    moradorId: r.moradorId,
+    moradorNome: r.moradorNome,
+    retiradoPor: r.nome,
+    retiranteRg: r.rg
+  });
+  renderMoradores();
+  toast('Vínculo removido');
 }
 
 function excluirMorador(id) {
+  if (!exigirPerfil(['admin'])) return;
   const morador = moradores.find(m => m.id === id);
   if (!confirm('Remover este morador?')) return;
   moradores = moradores.filter(m => m.id !== id);
@@ -1585,9 +2048,16 @@ function excluirMorador(id) {
 }
 
 // ========== CONFIG ==========
+function nomeAssociacaoAtual() {
+  const chaveAntiga = 'cond' + 'ominio';
+  return config.associacao || config[chaveAntiga] || 'Associação de Moradores';
+}
+
 function carregarConfig() {
-  document.getElementById('cfgCondominio').value = config.condominio || "Residencial D'Italia";
+  if (!exigirPerfil(['admin'])) return;
+  document.getElementById('cfgAssociacao').value = nomeAssociacaoAtual();
   document.getElementById('cfgEmailBackup').value = config.emailBackup || '';
+  document.getElementById('cfgDiasAlertaRetirada').value = diasAlertaRetirada();
   document.getElementById('cfgApiUrl').value = config.apiUrl || '';
   document.getElementById('cfgApiKey').value = config.apiKey || '';
   document.getElementById('cfgInstancia').value = config.instancia || 'portaria';
@@ -1597,23 +2067,30 @@ function carregarConfig() {
 }
 
 function salvarConfig() {
-  config.condominio = document.getElementById('cfgCondominio').value.trim() || "Residencial D'Italia";
+  if (!exigirPerfil(['admin'])) return;
+  config.associacao = document.getElementById('cfgAssociacao').value.trim() || 'Associação de Moradores';
+  delete config['cond' + 'ominio'];
   config.emailBackup = document.getElementById('cfgEmailBackup').value.trim();
+  config.diasAlertaRetirada = Math.min(30, Math.max(1, parseInt(document.getElementById('cfgDiasAlertaRetirada').value, 10) || DIAS_ALERTA_RETIRADA_PADRAO));
   config.apiUrl = document.getElementById('cfgApiUrl').value.trim();
   config.apiKey = document.getElementById('cfgApiKey').value.trim();
   config.instancia = document.getElementById('cfgInstancia').value.trim() || 'portaria';
   config.whatsAuto = document.getElementById('cfgWhatsAuto').checked;
   config.mensagem = document.getElementById('cfgMensagem').value;
   localStorage.setItem('config', JSON.stringify(config));
-  document.getElementById('headerCondominio').textContent = config.condominio;
+  document.getElementById('headerAssociacao').textContent = config.associacao;
   registrarAuditoria('Configurações alteradas', {
-    condominio: config.condominio,
-    whatsAuto: config.whatsAuto
+    associacao: config.associacao,
+    whatsAuto: config.whatsAuto,
+    diasAlertaRetirada: config.diasAlertaRetirada
   });
+  renderDashboard();
+  renderEncomendas();
   toast('✅ Configurações salvas!');
 }
 
 async function testarWhatsApp() {
+  if (!exigirPerfil(['admin'])) return;
   const numero = prompt('Digite seu número para teste (com DDD, sem +55):');
   if (!numero) return;
   const msg = '✅ PortariaSync — WhatsApp conectado e funcionando! ' + new Date().toLocaleString('pt-BR');
@@ -1695,7 +2172,8 @@ async function syncEncomendaSupabase(id) {
 
 // ========== EXPORT / CLEAR ==========
 function exportarDados() {
-  const data = { moradores, encomendas, retirantesRelacionados, auditoria, exportadoEm: new Date().toISOString() };
+  if (!exigirPerfil(['admin'])) return;
+  const data = { associacao: nomeAssociacaoAtual(), moradores, encomendas, retirantesRelacionados, auditoria, exportadoEm: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1703,15 +2181,118 @@ function exportarDados() {
   a.click();
 }
 
+function atualizarPainelBackupLocal() {
+  const aviso = document.getElementById('statusBackupLocal');
+  const btn = document.getElementById('btnReativarServidor');
+  if (!aviso || !btn) return;
+
+  const ativo = localStorage.getItem('usarBackupLocal') === 'true';
+  const data = localStorage.getItem('backupLocalImportadoEm');
+  aviso.style.display = ativo ? 'block' : 'none';
+  btn.style.display = ativo ? 'block' : 'none';
+
+  if (ativo) {
+    const dataTexto = data ? new Date(data).toLocaleString('pt-BR') : 'data não informada';
+    aviso.textContent = 'Backup restaurado em ' + dataTexto + '. A sincronização de leitura do servidor está pausada para não substituir estes dados.';
+  }
+}
+
+function reativarSincronizacaoServidor() {
+  if (!confirm('Ao voltar a carregar dados do servidor, os dados locais podem ser substituídos pelos registros online. Deseja continuar?')) return;
+  localStorage.removeItem('usarBackupLocal');
+  localStorage.removeItem('backupLocalImportadoEm');
+  registrarAuditoria('Sincronização do servidor reativada', {});
+  atualizarPainelBackupLocal();
+  carregarDoSupabase();
+  toast('🔄 Sincronização do servidor reativada.');
+}
+
+function validarBackupImportado(data) {
+  if (!data || typeof data !== 'object') throw new Error('Arquivo JSON inválido.');
+  if (!Array.isArray(data.moradores)) throw new Error('Backup sem lista de moradores.');
+  if (!Array.isArray(data.encomendas)) throw new Error('Backup sem histórico de encomendas.');
+
+  const moradoresOk = data.moradores.every(m => m && m.id && m.nome && m.casa);
+  const encomendasOk = data.encomendas.every(e => e && e.id && e.codigo && e.moradorNome && e.status);
+  if (!moradoresOk) throw new Error('A lista de moradores está incompleta ou corrompida.');
+  if (!encomendasOk) throw new Error('O histórico de encomendas está incompleto ou corrompido.');
+}
+
+async function importarDadosBackup(input) {
+  if (!exigirPerfil(['admin'])) {
+    input.value = '';
+    return;
+  }
+  const file = input.files && input.files[0];
+  if (!file) return;
+
+  try {
+    const texto = await file.text();
+    const data = JSON.parse(texto);
+    validarBackupImportado(data);
+
+    const resumo = [
+      `${data.moradores.length} morador(es)`,
+      `${data.encomendas.length} encomenda(s)`,
+      `${Array.isArray(data.retirantesRelacionados) ? data.retirantesRelacionados.length : 0} terceiro(s) vinculado(s)`,
+      `${Array.isArray(data.auditoria) ? data.auditoria.length : 0} registro(s) de auditoria`
+    ].join('\n');
+
+    if (!confirm('Este backup substituirá os dados atuais por:\n\n' + resumo + '\n\nDeseja continuar?')) return;
+    if (!confirm('Confirme novamente: restaurar este backup agora?')) return;
+
+    const auditoriaAtual = auditoria.slice(0, 20);
+    moradores = data.moradores;
+    encomendas = data.encomendas;
+    retirantesRelacionados = Array.isArray(data.retirantesRelacionados) ? data.retirantesRelacionados : [];
+    auditoria = Array.isArray(data.auditoria) ? data.auditoria : [];
+
+    localStorage.setItem('moradores', JSON.stringify(moradores));
+    localStorage.setItem('encomendas', JSON.stringify(encomendas));
+    localStorage.setItem('retirantesRelacionados', JSON.stringify(retirantesRelacionados));
+    localStorage.setItem('auditoria', JSON.stringify(auditoria));
+    localStorage.setItem('usarBackupLocal', 'true');
+    localStorage.setItem('backupLocalImportadoEm', new Date().toISOString());
+    reconstruirDetalhesRetiradaLocais(encomendas);
+
+    registrarAuditoria('Backup importado', {
+      arquivo: file.name,
+      moradores: moradores.length,
+      encomendas: encomendas.length,
+      terceiros: retirantesRelacionados.length,
+      auditoriaAnteriorPreservada: auditoriaAtual.length
+    });
+
+    renderDashboard();
+    renderEncomendas();
+    renderMoradores();
+    renderAuditoria();
+    atualizarPainelBackupLocal();
+    iniciarLogin();
+    toast('✅ Backup importado com sucesso!');
+  } catch (e) {
+    toast('❌ Não foi possível importar: ' + e.message, 7000);
+  } finally {
+    input.value = '';
+  }
+}
+
 function limparDados() {
+  if (!exigirPerfil(['admin'])) return;
   if (!confirm('Isso apagará TODOS os dados. Tem certeza?')) return;
   if (!confirm('Confirme novamente: apagar tudo?')) return;
   moradores = []; encomendas = []; retirantesRelacionados = []; auditoria = [];
   localStorage.removeItem('retirantesRelacionados');
   localStorage.removeItem('detalhesRetirada');
   localStorage.removeItem('auditoria');
+  localStorage.removeItem('usarBackupLocal');
+  localStorage.removeItem('backupLocalImportadoEm');
   salvarMoradores(); salvarEncomendas();
   renderDashboard();
+  renderEncomendas();
+  renderMoradores();
+  renderAuditoria();
+  atualizarPainelBackupLocal();
   toast('Dados apagados');
 }
 
@@ -1737,6 +2318,7 @@ function desbloquear() {
 
 // ========== CANCELAR ENCOMENDA ==========
 function abrirModalCancelarEncomenda(id) {
+  if (!exigirPerfil(['admin'])) return;
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
 
@@ -1773,6 +2355,7 @@ function fecharModalCancelarEncomenda() {
 }
 
 function confirmarCancelamentoEncomenda(id) {
+  if (!exigirPerfil(['admin'])) return;
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
   const motivo = (document.getElementById('motivoCancelamento')?.value || '').trim();
@@ -2324,7 +2907,7 @@ function agendarBackup() {
 
 function executarBackup() {
   const data = {
-    condominio: config.condominio || "Residencial D'Italia",
+    associacao: nomeAssociacaoAtual(),
     exportadoEm: new Date().toISOString(),
     moradores,
     encomendas,
@@ -2346,7 +2929,7 @@ function executarBackup() {
   if (window.emailjs) {
     emailjs.send(config.emailjsService || '', config.emailjsTemplate || '', {
       to_email: emailDestino,
-      condominio: data.condominio,
+      associacao: data.associacao,
       data: new Date().toLocaleDateString('pt-BR'),
       backup_json: json.substring(0, 5000) + (json.length > 5000 ? '...[truncado]' : '')
     }).then(() => console.log('Backup enviado por e-mail'))
@@ -2386,14 +2969,13 @@ function iniciarConsulta() {
 }
 
 function parseDateBR(str) {
-  // Suporta "28/05/2026 21:53" e "2026-05-28"
   if (!str) return null;
-  if (str.includes('/')) {
-    const [d, m, resto] = str.split('/');
-    const y = resto.split(' ')[0];
-    return new Date(y, m-1, d);
+  const texto = String(str).trim();
+  if (texto.includes('/')) {
+    const m = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   }
-  return new Date(str);
+  return new Date(texto);
 }
 
 function renderConsulta() {
@@ -2480,12 +3062,12 @@ function gerarRelatorio() {
     </tr>
   `).join('');
 
-  const nomeCondominio = config.condominio || "Residencial D'Italia";
+  const nomeAssociacao = nomeAssociacaoAtual();
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Relatório de Encomendas – ${nomeCondominio}</title>
+<title>Relatório de Encomendas – ${nomeAssociacao}</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   @page { size: A4 landscape; margin: 14mm 14mm 12mm; }
@@ -2550,7 +3132,7 @@ function gerarRelatorio() {
     </div>
     <div class="cab-titulo">
       <h1>Relatório de Controle de Encomendas</h1>
-      <div class="sub">${nomeCondominio}</div>
+      <div class="sub">${nomeAssociacao}</div>
       <div class="periodo">Período: <strong>${periodoTexto}</strong>${transp ? ' &nbsp;·&nbsp; Transportadora: <strong>'+transp+'</strong>' : ''}${status ? ' &nbsp;·&nbsp; Status: <strong>'+labelStatus(status)+'</strong>' : ''}</div>
     </div>
   </div>
@@ -2591,7 +3173,7 @@ function gerarRelatorio() {
   <div class="rodape-marca">
     Desenvolvido por <strong>CLECIUS SALOMÉ</strong> &nbsp;·&nbsp; Transformando Tecnologia em Soluções Jurídicas Inteligentes
   </div>
-  <div class="rodape-pag">PortariaSync &nbsp;·&nbsp; ${nomeCondominio}</div>
+  <div class="rodape-pag">PortariaSync &nbsp;·&nbsp; ${nomeAssociacao}</div>
 </div>
 
 </body>
