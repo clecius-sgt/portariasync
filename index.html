@@ -653,17 +653,28 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 <script>
 // ========== BACKEND ==========
 const API_BASE = localStorage.getItem('apiBaseUrl') || '';
+let authToken = localStorage.getItem('authToken') || '';
+let backendAuthDisponivel = false;
 
 async function apiFetch(path, options = {}) {
   const resp = await fetch(API_BASE + path, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(authToken ? { Authorization: 'Bearer ' + authToken } : {}),
       ...(options.headers || {})
     }
   });
-  if (!resp.ok) throw new Error('Servidor respondeu ' + resp.status);
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) limparSessaoExpirada();
+    throw new Error('Servidor respondeu ' + resp.status);
+  }
   return resp.json();
+}
+
+function limparSessaoExpirada() {
+  authToken = '';
+  localStorage.removeItem('authToken');
 }
 
 // ========== MEMÓRIA DE REMETENTES ==========
@@ -683,6 +694,7 @@ function salvarMemoriaRemetente(remetente, morador) {
     ultimaEntrega: new Date().toLocaleString('pt-BR')
   };
   localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+  agendarSyncEstadoServidor();
   apiFetch('/api/remetentes', {
     method: 'POST',
     body: JSON.stringify({ remetente: rem, morador_id: morador.id, morador_nome: morador.nome, morador_casa: morador.casa })
@@ -716,7 +728,10 @@ function limparRemetentesInvalidos() {
       console.log('Remetente inválido removido:', k);
     }
   }
-  if (alterou) localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+  if (alterou) {
+    localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+    agendarSyncEstadoServidor();
+  }
 }
 
 async function carregarMemoriaSupabase() {
@@ -823,6 +838,109 @@ let auditoria = JSON.parse(localStorage.getItem('auditoria') || '[]');
 let config = JSON.parse(localStorage.getItem('config') || '{}');
 let filtroAtivo = 'pendente';
 let moradorSelecionadoId = null;
+let estadoServidorVersion = Number(localStorage.getItem('estadoServidorVersion') || 0);
+let aplicandoEstadoServidor = false;
+let syncEstadoTimer = null;
+let intervaloEstadoServidor = null;
+
+function configPublica() {
+  return {
+    associacao: config.associacao || null,
+    diasAlertaRetirada: config.diasAlertaRetirada || null,
+    whatsAuto: config.whatsAuto,
+    mensagem: config.mensagem || null,
+    emailBackup: config.emailBackup || null
+  };
+}
+
+function montarEstadoApp() {
+  return {
+    version: Date.now(),
+    moradores,
+    encomendas,
+    retirantesRelacionados,
+    auditoria,
+    detalhesRetirada: JSON.parse(localStorage.getItem('detalhesRetirada') || '{}'),
+    memoriaRemetentes: _memoriaRemetentes,
+    configPublica: configPublica()
+  };
+}
+
+function salvarEstadoLocalBasico() {
+  localStorage.setItem('moradores', JSON.stringify(moradores));
+  localStorage.setItem('encomendas', JSON.stringify(encomendas));
+  localStorage.setItem('retirantesRelacionados', JSON.stringify(retirantesRelacionados));
+  localStorage.setItem('auditoria', JSON.stringify(auditoria));
+  localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+  localStorage.setItem('config', JSON.stringify(config));
+}
+
+function aplicarEstadoApp(state) {
+  if (!state || !state.exists) return false;
+  aplicandoEstadoServidor = true;
+  moradores = Array.isArray(state.moradores) && state.moradores.length ? state.moradores : moradores;
+  encomendas = Array.isArray(state.encomendas) ? state.encomendas : encomendas;
+  retirantesRelacionados = Array.isArray(state.retirantesRelacionados) ? state.retirantesRelacionados : retirantesRelacionados;
+  auditoria = Array.isArray(state.auditoria) ? state.auditoria : auditoria;
+  _memoriaRemetentes = state.memoriaRemetentes && typeof state.memoriaRemetentes === 'object' ? state.memoriaRemetentes : _memoriaRemetentes;
+  if (state.detalhesRetirada) localStorage.setItem('detalhesRetirada', JSON.stringify(state.detalhesRetirada));
+  if (state.configPublica && typeof state.configPublica === 'object') {
+    config = { ...config, ...state.configPublica };
+  }
+  estadoServidorVersion = Number(state.version || Date.now());
+  localStorage.setItem('estadoServidorVersion', String(estadoServidorVersion));
+  salvarEstadoLocalBasico();
+  aplicandoEstadoServidor = false;
+  renderDashboard();
+  renderEncomendas();
+  renderMoradores();
+  renderAuditoria();
+  atualizarPainelBackupLocal();
+  return true;
+}
+
+async function carregarEstadoServidor(forcar = false) {
+  if (!authToken || !backendAuthDisponivel) return false;
+  try {
+    const state = await apiFetch('/api/app-state');
+    if (!state.exists) {
+      if (temPerfil(['admin', 'porteiro'])) agendarSyncEstadoServidor();
+      return false;
+    }
+    const versao = Number(state.version || 0);
+    if (forcar || versao > estadoServidorVersion) return aplicarEstadoApp(state);
+  } catch(e) {
+    console.warn('Estado central indisponível:', e);
+  }
+  return false;
+}
+
+function agendarSyncEstadoServidor() {
+  if (aplicandoEstadoServidor || !backendAuthDisponivel || !authToken || !temPerfil(['admin', 'porteiro'])) return;
+  clearTimeout(syncEstadoTimer);
+  syncEstadoTimer = setTimeout(syncEstadoServidor, 700);
+}
+
+async function syncEstadoServidor() {
+  if (aplicandoEstadoServidor || !backendAuthDisponivel || !authToken || !temPerfil(['admin', 'porteiro'])) return;
+  try {
+    const state = montarEstadoApp();
+    const resp = await apiFetch('/api/app-state', {
+      method: 'PUT',
+      body: JSON.stringify(state)
+    });
+    estadoServidorVersion = Number(resp.version || state.version);
+    localStorage.setItem('estadoServidorVersion', String(estadoServidorVersion));
+  } catch(e) {
+    console.warn('Não foi possível sincronizar estado central:', e);
+  }
+}
+
+function iniciarEspelhamento() {
+  clearInterval(intervaloEstadoServidor);
+  if (!backendAuthDisponivel || !authToken) return;
+  intervaloEstadoServidor = setInterval(() => carregarEstadoServidor(false), 30000);
+}
 
 function normalizarDocumento(doc) {
   return (doc || '').replace(/\D/g, '');
@@ -846,6 +964,7 @@ function salvarDetalhesRetiradaLocal(enc) {
     motivoCancelamento: enc.motivoCancelamento || null
   };
   localStorage.setItem('detalhesRetirada', JSON.stringify(mapa));
+  agendarSyncEstadoServidor();
 }
 
 function mesclarDetalhesRetiradaLocais(lista) {
@@ -872,6 +991,7 @@ function reconstruirDetalhesRetiradaLocais(lista) {
     }
   }
   localStorage.setItem('detalhesRetirada', JSON.stringify(mapa));
+  agendarSyncEstadoServidor();
 }
 
 function salvarRetiranteRelacionado(morador, nome, rg) {
@@ -898,6 +1018,7 @@ function salvarRetiranteRelacionado(morador, nome, rg) {
   }
 
   localStorage.setItem('retirantesRelacionados', JSON.stringify(retirantesRelacionados));
+  agendarSyncEstadoServidor();
 }
 
 function retirantesDoMorador(moradorId) {
@@ -936,6 +1057,7 @@ function registrarAuditoria(acao, detalhes = {}) {
   auditoria.unshift(item);
   auditoria = auditoria.slice(0, 1000);
   localStorage.setItem('auditoria', JSON.stringify(auditoria));
+  agendarSyncEstadoServidor();
 }
 
 function textoAuditoria(a) {
@@ -1010,18 +1132,51 @@ function exigirPerfil(perfis, mensagem = '⚠️ Seu perfil não tem permissão 
   return false;
 }
 
-function iniciarLogin() {
+async function carregarUsuariosBackend() {
+  try {
+    const data = await apiFetch('/api/users');
+    usuarios = data.users || [];
+    backendAuthDisponivel = true;
+    localStorage.setItem('usuariosPublicos', JSON.stringify(usuarios));
+  } catch(e) {
+    backendAuthDisponivel = false;
+    usuarios = JSON.parse(localStorage.getItem('usuarios') || 'null') ||
+      JSON.parse(localStorage.getItem('usuariosPublicos') || 'null') ||
+      _usuarios_default;
+  }
+}
+
+async function iniciarLogin() {
+  await carregarUsuariosBackend();
   const sel = document.getElementById('loginUsuario');
   sel.innerHTML = '<option value="">Selecione...</option>' +
     usuarios.map(u => `<option value="${u.id}">${u.nome} (${labelPerfil(u.perfil)})</option>`).join('');
 }
 
-function fazerLogin() {
+async function fazerLogin() {
   const uid = document.getElementById('loginUsuario').value;
   const senha = document.getElementById('loginSenha').value;
   const erroEl = document.getElementById('loginErro');
-  const usuario = usuarios.find(u => u.id === uid && u.senha === senha);
-  if (!usuario) { erroEl.style.display = 'block'; return; }
+  let usuario = null;
+
+  if (backendAuthDisponivel) {
+    try {
+      const resp = await apiFetch('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ id: uid, senha })
+      });
+      authToken = resp.token;
+      localStorage.setItem('authToken', authToken);
+      usuario = resp.user;
+    } catch(e) {
+      erroEl.style.display = 'block';
+      return;
+    }
+  } else {
+    usuario = usuarios.find(u => u.id === uid && u.senha === senha);
+    if (!usuario) { erroEl.style.display = 'block'; return; }
+  }
+
   erroEl.style.display = 'none';
   usuarioLogado = usuario;
   registrarAuditoria('Login realizado', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
@@ -1031,17 +1186,23 @@ function fazerLogin() {
   document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome + ' · ' + labelPerfil(usuario.perfil);
   document.getElementById('headerAssociacao').textContent = nomeAssociacaoAtual();
   aplicarPermissoesInterface();
+  await carregarEstadoServidor(true);
+  iniciarEspelhamento();
   renderDashboard();
   atualizarPainelBackupLocal();
   agendarBackup();
-  carregarDoSupabase(); // carrega dados do servidor
-  carregarMemoriaSupabase(); // carrega memória de remetentes
+  if (!backendAuthDisponivel) carregarDoSupabase(); // fallback antigo
+  if (!backendAuthDisponivel) carregarMemoriaSupabase(); // fallback antigo
   limparRemetentesInvalidos(); // remove remetentes com moradores inválidos
 }
 
 function fazerLogout() {
   if (!confirm('Deseja sair do sistema?')) return;
   registrarAuditoria('Logout realizado', {});
+  apiFetch('/api/auth/logout', { method: 'POST', body: '{}' }).catch(() => {});
+  authToken = '';
+  localStorage.removeItem('authToken');
+  clearInterval(intervaloEstadoServidor);
   usuarioLogado = null;
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('mainHeader').style.display = 'none';
@@ -1071,16 +1232,33 @@ function aplicarPermissoesInterface() {
   if (cardAcaoRapida) cardAcaoRapida.style.display = operacional ? 'block' : 'none';
 }
 
-function criarUsuario() {
+async function criarUsuario() {
   if (!exigirPerfil(['admin'])) return;
   const nome = document.getElementById('novoUsuarioNome').value.trim();
   const perfil = document.getElementById('novoUsuarioPerfil').value;
   const senha = document.getElementById('novoUsuarioSenha').value;
   if (!nome) { toast('⚠️ Informe o nome'); return; }
   if (senha.length < 4) { toast('⚠️ Senha mínima: 4 caracteres'); return; }
-  const novoUsuario = { id: 'u' + Date.now(), nome, perfil, senha };
-  usuarios.push(novoUsuario);
-  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+
+  let novoUsuario = null;
+  if (backendAuthDisponivel) {
+    try {
+      const resp = await apiFetch('/api/users', {
+        method: 'POST',
+        body: JSON.stringify({ nome, perfil, senha })
+      });
+      novoUsuario = resp.user;
+      await carregarUsuariosBackend();
+    } catch(e) {
+      toast('❌ Não foi possível criar no servidor: ' + e.message, 6000);
+      return;
+    }
+  } else {
+    novoUsuario = { id: 'u' + Date.now(), nome, perfil, senha };
+    usuarios.push(novoUsuario);
+    localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  }
+
   registrarAuditoria('Usuário criado', { usuarioAlvo: novoUsuario.nome, perfil: novoUsuario.perfil });
   document.getElementById('novoUsuarioNome').value = '';
   document.getElementById('novoUsuarioSenha').value = '';
@@ -1103,12 +1281,22 @@ function renderListaUsuarios() {
   `).join('');
 }
 
-function excluirUsuario(id) {
+async function excluirUsuario(id) {
   if (!exigirPerfil(['admin'])) return;
   const usuario = usuarios.find(u => u.id === id);
   if (!confirm('Remover este usuário?')) return;
-  usuarios = usuarios.filter(u => u.id !== id);
-  localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  if (backendAuthDisponivel) {
+    try {
+      await apiFetch('/api/users/' + encodeURIComponent(id), { method: 'DELETE' });
+      await carregarUsuariosBackend();
+    } catch(e) {
+      toast('❌ Não foi possível remover no servidor: ' + e.message, 6000);
+      return;
+    }
+  } else {
+    usuarios = usuarios.filter(u => u.id !== id);
+    localStorage.setItem('usuarios', JSON.stringify(usuarios));
+  }
   if (usuario) registrarAuditoria('Usuário removido', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
   renderListaUsuarios();
   iniciarLogin();
@@ -1453,7 +1641,7 @@ function abrirModalRetirada(enc) {
           inputmode="numeric" autocomplete="off"
           style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:16px;margin-top:8px;">
         <div id="areaFotoRetirante" style="margin-top:10px;padding:10px;border:1px dashed #b7c6d8;border-radius:8px;background:#f8fbff;">
-          <div style="font-size:13px;color:#5f6368;margin-bottom:8px;">Foto de segurança do RG/CNH ou da pessoa retirante</div>
+          <div style="font-size:13px;color:#5f6368;margin-bottom:8px;">Foto obrigatória do RG/CNH ou da pessoa retirante</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;" onclick="abrirCameraRetirante()">📷 Fotografar</button>
             <label class="btn btn-sm" style="background:#eef2f7;color:#334155;margin:0;cursor:pointer;">
@@ -1471,7 +1659,7 @@ function abrirModalRetirada(enc) {
         👤 ${enc.moradorNome}
       </div>
 
-      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Assinatura <span style="font-weight:400;color:#aaa;">(dedo, caneta touch ou mouse)</span></label>
+      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Assinatura obrigatória <span style="font-weight:400;color:#aaa;">(dedo, caneta touch ou mouse)</span></label>
       <canvas id="canvasAssinatura" width="360" height="120"
         style="width:100%;height:140px;border:1px solid #dadce0;border-radius:8px;background:#f8f9fa;touch-action:none;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;"></canvas>
       <button onclick="limparAssinatura()" style="margin-top:4px;background:none;border:none;color:#1a73e8;font-size:13px;cursor:pointer;padding:0;">🗑️ Limpar assinatura</button>
@@ -1777,6 +1965,14 @@ function confirmarRetirada(id) {
     if (inputRg) inputRg.focus();
     return;
   }
+  if (retiranteTipo === 'outro' && !window._fotoRetiranteData) {
+    toast('⚠️ Para retirada por terceiro, fotografe o documento ou a pessoa retirante.', 6000);
+    return;
+  }
+  if (!window._assinaturaData) {
+    toast('⚠️ A assinatura é obrigatória para confirmar a retirada.', 6000);
+    return;
+  }
   const enc = encomendas.find(e => e.id === id);
   if (!enc) return;
   enc.status = 'retirado';
@@ -2028,6 +2224,7 @@ function removerRetiranteRelacionado(id) {
   if (!confirm('Remover o vínculo de ' + r.nome + ' com este morador? O histórico das encomendas já retiradas será preservado.')) return;
   retirantesRelacionados = retirantesRelacionados.filter(x => x.id !== id);
   localStorage.setItem('retirantesRelacionados', JSON.stringify(retirantesRelacionados));
+  agendarSyncEstadoServidor();
   registrarAuditoria('Vínculo de terceiro removido', {
     moradorId: r.moradorId,
     moradorNome: r.moradorNome,
@@ -2084,6 +2281,7 @@ function salvarConfig() {
   config.whatsAuto = document.getElementById('cfgWhatsAuto').checked;
   config.mensagem = document.getElementById('cfgMensagem').value;
   localStorage.setItem('config', JSON.stringify(config));
+  agendarSyncEstadoServidor();
   document.getElementById('headerAssociacao').textContent = config.associacao;
   registrarAuditoria('Configurações alteradas', {
     associacao: config.associacao,
@@ -2148,8 +2346,14 @@ async function uploadFotoSupabase(base64, encId) {
 }
 
 // ========== PERSIST ==========
-function salvarEncomendas() { localStorage.setItem('encomendas', JSON.stringify(encomendas)); }
-function salvarMoradores() { localStorage.setItem('moradores', JSON.stringify(moradores)); }
+function salvarEncomendas() {
+  localStorage.setItem('encomendas', JSON.stringify(encomendas));
+  agendarSyncEstadoServidor();
+}
+function salvarMoradores() {
+  localStorage.setItem('moradores', JSON.stringify(moradores));
+  agendarSyncEstadoServidor();
+}
 
 // Salva uma encomenda específica no Supabase (chamada sempre que salvarEncomendas() for chamado com enc específica)
 async function syncEncomendaSupabase(id) {
@@ -2160,7 +2364,7 @@ async function syncEncomendaSupabase(id) {
 // ========== EXPORT / CLEAR ==========
 function exportarDados() {
   if (!exigirPerfil(['admin'])) return;
-  const data = { associacao: nomeAssociacaoAtual(), moradores, encomendas, retirantesRelacionados, auditoria, exportadoEm: new Date().toISOString() };
+  const data = { associacao: nomeAssociacaoAtual(), ...montarEstadoApp(), exportadoEm: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2233,14 +2437,23 @@ async function importarDadosBackup(input) {
     encomendas = data.encomendas;
     retirantesRelacionados = Array.isArray(data.retirantesRelacionados) ? data.retirantesRelacionados : [];
     auditoria = Array.isArray(data.auditoria) ? data.auditoria : [];
+    _memoriaRemetentes = data.memoriaRemetentes && typeof data.memoriaRemetentes === 'object' ? data.memoriaRemetentes : _memoriaRemetentes;
+    if (data.configPublica && typeof data.configPublica === 'object') config = { ...config, ...data.configPublica };
+    if (data.associacao) config.associacao = data.associacao;
 
     localStorage.setItem('moradores', JSON.stringify(moradores));
     localStorage.setItem('encomendas', JSON.stringify(encomendas));
     localStorage.setItem('retirantesRelacionados', JSON.stringify(retirantesRelacionados));
     localStorage.setItem('auditoria', JSON.stringify(auditoria));
+    localStorage.setItem('memoriaRemetentes', JSON.stringify(_memoriaRemetentes));
+    localStorage.setItem('config', JSON.stringify(config));
     localStorage.setItem('usarBackupLocal', 'true');
     localStorage.setItem('backupLocalImportadoEm', new Date().toISOString());
-    reconstruirDetalhesRetiradaLocais(encomendas);
+    if (data.detalhesRetirada && typeof data.detalhesRetirada === 'object') {
+      localStorage.setItem('detalhesRetirada', JSON.stringify(data.detalhesRetirada));
+    } else {
+      reconstruirDetalhesRetiradaLocais(encomendas);
+    }
 
     registrarAuditoria('Backup importado', {
       arquivo: file.name,
@@ -2256,6 +2469,7 @@ async function importarDadosBackup(input) {
     renderAuditoria();
     atualizarPainelBackupLocal();
     iniciarLogin();
+    agendarSyncEstadoServidor();
     toast('✅ Backup importado com sucesso!');
   } catch (e) {
     toast('❌ Não foi possível importar: ' + e.message, 7000);
@@ -2275,6 +2489,7 @@ function limparDados() {
   localStorage.removeItem('usarBackupLocal');
   localStorage.removeItem('backupLocalImportadoEm');
   salvarMoradores(); salvarEncomendas();
+  agendarSyncEstadoServidor();
   renderDashboard();
   renderEncomendas();
   renderMoradores();
@@ -3045,6 +3260,7 @@ function gerarRelatorio() {
       </td>
       <td>${e.dataRetirada || '—'}</td>
       <td>${e.retiradoPor ? e.retiradoPor + (e.retiranteRg ? '<br><span style="font-size:8.5px;color:#6b7280;">RG ' + e.retiranteRg + '</span>' : '') : '—'}</td>
+      <td style="text-align:center;">${e.fotoRetirante ? '<img src="'+e.fotoRetirante+'" style="height:42px;max-width:80px;object-fit:contain;"><br><span style="font-size:8px;color:#6b7280;">Foto/doc.</span>' : '—'}</td>
       <td style="text-align:center;">${e.assinatura ? '<img src="'+e.assinatura+'" style="height:32px;max-width:80px;">' : '—'}</td>
     </tr>
   `).join('');
@@ -3148,11 +3364,12 @@ function gerarRelatorio() {
       <th style="width:60px;text-align:center;">Status</th>
       <th style="width:100px;">Data retirada</th>
       <th style="width:95px;">Retirado por</th>
+      <th style="width:72px;text-align:center;">Evidência</th>
       <th style="width:72px;text-align:center;">Assinatura</th>
     </tr>
   </thead>
   <tbody>
-    ${linhas || '<tr><td colspan="10" style="text-align:center;padding:20px;color:#9ca3af;font-style:italic;">Nenhuma encomenda no período selecionado</td></tr>'}
+    ${linhas || '<tr><td colspan="11" style="text-align:center;padding:20px;color:#9ca3af;font-style:italic;">Nenhuma encomenda no período selecionado</td></tr>'}
   </tbody>
 </table>
 
@@ -3394,8 +3611,10 @@ function selecionarMoradorSugestao(id, remetente) {
 }
 
 // ========== INIT ==========
-iniciarLogin();
-renderListaUsuarios();
+(async function init() {
+  await iniciarLogin();
+  renderListaUsuarios();
+})();
 </script>
 </body>
 </html>

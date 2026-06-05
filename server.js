@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 loadEnv();
 
@@ -11,6 +12,13 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const ZAPI_URL = process.env.ZAPI_URL || '';
 const ZAPI_CLIENT = process.env.ZAPI_CLIENT || '';
+const DATA_DIR = path.join(__dirname, 'data');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
+const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000);
+const sessions = new Map();
+
+ensureUsersFile();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -25,13 +33,17 @@ const MIME = {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === 'OPTIONS') {
+      sendJson(res, 200, { ok: true });
+      return;
+    }
     if (req.url.startsWith('/api/')) {
       await handleApi(req, res);
       return;
     }
     serveStatic(req, res);
   } catch (err) {
-    sendJson(res, 500, { error: 'Erro interno', detail: err.message });
+    sendJson(res, err.statusCode || 500, { error: err.statusCode ? err.message : 'Erro interno', detail: err.message });
   }
 });
 
@@ -57,7 +69,14 @@ function serveStatic(req, res) {
   const rawPath = decodeURIComponent(req.url.split('?')[0]);
   const filePath = rawPath === '/' ? '/index.html' : rawPath;
   const abs = path.resolve(PUBLIC_DIR, '.' + filePath);
-  if (!abs.startsWith(PUBLIC_DIR)) {
+  const rel = path.relative(PUBLIC_DIR, abs);
+  const partes = rel.split(path.sep);
+  if (
+    !abs.startsWith(PUBLIC_DIR) ||
+    partes.includes('data') ||
+    partes.some(p => p.startsWith('.')) ||
+    path.basename(abs).toLowerCase() === 'package-lock.json'
+  ) {
     res.writeHead(403);
     res.end('Acesso negado');
     return;
@@ -81,7 +100,86 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/api/users') {
+    sendJson(res, 200, { users: publicUsers() });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/auth/login') {
+    const { id, senha } = await readJson(req);
+    const user = readUsers().find(u => u.id === id);
+    if (!user || !verifyPassword(senha, user.password)) {
+      sendJson(res, 401, { error: 'Usuário ou senha incorretos' });
+      return;
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    sessions.set(token, { id: user.id, nome: user.nome, perfil: user.perfil, createdAt: Date.now() });
+    sendJson(res, 200, { token, user: publicUser(user) });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/auth/logout') {
+    const token = bearerToken(req);
+    if (token) sessions.delete(token);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/users') {
+    requireRole(req, ['admin']);
+    const { nome, perfil, senha } = await readJson(req);
+    if (!nome || !['admin', 'porteiro', 'supervisor'].includes(perfil) || !senha || String(senha).length < 4) {
+      sendJson(res, 400, { error: 'Dados do usuário inválidos' });
+      return;
+    }
+    const users = readUsers();
+    const user = { id: 'u' + Date.now(), nome, perfil, password: hashPassword(senha) };
+    users.push(user);
+    writeUsers(users);
+    sendJson(res, 200, { user: publicUser(user) });
+    return;
+  }
+
+  const deleteUserMatch = req.url.match(/^\/api\/users\/([^/]+)$/);
+  if (req.method === 'DELETE' && deleteUserMatch) {
+    requireRole(req, ['admin']);
+    const id = decodeURIComponent(deleteUserMatch[1]);
+    if (id === 'u1') {
+      sendJson(res, 400, { error: 'Usuário padrão não pode ser removido' });
+      return;
+    }
+    writeUsers(readUsers().filter(u => u.id !== id));
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/app-state') {
+    requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    sendJson(res, 200, readAppState());
+    return;
+  }
+
+  if (req.method === 'PUT' && req.url === '/api/app-state') {
+    requireRole(req, ['admin', 'porteiro']);
+    const body = await readJson(req, 50 * 1024 * 1024);
+    const state = {
+      version: Number(body.version || Date.now()),
+      updatedAt: new Date().toISOString(),
+      moradores: Array.isArray(body.moradores) ? body.moradores : [],
+      encomendas: Array.isArray(body.encomendas) ? body.encomendas : [],
+      retirantesRelacionados: Array.isArray(body.retirantesRelacionados) ? body.retirantesRelacionados : [],
+      auditoria: Array.isArray(body.auditoria) ? body.auditoria : [],
+      detalhesRetirada: body.detalhesRetirada && typeof body.detalhesRetirada === 'object' ? body.detalhesRetirada : {},
+      memoriaRemetentes: body.memoriaRemetentes && typeof body.memoriaRemetentes === 'object' ? body.memoriaRemetentes : {},
+      configPublica: body.configPublica && typeof body.configPublica === 'object' ? body.configPublica : {}
+    };
+    writeAppState(state);
+    sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt });
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/api/sync-data') {
+    requireRole(req, ['admin', 'porteiro', 'supervisor']);
     requireSupabase();
     const [encomendas, moradores, remetentes] = await Promise.all([
       supabaseRequest('/rest/v1/encomendas?select=*&order=created_at.desc'),
@@ -93,6 +191,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/encomendas') {
+    requireRole(req, ['admin', 'porteiro']);
     requireSupabase();
     const body = await readJson(req);
     await supabaseRequest('/rest/v1/encomendas', {
@@ -105,6 +204,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/remetentes') {
+    requireRole(req, ['admin', 'porteiro']);
     requireSupabase();
     const body = await readJson(req);
     await supabaseRequest('/rest/v1/remetentes', {
@@ -117,6 +217,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/whatsapp/text') {
+    requireRole(req, ['admin', 'porteiro']);
     requireWhatsapp();
     const { numero, mensagem } = await readJson(req);
     const destino = normalizarTelefone(numero);
@@ -130,6 +231,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/whatsapp/image') {
+    requireRole(req, ['admin', 'porteiro']);
     requireWhatsapp();
     const { numero, imagemBase64, caption } = await readJson(req, 10 * 1024 * 1024);
     const destino = normalizarTelefone(numero);
@@ -160,6 +262,79 @@ function requireWhatsapp() {
     err.statusCode = 503;
     throw err;
   }
+}
+
+function ensureUsersFile() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (fs.existsSync(USERS_FILE)) return;
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  writeUsers([
+    { id: 'u1', nome: 'Administrador', perfil: 'admin', password: hashPassword(adminPassword) }
+  ]);
+}
+
+function readUsers() {
+  ensureUsersFile();
+  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+}
+
+function writeUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+function readAppState() {
+  if (!fs.existsSync(APP_STATE_FILE)) {
+    return { exists: false, version: 0, updatedAt: null };
+  }
+  return { exists: true, ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
+}
+
+function writeAppState(state) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = APP_STATE_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+  fs.renameSync(tmp, APP_STATE_FILE);
+}
+
+function publicUser(user) {
+  return { id: user.id, nome: user.nome, perfil: user.perfil };
+}
+
+function publicUsers() {
+  return readUsers().map(publicUser);
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
+  return `pbkdf2$${salt}$${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  const [algo, salt, hash] = String(stored || '').split('$');
+  if (algo !== 'pbkdf2' || !salt || !hash) return false;
+  const test = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
+  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
+}
+
+function bearerToken(req) {
+  const auth = req.headers.authorization || '';
+  return auth.startsWith('Bearer ') ? auth.slice(7) : '';
+}
+
+function requireRole(req, roles) {
+  const token = bearerToken(req);
+  const session = token ? sessions.get(token) : null;
+  if (session && Date.now() - session.createdAt > SESSION_MAX_AGE_MS) {
+    sessions.delete(token);
+  }
+  const ativa = token ? sessions.get(token) : null;
+  if (!ativa || !roles.includes(ativa.perfil)) {
+    const err = new Error('Sem permissão');
+    err.statusCode = 403;
+    throw err;
+  }
+  return ativa;
 }
 
 async function supabaseRequest(endpoint, options = {}) {
@@ -204,7 +379,9 @@ function readJson(req, limit = 2 * 1024 * 1024) {
 function sendJson(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*'
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
   });
   res.end(JSON.stringify(payload));
 }
