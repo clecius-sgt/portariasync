@@ -367,14 +367,10 @@
     </div>
 
     <!-- Botão único unificado -->
-    <button class="btn btn-full" style="background:linear-gradient(135deg,#1a1f3a,#2d3561);color:white;font-size:17px;padding:16px;margin-top:12px;border-radius:10px;letter-spacing:0.3px;" onclick="abrirCameraUnificada()">
+    <button class="btn btn-full" style="background:linear-gradient(135deg,#1a1f3a,#2d3561);color:white;font-size:17px;padding:16px;margin-top:12px;border-radius:10px;letter-spacing:0.3px;" onclick="fotografarEtiqueta()">
       📷 Fotografar etiqueta — ler código + identificar morador
     </button>
     <input type="file" id="inputFotoOCR" accept="image/*" capture="environment" style="display:none;" onchange="processarFotoOCR(this)">
-    <button class="btn btn-full" style="background:#eef2f7;color:#1a1f3a;font-size:15px;padding:13px;margin-top:8px;border-radius:10px;" onclick="document.getElementById('inputFotoOCR').click()">
-      🖼️ Usar câmera do celular ou anexar foto
-    </button>
-    <div style="font-size:12px;color:#5f6368;margin-top:6px;text-align:center;">Use esta opção se o navegador bloquear a câmera.</div>
     <div id="ocrStatus" style="display:none;margin-top:8px;padding:10px;background:#e8f0fe;border-radius:8px;font-size:14px;color:#1a1f3a;text-align:center;"></div>
 
     <!-- Modal câmera unificada -->
@@ -2680,6 +2676,19 @@ function identificarMorador(val) {
 let uniStream = null;
 let _fotoEtiquetaBase64 = null;
 
+function fotografarEtiqueta() {
+  const podeUsarCameraDireta = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) &&
+    (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+
+  if (podeUsarCameraDireta) {
+    abrirCameraUnificada();
+    return;
+  }
+
+  const input = document.getElementById('inputFotoOCR');
+  if (input) input.click();
+}
+
 async function abrirCameraUnificada() {
   const modal = document.getElementById('modalUnificado');
   modal.style.display = 'flex';
@@ -2693,7 +2702,9 @@ async function abrirCameraUnificada() {
     await video.play();
   } catch(e) {
     fecharCameraUnificada();
-    toast('⚠️ Câmera bloqueada pelo navegador. Use o botão "Usar câmera do celular ou anexar foto".', 7000);
+    toast('⚠️ Câmera direta bloqueada. Abrindo a câmera nativa do aparelho...', 5000);
+    const input = document.getElementById('inputFotoOCR');
+    if (input) input.click();
   }
 }
 
