@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PortariaSync – Controle de Encomendas</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/dynamsoft-barcode-reader-bundle@11.4.2001/dist/dbr.bundle.js"></script>
 <style>
   :root {
     --primary: #1a1f3a;
@@ -306,6 +307,10 @@
   </div>
   <div class="header-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
       <div id="whatsStatusBadge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.1);color:#aaa;">⏳ Verificando WhatsApp...</div>
+    <button id="syncStatusBadge" onclick="atualizarSincronizacaoManual()" title="Clique para verificar a sincronização"
+      style="border:none;font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(255,255,255,0.1);color:#aaa;cursor:pointer;">
+      ⏳ Sincronização aguardando login
+    </button>
     <div id="clockDisplay"></div>
     <div id="headerUsuario" style="font-size:11px;color:var(--gold);margin-top:2px;"></div>
   </div>
@@ -350,6 +355,11 @@
     </button>
   </div>
 
+  <div class="card" style="padding:12px 16px;">
+    <h2 style="margin-bottom:8px;">🔄 Sincronização</h2>
+    <div id="syncResumo" style="font-size:14px;color:#5f6368;line-height:1.4;">Aguardando login.</div>
+  </div>
+
   <div class="card">
     <h2>📬 Aguardando retirada</h2>
     <div id="dashPendentes"></div>
@@ -365,6 +375,9 @@
     <div style="display:flex;gap:8px;align-items:center;">
       <input type="text" id="inputCodigo" placeholder="Ex: TBR364591209" autocomplete="off" style="font-size:18px;">
     </div>
+    <button class="btn btn-full" style="background:#e8f0fe;color:#1a73e8;font-size:16px;padding:12px;margin-top:10px;border-radius:10px;font-weight:700;" onclick="colarCodigoScannerExterno()">
+      📲 Usar código lido no scanner externo
+    </button>
 
     <!-- Botão único unificado -->
     <button class="btn btn-full" style="background:linear-gradient(135deg,#1a1f3a,#2d3561);color:white;font-size:17px;padding:16px;margin-top:12px;border-radius:10px;letter-spacing:0.3px;" onclick="fotografarEtiqueta()">
@@ -825,6 +838,35 @@ async function excluirEncomendasSupabase(id) {
 }
 
 // ========== ESTADO ==========
+function limparDadosLocaisDoAparelho() {
+  const manter = new Map();
+  ['authToken', 'usuariosPublicos'].forEach(k => {
+    const v = localStorage.getItem(k);
+    if (v !== null) manter.set(k, v);
+  });
+  [
+    'encomendas',
+    'retirantesRelacionados',
+    'detalhesRetirada',
+    'estadoServidorVersion',
+    'ultimaSincronizacaoOk',
+    'resetEncomendasAplicado',
+    'snapshotsAntesSync',
+    'backupLocalImportadoEm',
+    'usarBackupLocal'
+  ].forEach(k => localStorage.removeItem(k));
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('snapshotAntesSync_'))
+    .forEach(k => localStorage.removeItem(k));
+  manter.forEach((v, k) => localStorage.setItem(k, v));
+}
+
+if (new URLSearchParams(location.search).has('limparLocal')) {
+  limparDadosLocaisDoAparelho();
+  history.replaceState(null, '', location.pathname);
+  alert('Dados locais deste aparelho foram limpos. Faça login novamente.');
+}
+
 let _moradores_default = [{"id": "1001", "nome": "Leonnardo Lopes Ferreira", "casa": "QD01LT04 – Rua Brasilia, 199", "whats": "18996288341"}, {"id": "1004", "nome": "Juliane Maira De Moraes", "casa": "QD01LT07 – Rua Atenas, 243", "whats": "17996625840"}, {"id": "1005", "nome": "Argenio Reati Da Silva", "casa": "QD01LT08 – Rua Brasilia, 263", "whats": "17997440383"}, {"id": "1006", "nome": "Clecius Eduardo Alves Salome", "casa": "QD01LT11 – Rua Brasilia, 311", "whats": "11997868841"}, {"id": "1006b", "nome": "Lucimara Gonçalves Salomé", "casa": "QD01LT11 – Rua Brasilia, 311", "whats": "11997868841"}, {"id": "1007", "nome": "Luciano Albertin", "casa": "QD02LT01 – Rua Brasilia, 531", "whats": "17991282025"}, {"id": "1008", "nome": "Caroline Gabriele Marques", "casa": "QD02LT02 – Rua Berlim, 222", "whats": "17981329209"}, {"id": "1009", "nome": "Lucas Affonso", "casa": "QD02LT04 – Rua Toquio, 179", "whats": "17991471005"}, {"id": "1010", "nome": "Antonio Cesar De Mendonca", "casa": "QD02LT06 – Rua Toquio, 147", "whats": "17991283585"}, {"id": "1011", "nome": "Janaina Beatriz Pelicer Bevilacqua", "casa": "QD02LT07 – Rua Toquio, 131", "whats": "17991540593"}, {"id": "1012", "nome": "Valdecir Moretti", "casa": "QD03LT01 – Rua Atenas, 199", "whats": "17991245444"}, {"id": "1014", "nome": "Helder Silva Macedo", "casa": "QD03LT03 – Rua Roma, 294", "whats": "17997226565"}, {"id": "1015", "nome": "Joaquim Renato De Moraes Leite", "casa": "QD03LT04 – Rua Toquio, 164", "whats": "11995066363"}, {"id": "1016", "nome": "Marizilda Ortega Campanha", "casa": "QD03LT06 – Rua Toquio Qd 03 Lt 06", "whats": "11986003686"}, {"id": "1017", "nome": "Nadia Zakalski Marena", "casa": "QD03LT08 – Rua Toquio, 212", "whats": "11985236041"}, {"id": "1019", "nome": "Myrian Ferreira Silva", "casa": "QD03LT10 – Rua Madri, 313", "whats": "17988147753"}, {"id": "1020", "nome": "Selmo Jose Teodoro", "casa": "QD03LT11 – Rua Londres, 115", "whats": "17991169693"}, {"id": "1021", "nome": "Fernando Da Silva Rodrigues", "casa": "QD03LT12 – Rua Madri, 283", "whats": "351914011279"}, {"id": "1024", "nome": "Elisio Jose Gomes", "casa": "QD03LT15 – Rua Madri, 235", "whats": "17992500884"}, {"id": "1025", "nome": "Maria De Lourdes Teixeira Caprio", "casa": "QD03LT17 – Rua Madri, 203", "whats": "17991138459"}, {"id": "1026", "nome": "Bruno Henrique Peres Capati", "casa": "QD03LT18 – Rua Madri, 128", "whats": "17996664444"}, {"id": "1027", "nome": "Jose Antonio Alves Amaral", "casa": "QD03LT19 – Rua Madri, 171", "whats": "17997339137"}, {"id": "1028", "nome": "Paulo Brigido Lemos", "casa": "QD03LT20 – Rua Madri, 155", "whats": "17997660402"}, {"id": "1030", "nome": "João Paulo Oliveira Burian", "casa": "QD03LT22 – Rua Roma, 310", "whats": "11999006593"}, {"id": "1031", "nome": "Iara Lucia Grechi De Camillo Silva", "casa": "QD04LT02 – Rua Madri, 116", "whats": "17997744626"}, {"id": "1032", "nome": "Valdecir Moretti Junior", "casa": "QD04LT03 – Rua Londres, 115", "whats": "17992668327"}, {"id": "1033", "nome": "Eduardo Felipe Faria Nunes", "casa": "QD04LT05 – Rua Madri, 164", "whats": "17981505883"}, {"id": "1034", "nome": "Jose Aparecido Moretti", "casa": "QD04LT06 – Rua Bueno Aires, 291", "whats": "17997794777"}, {"id": "1035", "nome": "Ivan Carareto Macierinha", "casa": "QD04LT07 – R Madri, 195", "whats": "17996744692"}, {"id": "1036", "nome": "Jose Manoel Aguiar", "casa": "QD04LT08 – Rua Lisboa, 211", "whats": "17997228307"}, {"id": "1037", "nome": "João Ribeiro", "casa": "QD04LT09 – Rua Madri, 228", "whats": "17997690803"}, {"id": "1038", "nome": "Edmur Carlos Michelon", "casa": "QD04LT10 – Rua Madri, 244", "whats": "17997171122"}, {"id": "1039", "nome": "Klebiane Da Silva Januzzi", "casa": "QD04LT11 – Rua Madri, 244", "whats": "17997696095"}, {"id": "1040", "nome": "Carlos Henrique Da Silva Neves", "casa": "QD04LT12 – Rua Lisboa, 275", "whats": "11991114567"}, {"id": "1041", "nome": "Fernanda Teixeira Caprio Loureiro", "casa": "QD04LT18 – Rua Lisboa, 415", "whats": "17991043548"}, {"id": "1042", "nome": "Mateus Diogo Ribeiro", "casa": "QD04LT19 – Rua Londres, 99", "whats": "17991213708"}, {"id": "1043", "nome": "Renato Fernando Secato", "casa": "QD04LT24 – Rua Lisboa, 307", "whats": "17992066328"}, {"id": "1045", "nome": "Marlene Alves Ferreira", "casa": "QD04LT27 – Rua Lisboa, 259", "whats": "1791136712"}, {"id": "1046", "nome": "Helio Pimenta Godoy", "casa": "QD04LT28 – Rua Lisboa, 243", "whats": "11983215571"}, {"id": "1047", "nome": "Ana Paula Palmeira", "casa": "QD04LT29 – Rua Lisboa, 227", "whats": "17991390461"}, {"id": "1049", "nome": "Therezinha Maria Thome Ferrari", "casa": "QD04LT32 – Rua Lisboa, 179", "whats": "44988140477"}, {"id": "1050", "nome": "Valdinei Gonçalves De Amorim", "casa": "QD04LT32 – Rua Lisboa, 179", "whats": "12974020015"}, {"id": "1051", "nome": "João Luis Palmeira", "casa": "QD04LT33 – Rua Lisboa, 163", "whats": "17997441994"}, {"id": "1052", "nome": "Alex Marçal De Noronha", "casa": "QD04LT35 – Rua Lisboa, 131", "whats": "17997011698"}, {"id": "1053", "nome": "Dovilho Pavani", "casa": "QD04LT35 – Rua Lisboa, 131", "whats": "17997273132"}, {"id": "1054", "nome": "Paula Karine Assunção De Carvalho", "casa": "QD04LT36 – Rua Lisboa, 115", "whats": "17981250351"}, {"id": "1055", "nome": "Thiago Delvair Soldo", "casa": "QD04LT36 – Rua Lisboa, 115", "whats": "17991237415"}, {"id": "1056", "nome": "Samir Fuad Daud", "casa": "QD04LT37 – Rua Lisboa, 99", "whats": "17997168580"}, {"id": "1059", "nome": "Joel Fernando Monteiro", "casa": "QD05LT06 – Rua Lisboa, 178", "whats": "17991311909"}, {"id": "1060", "nome": "Edinei Mantovano", "casa": "QD05LT07 – Rua Lisboa, 194", "whats": "16999945099"}, {"id": "1062", "nome": "Aline Rodrigues Da Silva", "casa": "QD05LT09 – Rua Buenos Aires, 140", "whats": "17997563262"}, {"id": "1064", "nome": "Alice Nakayama", "casa": "QD05LT11 – Rua Londres, 195", "whats": "11994868899"}, {"id": "1065", "nome": "Claudio Cardena Miranda", "casa": "QD05LT12 – Rua Lisboa, 274", "whats": "17991258700"}, {"id": "1066", "nome": "Laerci Sebastião Cardoso", "casa": "QD05LT13 – Rua Lisboa, 306", "whats": "65993086735"}, {"id": "1068", "nome": "Fabio Alberto Da Silva", "casa": "QD05LT15 – Rua Lisboa, 306", "whats": "65996464914"}, {"id": "1071", "nome": "Alex Marçal De Noronha", "casa": "QD05LT19 – Rua Buenos Aires, 156", "whats": "17997011698"}, {"id": "1072", "nome": "Rodrigo Martins Salvador", "casa": "QD05LT24 – Rua Paris, 239", "whats": "17996346999"}, {"id": "1073", "nome": "Maria Aparecida Vieira Do Carmo", "casa": "QD05LT25 – Rua Londres, 335", "whats": "17996428285"}, {"id": "1074", "nome": "Luis Gonzaga Fernandes Dos Santos", "casa": "QD05LT26 – Rua Londres, 339", "whats": "17997880965"}, {"id": "1075", "nome": "Luiz Regival Alves Pereira", "casa": "QD05LT27 – Rua Londres, 323", "whats": "17997688866"}, {"id": "1076", "nome": "Lucas Damiani De Mendonça", "casa": "QD05LT28 – Rua Londres, 307", "whats": "17988341101"}, {"id": "1078", "nome": "Rep Administração E Participaçoes Sa", "casa": "QD05LT32 – Rua Londres, 243", "whats": "17996373200"}, {"id": "1080", "nome": "Jose Pedro Teixeira Da Rocha", "casa": "QD05LT36 – Rua Londres, 179", "whats": "17996215084"}, {"id": "1081", "nome": "Jose Pedro Teixeira Da Rocha", "casa": "QD05LT37 – Rua Londres, 163", "whats": "17996215084"}, {"id": "1082", "nome": "Romildo Alves Dos Reis", "casa": "QD05LT39 – Rua Londres, 131", "whats": "17991573783"}, {"id": "1085", "nome": "Rodrigo Rodrigues De Moraes", "casa": "QD05LT43 – Rua Londres, 67", "whats": "17997715877"}, {"id": "1086", "nome": "Jose Monteiro Alves Sobrinho", "casa": "QD06LT02 – Rua Londres, 128", "whats": "17996015440"}, {"id": "1087", "nome": "Creusa Maria Castilho Bento", "casa": "QD06LT04 – Rua Londres, 160", "whats": "11971461548"}, {"id": "1088", "nome": "Fabio De Freitas Nascimento", "casa": "QD06LT06 – Rua Londres, 192", "whats": "17996469945"}, {"id": "1089", "nome": "Leonildo Salvador", "casa": "QD06LT06 – Rua Paris, 239", "whats": "17997710382"}, {"id": "1090", "nome": "Luiz Miguel De Barros", "casa": "QD06LT10 – Rua Londres, 256", "whats": "17981537375"}, {"id": "1091", "nome": "Joaquim Naves Dos Santos", "casa": "QD06LT11 – Rua Londres, 272", "whats": "17992645000"}, {"id": "1094", "nome": "Luiz Antonio Tobardini", "casa": "QD06LT14 – Rua Roma, 310", "whats": "17991052431"}, {"id": "1095", "nome": "Patricia Bonardi", "casa": "QD06LT15 – Rua Roma, 294", "whats": "17997323779"}, {"id": "1096", "nome": "Jose Mauricio De Mendonça", "casa": "QD06LT16 – Rua Toquio, 147", "whats": "17991190061"}, {"id": "1097", "nome": "Leodonio Josil De Souza", "casa": "QD06LT18 – Rua Roma, 273", "whats": "17982177257"}, {"id": "1099", "nome": "Fabio De Castro", "casa": "QD06LT21 – Rua Roma, 225", "whats": "1791137300"}, {"id": "1101", "nome": "Manoel Santos Matos", "casa": "QD08LT01 – Rua Roma, 246", "whats": "17992376522"}, {"id": "1102", "nome": "Leonildo Salvador", "casa": "QD08LT03 – Rua Montevideu, 301", "whats": "17997710382"}, {"id": "1105", "nome": "Luana Domingues Corniani Burian", "casa": "QD08LT05 – Rua Roma, 310", "whats": "11999006570"}, {"id": "1109", "nome": "Fernanda Paloma Da Silva Durigan", "casa": "QD09LT03 – Rua Buenos Aires, 124", "whats": "18981999493"}, {"id": "1110", "nome": "Antonio Pinto Da Silva", "casa": "QD09LT04 – Rua Buenos Aires, 140", "whats": "17997761710"}, {"id": "1112", "nome": "Orlando Pinto Da Silva Junior", "casa": "QD09LT05 – Rua Buenos Aires, 156", "whats": "17991148356"}, {"id": "1114", "nome": "Jose Aparecido Moretti", "casa": "QD09LT07 – Rua Buenos Aires, 291", "whats": "17997794777"}, {"id": "1124", "nome": "Nicoli Rossini Salvador", "casa": "QD09LT16 – Rua Montevideu, 301", "whats": "17991771275"}, {"id": "1125", "nome": "Marcos Helene Szauter", "casa": "QD09LT17 – Rua Montevideu, 287", "whats": "17981900500"}, {"id": "1127", "nome": "Leovaldo Jacinto Ferraz", "casa": "QD09LT18 – Rua Montevideu, 273", "whats": "11996220700"}, {"id": "1128", "nome": "Claudinei Parro", "casa": "QD09LT19 – Rua Montevideu, 259", "whats": "17991918979"}, {"id": "1129", "nome": "Ueverton Rodrigues De Sousa", "casa": "QD09LT19 – Rua Montevideu, 259", "whats": "12991871034"}, {"id": "1134", "nome": "Sergio Nunes Pombo Filho", "casa": "QD09LT24 – Rua Montevideo, 189", "whats": "17991348831"}, {"id": "1135", "nome": "Aloisio Punhagui Cuginotti Filho", "casa": "QD09LT25 – Rua Montevideu, 175", "whats": "11985369966"}, {"id": "1136", "nome": "João Flavio Vieira", "casa": "QD09LT25 – Rua Montevideu, 175", "whats": "17997457090"}, {"id": "1137", "nome": "Debora Cristina Colombo", "casa": "QD09LT26 – Rua Montevideu, 161", "whats": "17981824001"}, {"id": "1138", "nome": "Edmur Carlos Michelon", "casa": "QD09LT28 – Rua Montevideu, 133", "whats": "17997171122"}, {"id": "1139", "nome": "Tatiana Ferreira Lopes", "casa": "QD09LT29 – Rua Montevideu, 119", "whats": "17981916734"}, {"id": "1140", "nome": "Alcides P Ramires", "casa": "QD10LT01 – Rua Montevideu, 100", "whats": "17997761710"}, {"id": "1141", "nome": "Luis Carlos Roveda Artigos De Iluminação Me", "casa": "QD10LT05 – Rua Montevideo, 156", "whats": "17997192374"}, {"id": "1143", "nome": "Marcio Fructuoso L Pinto", "casa": "QD10LT08 – Rua Montevideo, 198", "whats": "17991519372"}, {"id": "1144", "nome": "Luiz Otavio Silva Aguiar", "casa": "QD10LT09 – Rua Montevideo, 212", "whats": "17982042229"}, {"id": "1145", "nome": "Sancler Carlos Masson De Menezes", "casa": "QD10LT10 – Rua Montevideu, 226", "whats": "17991379999"}, {"id": "1146", "nome": "Artur Sergio Fava", "casa": "QD10LT11 – Rua Montevideu, 240", "whats": "17981012752"}, {"id": "1147", "nome": "Jozicarla Masson De Menezes", "casa": "QD10LT14 – Rua Montevideu, 282", "whats": "17991468720"}, {"id": "1149", "nome": "Djindja Soares Frade Amorim", "casa": "QD10LT17 – Rua Atenas, 285", "whats": "17981012752"}, {"id": "1152", "nome": "Adalberto Gomes Da Costa", "casa": "QD10LT20 – Rua Atenas, 243", "whats": "71996967400"}, {"id": "1154", "nome": "Kamila De Castro Pinati Figueiredo", "casa": "QD10LT22 – Rua Atenas, 215", "whats": "17996091865"}, {"id": "1155", "nome": "Helio Rubens Ceron", "casa": "QD10LT23 – Rua Atenas, 199", "whats": "17996158548"}, {"id": "1156", "nome": "Ubirajara Brasil Da Silva", "casa": "QD10LT24 – Rua Atenas, 185", "whats": "17991361787"}, {"id": "1157", "nome": "Karina Soares Frade Barufi", "casa": "QD10LT27 – Rua Atenas, 143", "whats": "17996156276"}, {"id": "1158", "nome": "Phabio Tridico Leão", "casa": "QD10LT29 – Rua Atenas, 115", "whats": "17981535856"}, {"id": "1159", "nome": "Camila Carvalho Godoi Rosa", "casa": "QD08LT06 – Rua Olimpio Manoel Damasio, 2731", "whats": "11947462618"}, {"id": "1160", "nome": "Alcenir Ricardo Bruzadin", "casa": "QD09LT13 – Av Zaia Tarraf, 1931", "whats": "17991619957"}, {"id": "1161", "nome": "Carolina Takaku", "casa": "QD05LT34 – Rua Adamastor Baltazar De Araujo, 177 Qd 24 Lt 03", "whats": "17981164919"}, {"id": "1162", "nome": "Santorini Logistica Ltda", "casa": "QD01LT09 – Av Olivio Martinelli, 1150", "whats": "17981951057"}, {"id": "1163", "nome": "Paulo Cesar Da Silva", "casa": "QD09LT03 – Av Angelica Bello Scarpelli, 283", "whats": "17991170464"}, {"id": "1164", "nome": "Sirley Magaly Albieri", "casa": "QD10LT12 – Avenida America, 539", "whats": "17988182973"}, {"id": "1165", "nome": "Roberto Artiolli", "casa": "QD02LT03 – Rua Elidio Verona, 30 Apto 92", "whats": "17982083379"}, {"id": "1166", "nome": "Renato Jose Agreli", "casa": "QD05LT30 – Rua Dos Bombeiros, 42", "whats": "1781709847"}, {"id": "1167", "nome": "Sueli Aparecida Garcia Freire", "casa": "QD04LT22 – Rua Novaes, 39", "whats": "17981129273"}, {"id": "1168", "nome": "Maykon Donizeti Gervasoni", "casa": "QD06LT09 – Rua João Gonçalves Noronha, 2197", "whats": "17982139355"}, {"id": "1169", "nome": "Lhb Participações Ltda", "casa": "QD06LT19 – Av Projetada 02, 580 Sala 08", "whats": "17991573764"}];
 let moradores = JSON.parse(localStorage.getItem('moradores') || 'null') || _moradores_default;
 // Mescla novos moradores do padrão sem apagar cadastros manuais
@@ -843,6 +885,63 @@ let estadoServidorVersion = Number(localStorage.getItem('estadoServidorVersion')
 let aplicandoEstadoServidor = false;
 let syncEstadoTimer = null;
 let intervaloEstadoServidor = null;
+let ultimaSincronizacaoOk = localStorage.getItem('ultimaSincronizacaoOk') || '';
+let resetEncomendasAt = localStorage.getItem('resetEncomendasAplicado') || '';
+
+function horaCurta(data = new Date()) {
+  return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function atualizarStatusSync(status, detalhe = '') {
+  const el = document.getElementById('syncStatusBadge');
+  if (!el) return;
+  const estilos = {
+    login: ['rgba(255,255,255,0.1)', '#aaa', '⏳ Sincronização aguardando login'],
+    offline: ['#f8d7da', '#842029', '🔴 Offline'],
+    local: ['#fff3cd', '#856404', '🟡 Modo local'],
+    pendente: ['#fff3cd', '#856404', '🟡 Envio pendente'],
+    enviando: ['#dbeafe', '#1d4ed8', '🔄 Sincronizando...'],
+    recebendo: ['#dbeafe', '#1d4ed8', '🔄 Verificando atualizações...'],
+    sincronizado: ['#d1e7dd', '#0f5132', '🟢 Sincronizado'],
+    atualizado: ['#d1e7dd', '#0f5132', '🟢 Atualizado do servidor'],
+    erro: ['#f8d7da', '#842029', '🔴 Erro de sincronização']
+  };
+  const cfg = estilos[status] || estilos.login;
+  el.style.background = cfg[0];
+  el.style.color = cfg[1];
+  el.textContent = detalhe ? cfg[2] + ' · ' + detalhe : cfg[2];
+  const resumo = document.getElementById('syncResumo');
+  if (resumo) {
+    const textos = {
+      login: 'Entre no sistema para iniciar o espelhamento.',
+      offline: 'Este aparelho está sem conexão com o servidor. As alterações podem não aparecer no outro equipamento até reconectar.',
+      local: 'O sistema está em modo local. Para espelhar celular e computador, acesse pelo endereço do servidor.',
+      pendente: 'Há alteração aguardando envio para o servidor.',
+      enviando: 'Enviando alterações para o servidor.',
+      recebendo: 'Verificando atualizações feitas em outro aparelho.',
+      sincronizado: 'Tudo sincronizado. Última atualização: ' + (detalhe || horaCurta()) + '.',
+      atualizado: 'Dados recebidos do servidor. Última atualização: ' + (detalhe || horaCurta()) + '.',
+      erro: 'Não foi possível sincronizar agora. Verifique rede, servidor e login.'
+    };
+    resumo.textContent = textos[status] || textos.login;
+  }
+}
+
+function marcarSyncOk(texto = '') {
+  ultimaSincronizacaoOk = new Date().toISOString();
+  localStorage.setItem('ultimaSincronizacaoOk', ultimaSincronizacaoOk);
+  atualizarStatusSync('sincronizado', texto || horaCurta());
+}
+
+async function atualizarSincronizacaoManual() {
+  if (!backendAuthDisponivel || !authToken) {
+    atualizarStatusSync('local', 'sem servidor');
+    toast('⚠️ Sincronização disponível apenas acessando pelo servidor.');
+    return;
+  }
+  const recebeu = await carregarEstadoServidor(true);
+  if (!recebeu) await syncEstadoServidor();
+}
 
 function configPublica() {
   return {
@@ -857,14 +956,148 @@ function configPublica() {
 function montarEstadoApp() {
   return {
     version: Date.now(),
+    updatedAt: new Date().toISOString(),
     moradores,
     encomendas,
     retirantesRelacionados,
     auditoria,
     detalhesRetirada: JSON.parse(localStorage.getItem('detalhesRetirada') || '{}'),
     memoriaRemetentes: _memoriaRemetentes,
-    configPublica: configPublica()
+    configPublica: configPublica(),
+    resetEncomendasAt
   };
+}
+
+function estadoTemRegistrosLocais() {
+  return (Array.isArray(encomendas) && encomendas.length > 0) ||
+    (Array.isArray(retirantesRelacionados) && retirantesRelacionados.length > 0) ||
+    (Array.isArray(auditoria) && auditoria.length > 0);
+}
+
+function salvarSnapshotAntesSync(origem = 'servidor') {
+  if (!estadoTemRegistrosLocais()) return;
+  try {
+    const snapshot = montarEstadoApp();
+    snapshot.origemSnapshot = origem;
+    const chave = 'snapshotAntesSync_' + new Date().toISOString().replace(/[:.]/g, '-');
+    localStorage.setItem(chave, JSON.stringify(snapshot));
+    const chaves = JSON.parse(localStorage.getItem('snapshotsAntesSync') || '[]');
+    chaves.unshift(chave);
+    while (chaves.length > 5) {
+      const antiga = chaves.pop();
+      localStorage.removeItem(antiga);
+    }
+    localStorage.setItem('snapshotsAntesSync', JSON.stringify(chaves));
+  } catch(e) {
+    console.warn('Não foi possível criar snapshot local:', e);
+  }
+}
+
+function resetEncomendasAplicado(resetId) {
+  return !!resetId && localStorage.getItem('resetEncomendasAplicado') === String(resetId);
+}
+
+function aplicarResetEncomendasServidor(state) {
+  const resetId = state && state.resetEncomendasAt;
+  if (!resetId || resetEncomendasAplicado(resetId)) return false;
+  salvarSnapshotAntesSync('antes de limpar encomendas');
+  encomendas = [];
+  retirantesRelacionados = [];
+  localStorage.setItem('encomendas', '[]');
+  localStorage.setItem('retirantesRelacionados', '[]');
+  localStorage.setItem('detalhesRetirada', '{}');
+  localStorage.setItem('resetEncomendasAplicado', String(resetId));
+  resetEncomendasAt = String(resetId);
+  return true;
+}
+
+function pontuarEncomenda(e) {
+  if (!e) return 0;
+  let pontos = 1;
+  if (e.status === 'pendente') pontos += 2;
+  if (e.status === 'retirado') pontos += 5;
+  if (e.status === 'cancelado') pontos += 4;
+  if (e.dataRetirada) pontos += 2;
+  if (e.retiradoPor) pontos += 1;
+  if (e.assinatura) pontos += 2;
+  if (e.fotoRetirante) pontos += 2;
+  if (e.motivoCancelamento) pontos += 1;
+  return pontos;
+}
+
+function mesclarPorId(localLista, servidorLista, escolher) {
+  const mapa = new Map();
+  let alterou = false;
+  for (const item of Array.isArray(servidorLista) ? servidorLista : []) {
+    if (item && item.id) mapa.set(String(item.id), item);
+  }
+  for (const item of Array.isArray(localLista) ? localLista : []) {
+    if (!item || !item.id) continue;
+    const id = String(item.id);
+    if (!mapa.has(id)) {
+      mapa.set(id, item);
+      alterou = true;
+    } else {
+      const atual = mapa.get(id);
+      const escolhido = escolher ? escolher(item, atual) : { ...item, ...atual };
+      if (JSON.stringify(escolhido) !== JSON.stringify(atual)) alterou = true;
+      mapa.set(id, escolhido);
+    }
+  }
+  return { lista: Array.from(mapa.values()), alterou };
+}
+
+function chaveRetirante(r) {
+  return [r?.moradorId || '', normalizarDocumento(r?.rg || ''), normalizarNome(r?.nome || '')].join('|');
+}
+
+function mesclarRetirantes(localLista, servidorLista) {
+  const mapa = new Map();
+  let alterou = false;
+  for (const r of Array.isArray(servidorLista) ? servidorLista : []) {
+    mapa.set(chaveRetirante(r), r);
+  }
+  for (const r of Array.isArray(localLista) ? localLista : []) {
+    const chave = chaveRetirante(r);
+    if (!mapa.has(chave)) {
+      mapa.set(chave, r);
+      alterou = true;
+    } else {
+      const atual = mapa.get(chave);
+      const mesclado = { ...r, ...atual, datas: Array.from(new Set([...(r.datas || []), ...(atual.datas || [])])) };
+      if (JSON.stringify(mesclado) !== JSON.stringify(atual)) alterou = true;
+      mapa.set(chave, mesclado);
+    }
+  }
+  return { lista: Array.from(mapa.values()), alterou };
+}
+
+function assinaturaEncomendas(lista) {
+  return (Array.isArray(lista) ? lista : [])
+    .map(e => [
+      e.id || '',
+      e.codigo || '',
+      e.status || '',
+      e.dataRetirada || '',
+      e.retiradoPor || '',
+      e.motivoCancelamento || ''
+    ].join('|'))
+    .sort()
+    .join('::');
+}
+
+function assinaturaEstadoOperacional(state = {}) {
+  const detalhes = state.detalhesRetirada || JSON.parse(localStorage.getItem('detalhesRetirada') || '{}');
+  return JSON.stringify({
+    encomendas: assinaturaEncomendas(state.encomendas || encomendas),
+    retirantes: (Array.isArray(state.retirantesRelacionados) ? state.retirantesRelacionados : retirantesRelacionados).length,
+    detalhes: Object.keys(detalhes || {}).length
+  });
+}
+
+function estadoLocalDiferenteDoServidor(state) {
+  if (!state || !state.exists) return false;
+  return assinaturaEstadoOperacional() !== assinaturaEstadoOperacional(state);
 }
 
 function salvarEstadoLocalBasico() {
@@ -878,13 +1111,33 @@ function salvarEstadoLocalBasico() {
 
 function aplicarEstadoApp(state) {
   if (!state || !state.exists) return false;
+  salvarSnapshotAntesSync('antes de aplicar servidor');
   aplicandoEstadoServidor = true;
-  moradores = Array.isArray(state.moradores) && state.moradores.length ? state.moradores : moradores;
-  encomendas = Array.isArray(state.encomendas) ? state.encomendas : encomendas;
-  retirantesRelacionados = Array.isArray(state.retirantesRelacionados) ? state.retirantesRelacionados : retirantesRelacionados;
-  auditoria = Array.isArray(state.auditoria) ? state.auditoria : auditoria;
+  let precisaReenviar = false;
+  const resetouEncomendas = aplicarResetEncomendasServidor(state);
+  const mergeMoradores = mesclarPorId(moradores, state.moradores, (local, servidor) => ({ ...local, ...servidor }));
+  const mergeEncomendas = resetouEncomendas
+    ? { lista: Array.isArray(state.encomendas) ? state.encomendas : [], alterou: false }
+    : mesclarPorId(encomendas, state.encomendas, (local, servidor) => {
+    if (pontuarEncomenda(local) > pontuarEncomenda(servidor)) return { ...servidor, ...local };
+    return { ...local, ...servidor };
+  });
+  const mergeRetirantes = resetouEncomendas
+    ? { lista: Array.isArray(state.retirantesRelacionados) ? state.retirantesRelacionados : [], alterou: false }
+    : mesclarRetirantes(retirantesRelacionados, state.retirantesRelacionados);
+  const mergeAuditoria = mesclarPorId(auditoria, state.auditoria, (local, servidor) => ({ ...local, ...servidor }));
+  moradores = mergeMoradores.lista.length ? mergeMoradores.lista : moradores;
+  encomendas = mergeEncomendas.lista;
+  retirantesRelacionados = mergeRetirantes.lista;
+  auditoria = mergeAuditoria.lista;
+  precisaReenviar = mergeMoradores.alterou || mergeEncomendas.alterou || mergeRetirantes.alterou || mergeAuditoria.alterou;
   _memoriaRemetentes = state.memoriaRemetentes && typeof state.memoriaRemetentes === 'object' ? state.memoriaRemetentes : _memoriaRemetentes;
-  if (state.detalhesRetirada) localStorage.setItem('detalhesRetirada', JSON.stringify(state.detalhesRetirada));
+  if (state.detalhesRetirada && !resetouEncomendas) {
+    const detalhesLocais = JSON.parse(localStorage.getItem('detalhesRetirada') || '{}');
+    const detalhesMesclados = { ...state.detalhesRetirada, ...detalhesLocais };
+    if (JSON.stringify(detalhesMesclados) !== JSON.stringify(state.detalhesRetirada)) precisaReenviar = true;
+    localStorage.setItem('detalhesRetirada', JSON.stringify(detalhesMesclados));
+  }
   if (state.configPublica && typeof state.configPublica === 'object') {
     config = { ...config, ...state.configPublica };
   }
@@ -897,27 +1150,41 @@ function aplicarEstadoApp(state) {
   renderMoradores();
   renderAuditoria();
   atualizarPainelBackupLocal();
+  ultimaSincronizacaoOk = new Date().toISOString();
+  localStorage.setItem('ultimaSincronizacaoOk', ultimaSincronizacaoOk);
+  atualizarStatusSync('atualizado', state.storage === 'supabase' ? 'Supabase ' + horaCurta() : horaCurta());
+  if (!document.querySelector('.page.active')) showPage('dashboard');
+  if (precisaReenviar && temPerfil(['admin', 'porteiro'])) agendarSyncEstadoServidor();
   return true;
 }
 
 async function carregarEstadoServidor(forcar = false) {
   if (!authToken || !backendAuthDisponivel) return false;
   try {
+    atualizarStatusSync('recebendo');
     const state = await apiFetch('/api/app-state');
     if (!state.exists) {
       if (temPerfil(['admin', 'porteiro'])) agendarSyncEstadoServidor();
+      atualizarStatusSync('pendente', 'primeiro envio');
       return false;
     }
     const versao = Number(state.version || 0);
     if (forcar || versao > estadoServidorVersion) return aplicarEstadoApp(state);
+    if (estadoLocalDiferenteDoServidor(state)) {
+      aplicarEstadoApp(state);
+      return true;
+    }
+    marcarSyncOk();
   } catch(e) {
     console.warn('Estado central indisponível:', e);
+    atualizarStatusSync(navigator.onLine ? 'erro' : 'offline');
   }
   return false;
 }
 
 function agendarSyncEstadoServidor() {
   if (aplicandoEstadoServidor || !backendAuthDisponivel || !authToken || !temPerfil(['admin', 'porteiro'])) return;
+  atualizarStatusSync('pendente');
   clearTimeout(syncEstadoTimer);
   syncEstadoTimer = setTimeout(syncEstadoServidor, 700);
 }
@@ -925,6 +1192,7 @@ function agendarSyncEstadoServidor() {
 async function syncEstadoServidor() {
   if (aplicandoEstadoServidor || !backendAuthDisponivel || !authToken || !temPerfil(['admin', 'porteiro'])) return;
   try {
+    atualizarStatusSync('enviando');
     const state = montarEstadoApp();
     const resp = await apiFetch('/api/app-state', {
       method: 'PUT',
@@ -932,16 +1200,32 @@ async function syncEstadoServidor() {
     });
     estadoServidorVersion = Number(resp.version || state.version);
     localStorage.setItem('estadoServidorVersion', String(estadoServidorVersion));
+    marcarSyncOk();
   } catch(e) {
     console.warn('Não foi possível sincronizar estado central:', e);
+    atualizarStatusSync(navigator.onLine ? 'erro' : 'offline');
   }
 }
 
 function iniciarEspelhamento() {
   clearInterval(intervaloEstadoServidor);
-  if (!backendAuthDisponivel || !authToken) return;
+  if (!backendAuthDisponivel || !authToken) {
+    atualizarStatusSync('local');
+    return;
+  }
+  if (ultimaSincronizacaoOk) atualizarStatusSync('sincronizado', horaCurta(new Date(ultimaSincronizacaoOk)));
+  else atualizarStatusSync('recebendo');
   intervaloEstadoServidor = setInterval(() => carregarEstadoServidor(false), 30000);
 }
+
+window.addEventListener('online', () => {
+  if (authToken && backendAuthDisponivel) {
+    atualizarStatusSync('recebendo', 'online');
+    carregarEstadoServidor(false);
+  }
+});
+
+window.addEventListener('offline', () => atualizarStatusSync('offline'));
 
 function normalizarDocumento(doc) {
   return (doc || '').replace(/\D/g, '');
@@ -1154,6 +1438,38 @@ async function iniciarLogin() {
     usuarios.map(u => `<option value="${u.id}">${u.nome} (${labelPerfil(u.perfil)})</option>`).join('');
 }
 
+async function entrarNoSistema(usuario, registrarLogin = true) {
+  usuarioLogado = usuario;
+  if (registrarLogin) registrarAuditoria('Login realizado', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainHeader').style.display = 'flex';
+  document.getElementById('mainNav').style.display = 'flex';
+  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome + ' · ' + labelPerfil(usuario.perfil);
+  document.getElementById('headerAssociacao').textContent = nomeAssociacaoAtual();
+  aplicarPermissoesInterface();
+  atualizarStatusSync(backendAuthDisponivel ? 'recebendo' : 'local');
+  await carregarEstadoServidor(true);
+  iniciarEspelhamento();
+  showPage('dashboard');
+  atualizarPainelBackupLocal();
+  agendarBackup();
+  if (!backendAuthDisponivel) carregarDoSupabase();
+  if (!backendAuthDisponivel) carregarMemoriaSupabase();
+  limparRemetentesInvalidos();
+}
+
+async function restaurarSessao() {
+  if (!authToken || !backendAuthDisponivel) return false;
+  try {
+    const resp = await apiFetch('/api/auth/me');
+    await entrarNoSistema(resp.user, false);
+    return true;
+  } catch(e) {
+    limparSessaoExpirada();
+    return false;
+  }
+}
+
 async function fazerLogin() {
   const uid = document.getElementById('loginUsuario').value;
   const senha = document.getElementById('loginSenha').value;
@@ -1179,22 +1495,7 @@ async function fazerLogin() {
   }
 
   erroEl.style.display = 'none';
-  usuarioLogado = usuario;
-  registrarAuditoria('Login realizado', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('mainHeader').style.display = 'flex';
-  document.getElementById('mainNav').style.display = 'flex';
-  document.getElementById('headerUsuario').textContent = '👤 ' + usuario.nome + ' · ' + labelPerfil(usuario.perfil);
-  document.getElementById('headerAssociacao').textContent = nomeAssociacaoAtual();
-  aplicarPermissoesInterface();
-  await carregarEstadoServidor(true);
-  iniciarEspelhamento();
-  renderDashboard();
-  atualizarPainelBackupLocal();
-  agendarBackup();
-  if (!backendAuthDisponivel) carregarDoSupabase(); // fallback antigo
-  if (!backendAuthDisponivel) carregarMemoriaSupabase(); // fallback antigo
-  limparRemetentesInvalidos(); // remove remetentes com moradores inválidos
+  await entrarNoSistema(usuario, true);
 }
 
 function fazerLogout() {
@@ -1204,6 +1505,7 @@ function fazerLogout() {
   authToken = '';
   localStorage.removeItem('authToken');
   clearInterval(intervaloEstadoServidor);
+  atualizarStatusSync('login');
   usuarioLogado = null;
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('mainHeader').style.display = 'none';
@@ -1318,20 +1620,26 @@ function showPage(id) {
   if (id === 'registrar' && !exigirPerfil(['admin', 'porteiro'])) return;
   if (id === 'config' && !exigirPerfil(['admin'])) return;
   if ((id === 'moradores' || id === 'auditoria') && !exigirPerfil(['admin', 'supervisor'])) return;
+  const pageId = id === 'inicio' ? 'dashboard' : id;
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  document.getElementById('page-' + id).classList.add('active');
+  const page = document.getElementById('page-' + pageId);
+  if (!page) {
+    toast('⚠️ Tela não encontrada: ' + id);
+    return;
+  }
+  page.classList.add('active');
   const btnAtivo = document.querySelector(`nav button[onclick="showPage('${id}')"]`);
   if (btnAtivo) btnAtivo.classList.add('active');
 
-  if (id === 'dashboard') renderDashboard();
-  if (id === 'registrar') limparFormRegistrar();
-  if (id === 'encomendas') renderEncomendas();
-  if (id === 'consultas') iniciarConsulta();
-  if (id === 'moradores') renderMoradores();
-  if (id === 'auditoria') renderAuditoria();
-  if (id === 'config') carregarConfig();
+  if (pageId === 'dashboard') renderDashboard();
+  if (pageId === 'registrar') limparFormRegistrar();
+  if (pageId === 'encomendas') renderEncomendas();
+  if (pageId === 'consultas') iniciarConsulta();
+  if (pageId === 'moradores') renderMoradores();
+  if (pageId === 'auditoria') renderAuditoria();
+  if (pageId === 'config') carregarConfig();
 }
 
 // ========== TOAST ==========
@@ -1583,6 +1891,7 @@ function itemEncomendaHTML(e) {
       ${e.status === 'pendente' && podeOperar ? `
       <button class="btn btn-success btn-sm" onclick="darBaixa('${e.id}')">✅ Confirmar retirada</button>
       <button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="reenviarWhats('${e.id}')">📲 Reenviar aviso</button>` : ''}
+      ${e.status === 'retirado' ? `<button class="btn btn-sm" style="background:#e8f0fe;color:var(--primary);" onclick="gerarComprovanteRetirada('${e.id}')">🧾 Comprovante</button>` : ''}
       ${e.status !== 'cancelado' && podeCancelar ? `<button class="btn btn-danger btn-sm" onclick="abrirModalCancelarEncomenda('${e.id}')">🚫 Cancelar</button>` : ''}
     </div>
   </div>`;
@@ -1644,11 +1953,8 @@ function abrirModalRetirada(enc) {
         <div id="areaFotoRetirante" style="margin-top:10px;padding:10px;border:1px dashed #b7c6d8;border-radius:8px;background:#f8fbff;">
           <div style="font-size:13px;color:#5f6368;margin-bottom:8px;">Foto obrigatória do RG/CNH ou da pessoa retirante</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;" onclick="abrirCameraRetirante()">📷 Fotografar</button>
-            <label class="btn btn-sm" style="background:#eef2f7;color:#334155;margin:0;cursor:pointer;">
-              🖼️ Anexar
-              <input type="file" accept="image/*" capture="environment" onchange="anexarFotoRetirante(this)" style="display:none;">
-            </label>
+            <button type="button" class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;flex:1;justify-content:center;padding:12px;font-weight:700;" onclick="abrirCameraRetirante()">📷 Fotografar RG/CNH ou pessoa</button>
+            <input id="inputFotoRetirante" type="file" accept="image/*" capture="environment" onchange="anexarFotoRetirante(this)" style="display:none;">
             <button type="button" id="btnLimparFotoRetirante" class="btn btn-sm" style="display:none;background:#f8d7da;color:#842029;" onclick="limparFotoRetirante()">Remover foto</button>
           </div>
           <img id="previewFotoRetirante" alt="Foto do retirante" style="display:none;width:100%;max-height:180px;object-fit:contain;border:1px solid #dadce0;border-radius:8px;margin-top:8px;background:white;">
@@ -1752,6 +2058,11 @@ function fecharModalRetirada() {
 // ========== FOTO DO RETIRANTE / DOCUMENTO ==========
 let fotoRetiranteStream = null;
 
+function abrirAnexoFotoRetirante() {
+  const input = document.getElementById('inputFotoRetirante');
+  if (input) input.click();
+}
+
 function atualizarPreviewFotoRetirante() {
   const img = document.getElementById('previewFotoRetirante');
   const btn = document.getElementById('btnLimparFotoRetirante');
@@ -1783,6 +2094,13 @@ async function abrirCameraRetirante() {
     toast('⚠️ A foto é usada apenas para retirada por terceiro.');
     return;
   }
+  const podeUsarCameraDireta = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) &&
+    (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  if (!podeUsarCameraDireta) {
+    toast('📷 Abrindo a câmera nativa do celular para registrar o documento.', 4000);
+    abrirAnexoFotoRetirante();
+    return;
+  }
   fecharCameraRetirante();
   const modal = document.createElement('div');
   modal.id = 'modalCameraRetirante';
@@ -1806,7 +2124,8 @@ async function abrirCameraRetirante() {
     await video.play();
   } catch(e) {
     fecharCameraRetirante();
-    toast('⚠️ Não foi possível acessar a câmera. Use a opção Anexar.');
+    toast('📷 Câmera direta bloqueada. Abrindo a câmera nativa do aparelho.', 5000);
+    abrirAnexoFotoRetirante();
   }
 }
 
@@ -1831,12 +2150,18 @@ function capturarFotoRetirante() {
 function anexarFotoRetirante(input) {
   const file = input.files && input.files[0];
   if (!file) return;
+  if (window._retiranteTipo !== 'outro') {
+    input.value = '';
+    toast('⚠️ A foto é usada apenas para retirada por terceiro.');
+    return;
+  }
   const img = new Image();
   img.onload = function() {
     window._fotoRetiranteData = imagemCompactadaBase64(img);
     URL.revokeObjectURL(img.src);
     atualizarPreviewFotoRetirante();
     input.value = '';
+    toast('✅ Foto adicionada à retirada.');
   };
   img.onerror = function() {
     input.value = '';
@@ -2630,9 +2955,34 @@ function processarCodigoLido(val) {
   }
 }
 
+async function colarCodigoScannerExterno() {
+  let codigo = '';
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      codigo = (await navigator.clipboard.readText() || '').trim();
+    }
+  } catch(e) {
+    console.warn('Leitura da área de transferência bloqueada:', e);
+  }
+
+  if (!codigo) {
+    codigo = prompt('Cole aqui o código lido pelo scanner externo:') || '';
+  }
+
+  codigo = codigo.trim();
+  if (!codigo) {
+    const input = document.getElementById('inputCodigo');
+    input.focus();
+    toast('Cole o código no campo da encomenda.');
+    return;
+  }
+
+  processarCodigoLido(codigo);
+  toast('✅ Código do scanner externo aplicado.');
+}
+
 function detectarTransportadora(codigo) {
   const v = codigo.toUpperCase();
-  if (/^[0-9]{11,}$/.test(v)) return 'Mercado Livre'; // numérico longo = ML
   if (v.startsWith('TBR') || v.startsWith('TBA')) return 'Mercado Livre';
   if (v.startsWith('SHP') || v.includes('SHOPEE')) return 'Shopee';
   if (v.startsWith('TBA') || v.includes('AMAZON')) return 'Amazon';
@@ -2640,7 +2990,365 @@ function detectarTransportadora(codigo) {
   if (v.includes('SHEIN')) return 'Shein';
   if (v.includes('LOGGI')) return 'Loggi';
   if (v.includes('JADLOG')) return 'Jadlog';
+  if (/^[0-9]{11,}$/.test(v)) return '';
   return '';
+}
+
+function detectarTransportadoraOCR(texto) {
+  const v = (texto || '').toUpperCase();
+  if (v.includes('MERCADO') || v.includes('MELI') || v.includes('MERCADOLIVRE') || v.includes('MERCADO LIVRE')) return 'Mercado Livre';
+  if (v.includes('SHOPEE') || v.includes('SPX') || v.includes('SHP')) return 'Shopee';
+  if (v.includes('AMAZON') || v.includes('AMZL')) return 'Amazon';
+  if (v.includes('CORREIOS') || v.includes('SEDEX') || v.includes('PAC ')) return 'Correios';
+  if (v.includes('SHEIN')) return 'Shein';
+  if (v.includes('LOGGI')) return 'Loggi';
+  if (v.includes('JADLOG')) return 'Jadlog';
+  return '';
+}
+
+function extrairCodigoEtiquetaOCR(texto) {
+  const original = String(texto || '').toUpperCase();
+  const linhasOriginais = original.split(/\r?\n/).map(l => l
+    .replace(/[|]/g, '1')
+    .replace(/[º°]/g, '0')
+    .replace(/\bO(?=\d)/g, '0')
+    .replace(/(?<=\d)O\b/g, '0')
+    .replace(/[^A-Z0-9\s\-.:/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  ).filter(Boolean);
+  const normalizado = original
+    .replace(/[|]/g, '1')
+    .replace(/[º°]/g, '0')
+    .replace(/\bO(?=\d)/g, '0')
+    .replace(/(?<=\d)O\b/g, '0')
+    .replace(/[^A-Z0-9\s\-.:/]/g, ' ')
+    .replace(/\s+/g, ' ');
+  const linhas = linhasOriginais.length ? linhasOriginais : [normalizado.trim()].filter(Boolean);
+  const candidatos = [];
+  const palavrasProximas = /(ETIQUETA|SERIE|SAIDA|PEDIDO|REMESSA|RASTREIO|CODIGO|BARRAS|ENVIO|NF)/;
+  const palavrasBloqueadas = /(DESTINATARIO|REMETENTE|ENDERECO|BAIRRO|CIDADE|AGENCIA|CORREIOS|SHOPEE|AMAZON|MERCADO|LIVRE|DATA|EMISSAO|PREVISTO|CEP|RUA|AVENIDA|CLIENTE|TECNOLOGIA|SERVICOS|SERVICOSLTDA|LTDA|TAXID|SERVICE|COURIER|REMESSA)/;
+
+  function extrairNucleoCodigo(valor) {
+    const limpo = String(valor || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const padroesFortes = [
+      /AJ\d{12,20}/,
+      /[A-Z]{2}\d{12,20}/,
+      /[A-Z]{2}\d{9}[A-Z]{2}/,
+      /(TBR|TBA|SHP|SPX|MLB)\d{8,24}/,
+      /\d{18,44}/
+    ];
+    for (const padrao of padroesFortes) {
+      const achado = limpo.match(padrao);
+      if (achado) return achado[0];
+    }
+    return limpo;
+  }
+
+  function codigoEtiquetaValido(codigo) {
+    if (!/^[A-Z0-9]{8,44}$/.test(codigo)) return false;
+    if (!/\d/.test(codigo)) return false;
+    if (!(/^[A-Z]{2}\d{9,20}[A-Z]{0,2}$/.test(codigo) || /^(TBR|TBA|SHP|SPX|MLB)\d{8,24}$/.test(codigo) || /^\d{12,44}$/.test(codigo))) return false;
+    if (/^\d{5,8}$/.test(codigo)) return false;
+    if (/^(20\d{2}|19\d{2})\d{4,}/.test(codigo)) return false;
+    if (/^[A-Z]{8,}$/.test(codigo)) return false;
+    return true;
+  }
+
+  function adicionar(valor, contexto = '', bonus = 0) {
+    const limpo = extrairNucleoCodigo(valor);
+    if (!codigoEtiquetaValido(limpo)) return;
+    if (palavrasBloqueadas.test(contexto) && !palavrasProximas.test(contexto) && !/^[A-Z]{2}\d{9,20}[A-Z]{0,2}$/.test(limpo)) return;
+    let score = limpo.length + bonus;
+    if (/^\d{10,}$/.test(limpo)) score += 10;
+    if (/^\d{20,}$/.test(limpo)) score += 30;
+    if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(limpo)) score += 28;
+    if (/^AJ\d{12,20}$/.test(limpo)) score += 70;
+    if (/^BR\d{10,20}$/.test(limpo)) score -= 35;
+    if (/^(TBR|TBA|SHP|SPX|MLB|BR|RR|AA|RA)/.test(limpo)) score += 24;
+    if (limpo.length >= 20) score += 12;
+    if (limpo.length >= 30) score += 12;
+    if (palavrasProximas.test(contexto)) score += 15;
+    if (palavrasBloqueadas.test(contexto) && !palavrasProximas.test(contexto)) score -= 18;
+    candidatos.push({ codigo: limpo, score });
+  }
+
+  linhas.forEach((linha, idx) => {
+    const contexto = [linhas[idx - 1] || '', linha, linhas[idx + 1] || ''].join(' ');
+    (linha.match(/[A-Z0-9][A-Z0-9\s.-]{6,}[A-Z0-9]/g) || []).forEach(n => adicionar(n, contexto));
+  });
+
+  (normalizado.match(/[A-Z]{2}\d{9,20}[A-Z]{0,2}|\d{18,44}|(?:TBR|TBA|SHP|SPX|MLB)\d{8,24}/g) || []).forEach(n => adicionar(n, normalizado, 6));
+
+  return candidatos
+    .sort((a, b) => b.score - a.score || b.codigo.length - a.codigo.length)[0]?.codigo || '';
+}
+
+function normalizarCodigoBarras(valor) {
+  let codigo = String(valor || '').trim();
+  try {
+    const json = JSON.parse(codigo);
+    if (json.id) codigo = String(json.id);
+  } catch(e) {}
+  const limpo = codigo.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const padroesFortes = [
+    /AJ\d{12,20}/,
+    /[A-Z]{2}\d{12,20}/,
+    /[A-Z]{2}\d{9}[A-Z]{2}/,
+    /(TBR|TBA|SHP|SPX|MLB)\d{8,24}/,
+    /\d{18,44}/
+  ];
+  for (const padrao of padroesFortes) {
+    const achado = limpo.match(padrao);
+    if (achado) return achado[0];
+  }
+  return limpo;
+}
+
+function pontuarCodigoBarras(valor, format = '', origem = '') {
+  const codigo = normalizarCodigoBarras(valor);
+  if (!/^[A-Z0-9]{8,44}$/.test(codigo) || !/\d/.test(codigo)) return -1;
+  let score = codigo.length;
+  if (/^\d{20,}$/.test(codigo)) score += 30;
+  if (/^\d{30,}$/.test(codigo)) score += 20;
+  if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(codigo)) score += 28;
+  if (/^AJ\d{12,20}$/.test(codigo)) score += 70;
+  if (/^BR\d{10,20}$/.test(codigo)) score -= 35;
+  if (/^(TBR|TBA|SHP|SPX|MLB|BR|RR|AA|RA)/.test(codigo)) score += 24;
+  if (['code_128', 'code_39', 'ean_13', 'ean_8'].includes(format)) score += 12;
+  if (['qr_code', 'data_matrix', 'pdf417', 'aztec'].includes(format)) score -= 18;
+  if (origem.includes('rotacao')) score += 2;
+  return score;
+}
+
+async function criarImageBitmapDeBase64(imgBase64) {
+  const blob = await (await fetch(imgBase64)).blob();
+  return createImageBitmap(blob);
+}
+
+function canvasRotacionado(origem, graus) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const w = origem.width;
+  const h = origem.height;
+  if (graus === 90 || graus === 270) {
+    canvas.width = h;
+    canvas.height = w;
+  } else {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(graus * Math.PI / 180);
+  ctx.drawImage(origem, -w / 2, -h / 2);
+  return canvas;
+}
+
+let _dynamsoftRouter = null;
+let _dynamsoftInicializando = null;
+let _dynamsoftLicencaOk = false;
+const DYNAMSOFT_LICENSE_KEY = localStorage.getItem('dynamsoftLicenseKey') || '';
+
+async function inicializarDynamsoft() {
+  if (!window.Dynamsoft || !Dynamsoft.CVR) {
+    console.warn('Dynamsoft não carregado.');
+    return false;
+  }
+  try {
+    if (!_dynamsoftLicencaOk) {
+      if (Dynamsoft.Core?.CoreModule?.engineResourcePaths) {
+        Dynamsoft.Core.CoreModule.engineResourcePaths.rootDirectory = 'https://cdn.jsdelivr.net/npm/';
+      }
+      if (DYNAMSOFT_LICENSE_KEY && Dynamsoft.License?.LicenseManager?.initLicense) {
+        Dynamsoft.License.LicenseManager.initLicense(DYNAMSOFT_LICENSE_KEY);
+      }
+      if (Dynamsoft.Core?.CoreModule?.loadWasm) {
+        await Dynamsoft.Core.CoreModule.loadWasm();
+      }
+      _dynamsoftLicencaOk = true;
+    }
+    return true;
+  } catch(e) {
+    console.warn('Falha ao inicializar Dynamsoft:', e);
+    return false;
+  }
+}
+
+async function obterDynamsoftRouter() {
+  if (_dynamsoftRouter) return _dynamsoftRouter;
+  if (_dynamsoftInicializando) return _dynamsoftInicializando;
+  _dynamsoftInicializando = (async () => {
+    const ok = await inicializarDynamsoft();
+    if (!ok) return null;
+    try {
+      _dynamsoftRouter = await Dynamsoft.CVR.CaptureVisionRouter.createInstance();
+      return _dynamsoftRouter;
+    } catch(e) {
+      console.warn('Dynamsoft indisponível:', e);
+      return null;
+    }
+  })();
+  return _dynamsoftInicializando;
+}
+
+function carregarImagemBase64(imgBase64) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = imgBase64;
+  });
+}
+
+function canvasDeImagem(img) {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth || img.width;
+  canvas.height = img.naturalHeight || img.height;
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  return canvas;
+}
+
+function cortarCanvas(origem, xPct, yPct, wPct, hPct) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const sx = Math.round(origem.width * xPct);
+  const sy = Math.round(origem.height * yPct);
+  const sw = Math.round(origem.width * wPct);
+  const sh = Math.round(origem.height * hPct);
+  canvas.width = Math.max(1, sw);
+  canvas.height = Math.max(1, sh);
+  ctx.drawImage(origem, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+async function gerarVariacoesEtiqueta(imgBase64) {
+  const img = await carregarImagemBase64(imgBase64);
+  const base = canvasDeImagem(img);
+  const regioes = [
+    { nome: 'etiqueta-inteira', x: 0, y: 0, w: 1, h: 1 },
+    { nome: 'topo', x: 0, y: 0, w: 1, h: 0.35 },
+    { nome: 'meio', x: 0, y: 0.25, w: 1, h: 0.45 },
+    { nome: 'inferior', x: 0, y: 0.55, w: 1, h: 0.45 },
+    { nome: 'codigo-central', x: 0.02, y: 0.30, w: 0.96, h: 0.35 },
+    { nome: 'codigo-horizontal', x: 0.02, y: 0.18, w: 0.96, h: 0.38 },
+    { nome: 'danfe-codigo', x: 0.03, y: 0.70, w: 0.94, h: 0.28 }
+  ];
+  return regioes.map(r => ({ origem: r.nome, imagem: cortarCanvas(base, r.x, r.y, r.w, r.h) }));
+}
+
+async function detectarCodigoDynamsoft(imgBase64) {
+  const router = await obterDynamsoftRouter();
+  if (!router) return null;
+  const candidatos = [];
+  try {
+    const variacoes = await gerarVariacoesEtiqueta(imgBase64);
+    const templates = [
+      'ReadBarcodes_ReadRateFirst',
+      'ReadBarcodes_Default',
+      'ReadDenseBarcodes',
+      'ReadDistantBarcodes'
+    ];
+    for (const variacao of variacoes) {
+      const rotacoes = [
+        { nome: variacao.origem, imagem: variacao.imagem },
+        { nome: variacao.origem + '-90', imagem: canvasRotacionado(variacao.imagem, 90) },
+        { nome: variacao.origem + '-180', imagem: canvasRotacionado(variacao.imagem, 180) },
+        { nome: variacao.origem + '-270', imagem: canvasRotacionado(variacao.imagem, 270) }
+      ];
+      for (const rotacao of rotacoes) {
+        const imagemBase64 = rotacao.imagem.toDataURL('image/jpeg', 0.96);
+        for (const template of templates) {
+          try {
+            const result = await router.capture(imagemBase64, template);
+            const itens = [
+              ...(Array.isArray(result?.items) ? result.items : []),
+              ...(Array.isArray(result?.barcodeResultItems) ? result.barcodeResultItems : [])
+            ];
+            for (const item of itens) {
+              const raw = item.text || item.barcodeText || item.rawText || '';
+              const format = item.formatString || item.format || item.barcodeFormatString || '';
+              const codigo = normalizarCodigoBarras(raw);
+              const score = pontuarCodigoBarras(raw, format, 'dynamsoft-' + rotacao.nome) +
+                40 +
+                (rotacao.nome.includes('codigo') ? 15 : 0) +
+                (template === 'ReadBarcodes_ReadRateFirst' ? 20 : 0);
+              if (codigo && score >= 0) {
+                candidatos.push({ codigo, rawValue: raw, format, origem: 'dynamsoft-' + rotacao.nome + '-' + template, score });
+              }
+            }
+          } catch(e) {
+            console.log('Falha no template Dynamsoft:', template, rotacao.nome, e);
+          }
+        }
+      }
+    }
+    const unicos = new Map();
+    for (const item of candidatos) {
+      const atual = unicos.get(item.codigo);
+      if (!atual || item.score > atual.score) unicos.set(item.codigo, item);
+    }
+    return Array.from(unicos.values()).sort((a, b) => b.score - a.score || b.codigo.length - a.codigo.length)[0] || null;
+  } catch(e) {
+    console.warn('Dynamsoft não conseguiu ler a etiqueta:', e);
+    return null;
+  }
+}
+
+async function detectarMelhorCodigoBarras(imgBase64) {
+  if (!('BarcodeDetector' in window)) {
+    console.warn('BarcodeDetector não disponível neste navegador.');
+    return null;
+  }
+  let formatos = ['qr_code','data_matrix','pdf417','aztec','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf'];
+  try {
+    if (BarcodeDetector.getSupportedFormats) {
+      const suportados = await BarcodeDetector.getSupportedFormats();
+      formatos = formatos.filter(f => suportados.includes(f));
+    }
+  } catch(e) {
+    console.warn('Não foi possível verificar formatos suportados:', e);
+  }
+  let detector;
+  try {
+    detector = new BarcodeDetector({ formats: formatos });
+  } catch(e) {
+    console.warn('Falha ao criar BarcodeDetector:', e);
+    return null;
+  }
+  const variacoes = await gerarVariacoesEtiqueta(imgBase64);
+  const encontrados = [];
+  for (const variacao of variacoes) {
+    const tentativas = [
+      { imagem: variacao.imagem, origem: variacao.origem },
+      { imagem: canvasRotacionado(variacao.imagem, 90), origem: variacao.origem + '-90' },
+      { imagem: canvasRotacionado(variacao.imagem, 180), origem: variacao.origem + '-180' },
+      { imagem: canvasRotacionado(variacao.imagem, 270), origem: variacao.origem + '-270' }
+    ];
+    for (const tentativa of tentativas) {
+      try {
+        const codes = await detector.detect(tentativa.imagem);
+        for (const code of codes) {
+          const codigo = normalizarCodigoBarras(code.rawValue);
+          encontrados.push({
+            codigo,
+            rawValue: code.rawValue,
+            format: code.format || '',
+            origem: tentativa.origem,
+            score: pontuarCodigoBarras(code.rawValue, code.format || '', tentativa.origem) +
+              (tentativa.origem.includes('codigo') ? 15 : 0)
+          });
+        }
+      } catch(e) {
+        console.log('Tentativa de leitura de código falhou:', tentativa.origem, e);
+      }
+    }
+  }
+  const unicos = new Map();
+  for (const item of encontrados.filter(i => i.score >= 0)) {
+    const atual = unicos.get(item.codigo);
+    if (!atual || item.score > atual.score) unicos.set(item.codigo, item);
+  }
+  return Array.from(unicos.values()).sort((a, b) => b.score - a.score)[0] || null;
 }
 
 function identificarMorador(val) {
@@ -2702,7 +3410,7 @@ async function abrirCameraUnificada() {
     await video.play();
   } catch(e) {
     fecharCameraUnificada();
-    toast('⚠️ Câmera direta bloqueada. Abrindo a câmera nativa do aparelho...', 5000);
+    toast('📷 Abrindo a câmera nativa do aparelho...', 5000);
     const input = document.getElementById('inputFotoOCR');
     if (input) input.click();
   }
@@ -2734,44 +3442,34 @@ async function processarImagemEtiqueta(imgBase64) {
 
   _fotoEtiquetaBase64 = imgBase64;
 
-  // PASSO 1: tentar ler QR Code da imagem via BarcodeDetector
+  // PASSO 1: tentar ler todos os codigos de barras/QR e escolher o mais legivel/completo.
   let codigoLido = null;
   let transpLida = '';
-  if ('BarcodeDetector' in window) {
-    try {
-      const detector = new BarcodeDetector({ formats: ['qr_code','data_matrix','pdf417','aztec','code_128','code_39','ean_13','ean_8'] });
-      const blob = await (await fetch(imgBase64)).blob();
-      const img = await createImageBitmap(blob);
-      const codes = await detector.detect(img);
-      if (codes.length > 0) {
-        const qr = codes.find(c => ['qr_code','data_matrix','pdf417','aztec'].includes(c.format));
-        const melhor = qr || codes[0];
-        const val = melhor.rawValue;
-        // Processar código (JSON do ML ou código simples)
-        let codigo = val.trim();
-        try {
-          const json = JSON.parse(val);
-          if (json.id) {
-            codigo = json.id;
-            const t = (json.t || '').toLowerCase();
-            if (t === 'lm' || t === 'ml') transpLida = 'Mercado Livre';
-            else if (t === 'sh' || t === 'shp') transpLida = 'Shopee';
-            else if (t === 'az' || t === 'amz') transpLida = 'Amazon';
-            else if (t === 'cr' || t === 'correios') transpLida = 'Correios';
-          }
-        } catch(e) {}
-        codigoLido = codigo;
-        if (!transpLida) transpLida = detectarTransportadora(codigo);
-      }
-    } catch(e) { console.log('BarcodeDetector erro:', e); }
+  let origemCodigo = '';
+  try {
+    statusEl.textContent = '⏳ Lendo código de barras com Dynamsoft...';
+    let melhorCodigo = await detectarCodigoDynamsoft(imgBase64);
+    if (!melhorCodigo) {
+      statusEl.textContent = '⏳ Lendo código de barras pelo navegador...';
+      melhorCodigo = await detectarMelhorCodigoBarras(imgBase64);
+    }
+    if (melhorCodigo) {
+      codigoLido = melhorCodigo.codigo;
+      origemCodigo = melhorCodigo.origem || '';
+      transpLida = detectarTransportadora(codigoLido);
+      console.log('Codigo de barras escolhido:', melhorCodigo);
+    }
+  } catch(e) {
+    console.log('Leitura de código de barras falhou:', e);
   }
 
   if (codigoLido) {
     document.getElementById('inputCodigo').value = codigoLido;
     if (transpLida) document.getElementById('inputTransportadora').value = transpLida;
-    statusEl.textContent = '✅ Código lido! Identificando morador...';
+    const origemTexto = origemCodigo === 'dynamsoft' ? 'Dynamsoft' : 'leitor do navegador';
+    statusEl.textContent = '✅ Código de barras lido por ' + origemTexto + ': ' + codigoLido + '. Identificando morador...';
   } else {
-    statusEl.textContent = '⏳ QR Code não detectado — lendo nome pelo OCR...';
+    statusEl.textContent = '⏳ QR/código não detectado — lendo código, transportadora e morador pelo OCR...';
   }
 
   // PASSO 2: OCR para identificar o morador (independente de ter lido QR Code ou não)
@@ -2839,7 +3537,7 @@ async function processarFotoOCR(input) {
   const img = new Image();
   img.onload = async function() {
     try {
-      const imgBase64 = imagemCompactadaBase64(img, 1400, 0.88);
+      const imgBase64 = imagemCompactadaBase64(img, 2200, 0.92);
       URL.revokeObjectURL(img.src);
       input.value = '';
       await processarImagemEtiqueta(imgBase64);
@@ -2857,21 +3555,28 @@ async function processarFotoOCR(input) {
 
 async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '') {
   try {
-    const formData = new FormData();
-    formData.append('base64Image', imgBase64);
-    formData.append('language', 'por');
-    formData.append('isOverlayRequired', 'false');
-    formData.append('detectOrientation', 'true');
-    formData.append('scale', 'true');
-    formData.append('OCREngine', '2');
+    let result;
+    if (backendAuthDisponivel && authToken) {
+      result = await apiFetch('/api/ocr', {
+        method: 'POST',
+        body: JSON.stringify({ base64Image: imgBase64, language: 'por' })
+      });
+    } else {
+      const formData = new FormData();
+      formData.append('base64Image', imgBase64);
+      formData.append('language', 'por');
+      formData.append('isOverlayRequired', 'false');
+      formData.append('detectOrientation', 'true');
+      formData.append('scale', 'true');
+      formData.append('OCREngine', '2');
 
-    const resp = await fetch('https://api.ocr.space/parse/image', {
-      method: 'POST',
-      headers: { 'apikey': 'K85992490088957' },
-      body: formData
-    });
-
-    const result = await resp.json();
+      const resp = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        headers: { 'apikey': 'K85992490088957' },
+        body: formData
+      });
+      result = await resp.json();
+    }
 
     if (!result.ParsedResults || result.ParsedResults.length === 0) {
       mostrarStatusOCR(statusEl, 'erro', '❌ Não foi possível ler o texto. Tente com melhor iluminação.');
@@ -2880,9 +3585,24 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
 
     const textoOCR = result.ParsedResults[0].ParsedText;
     console.log('OCR lido:\n', textoOCR);
+    const codigoExtraidoOCR = extrairCodigoEtiquetaOCR(textoOCR);
+    let codigoOCR = codigoJaLido || codigoExtraidoOCR;
+    if (
+      codigoJaLido &&
+      codigoExtraidoOCR &&
+      /^BR\d{10,20}$/.test(codigoJaLido) &&
+      /^AJ\d{12,20}$/.test(codigoExtraidoOCR)
+    ) {
+      codigoOCR = codigoExtraidoOCR;
+      document.getElementById('inputCodigo').value = codigoOCR;
+      console.log('Código corrigido pelo OCR:', { anterior: codigoJaLido, corrigido: codigoOCR });
+    }
 
     // Só preenche transportadora se ainda não foi detectada pelo QR Code
-    const transpOCR = transpJaLida || detectarTransportadoraOCR(textoOCR);
+    const transpOCR = transpJaLida || detectarTransportadoraOCR(textoOCR) || (codigoOCR ? detectarTransportadora(codigoOCR) : '');
+    if (codigoOCR && !document.getElementById('inputCodigo').value) {
+      document.getElementById('inputCodigo').value = codigoOCR;
+    }
     if (transpOCR && !document.getElementById('inputTransportadora').value) {
       document.getElementById('inputTransportadora').value = transpOCR;
     }
@@ -2902,7 +3622,7 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
       mostrarStatusOCR(statusEl, 'aviso', '⏳ Verificando remetente...');
       const moradorMemoria = moradores.find(m => m.id === memoriaRem.moradorId);
       if (moradorMemoria) {
-        abrirModalConfirmarRemetente(remetenteOCR, moradorMemoria, textoOCR, codigoJaLido, transpOCR, statusEl);
+        abrirModalConfirmarRemetente(remetenteOCR, moradorMemoria, textoOCR, codigoOCR, transpOCR, statusEl);
         return;
       }
     }
@@ -2934,7 +3654,7 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
       selecionarMorador(morador.id);
       // Memorizar o remetente para futuras entregas
       if (remetenteOCR) salvarMemoriaRemetente(remetenteOCR, morador);
-      const codigoInfo = codigoJaLido ? ' · Código: ' + codigoJaLido : '';
+      const codigoInfo = codigoOCR ? ' · Código: ' + codigoOCR : '';
       const aviso = origem === 'endereco-unico' ? ' 📍 (endereço único)' : ' 👤 (nome confirmado)';
       mostrarStatusOCR(statusEl, 'ok', '✅ Destinatário: ' + morador.nome + (transpOCR ? ' · ' + transpOCR : '') + codigoInfo + aviso);
     } else {
@@ -2966,12 +3686,12 @@ function mostrarStatusOCR(el, tipo, msg) {
 }
 
 function detectarTransportadoraOCR(texto) {
-  const t = texto.toUpperCase();
+  const t = (texto || '').toUpperCase();
   if (t.includes('MERCADO LIVRE') || t.includes('MERCADOLIVRE') || t.includes('MELI') || t.includes('MLB')) return 'Mercado Livre';
-  if (t.includes('SHOPEE')) return 'Shopee';
-  if (t.includes('AMAZON') || t.includes('AMAZN')) return 'Amazon';
+  if (t.includes('SHOPEE') || t.includes('SPX') || t.includes('SHP')) return 'Shopee';
+  if (t.includes('AMAZON') || t.includes('AMAZN') || t.includes('AMZL')) return 'Amazon';
   if (t.includes('SHEIN')) return 'Shein';
-  if (t.includes('CORREIOS') || t.includes('ECT')) return 'Correios';
+  if (t.includes('CORREIOS') || t.includes('ECT') || t.includes('SEDEX') || t.includes('PAC ')) return 'Correios';
   if (t.includes('LOGGI')) return 'Loggi';
   if (t.includes('JADLOG')) return 'Jadlog';
   if (t.includes('TOTAL EXPRESS')) return 'Total Express';
@@ -3261,6 +3981,130 @@ function renderConsulta() {
 }
 
 // ========== RELATÓRIO A4 ==========
+function usuarioBaixaEncomenda(enc) {
+  const reg = auditoria.find(a =>
+    a.acao === 'Retirada confirmada' &&
+    a.detalhes &&
+    (a.detalhes.encomendaId === enc.id || a.detalhes.codigo === enc.codigo)
+  );
+  return reg ? `${reg.usuarioNome} (${labelPerfil(reg.usuarioPerfil)})` : 'Não identificado';
+}
+
+function gerarComprovanteRetirada(id) {
+  const e = encomendas.find(x => x.id === id);
+  if (!e) { toast('⚠️ Encomenda não encontrada'); return; }
+  if (e.status !== 'retirado') { toast('⚠️ Comprovante disponível apenas para encomenda retirada'); return; }
+
+  const protocolo = 'RET-' + e.id;
+  const responsavel = usuarioBaixaEncomenda(e);
+  const nomeAssociacao = nomeAssociacaoAtual();
+  const evidenciaHtml = e.fotoRetirante
+    ? `<img src="${e.fotoRetirante}" style="max-width:100%;max-height:260px;object-fit:contain;border:1px solid #d1d5db;border-radius:8px;background:white;">`
+    : '<div class="vazio">Sem foto/documento registrado</div>';
+  const assinaturaHtml = e.assinatura
+    ? `<img src="${e.assinatura}" style="max-width:100%;max-height:150px;object-fit:contain;border:1px solid #d1d5db;border-radius:8px;background:white;">`
+    : '<div class="vazio">Sem assinatura registrada</div>';
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Comprovante de Retirada - ${e.codigo}</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; color:#1a1f3a; margin:0; background:#f4f6f8; }
+  .folha { width:210mm; min-height:297mm; margin:0 auto; background:white; padding:18mm; }
+  .topo { display:flex; justify-content:space-between; gap:16px; border-bottom:3px solid #1a1f3a; padding-bottom:12px; margin-bottom:18px; }
+  h1 { font-size:21px; margin:0 0 5px; }
+  .sub { color:#5f6368; font-size:13px; }
+  .protocolo { text-align:right; font-size:12px; color:#5f6368; }
+  .protocolo strong { display:block; font-size:18px; color:#1a1f3a; margin-top:4px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+  .campo { border:1px solid #e5e7eb; border-radius:8px; padding:10px; min-height:58px; }
+  .label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
+  .valor { font-size:14px; font-weight:700; line-height:1.35; }
+  .secao { margin-top:18px; }
+  .secao h2 { font-size:15px; margin:0 0 8px; color:#1a1f3a; }
+  .evidencias { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
+  .box { border:1px solid #e5e7eb; border-radius:8px; padding:10px; min-height:180px; }
+  .vazio { color:#9ca3af; font-style:italic; font-size:13px; padding:24px; text-align:center; border:1px dashed #d1d5db; border-radius:8px; }
+  .observacao { margin-top:18px; padding:10px; border-left:4px solid #c9a84c; background:#fffbeb; font-size:12px; color:#5f6368; line-height:1.45; }
+  .rodape { margin-top:22px; border-top:1px solid #e5e7eb; padding-top:10px; font-size:11px; color:#6b7280; display:flex; justify-content:space-between; gap:12px; }
+  .acoes { position:fixed; right:18px; top:18px; display:flex; gap:8px; }
+  .acoes button { border:none; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer; }
+  .print { background:#1a73e8; color:white; }
+  .close { background:#e5e7eb; color:#111827; }
+  @media print {
+    body { background:white; }
+    .folha { width:auto; min-height:auto; margin:0; padding:0; }
+    .acoes { display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="acoes">
+  <button class="print" onclick="window.print()">Imprimir / PDF</button>
+  <button class="close" onclick="window.close()">Fechar</button>
+</div>
+<main class="folha">
+  <div class="topo">
+    <div>
+      <h1>Comprovante de Retirada de Encomenda</h1>
+      <div class="sub">${nomeAssociacao} · PortariaSync</div>
+    </div>
+    <div class="protocolo">
+      Protocolo
+      <strong>${protocolo}</strong>
+      Emitido em ${new Date().toLocaleString('pt-BR')}
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="campo"><div class="label">Morador / destinatário</div><div class="valor">${e.moradorNome}</div></div>
+    <div class="campo"><div class="label">Endereço</div><div class="valor">${e.moradorCasa}</div></div>
+    <div class="campo"><div class="label">Código da encomenda</div><div class="valor">${e.codigo}</div></div>
+    <div class="campo"><div class="label">Transportadora</div><div class="valor">${e.transportadora || 'Não informada'}</div></div>
+    <div class="campo"><div class="label">Data de entrada</div><div class="valor">${e.dataEntrada || '-'}</div></div>
+    <div class="campo"><div class="label">Data de retirada</div><div class="valor">${e.dataRetirada || '-'}</div></div>
+    <div class="campo"><div class="label">Retirado por</div><div class="valor">${e.retiradoPor || '-'}</div></div>
+    <div class="campo"><div class="label">Documento</div><div class="valor">${e.retiranteRg ? 'RG ' + e.retiranteRg : (e.retiranteTipo === 'proprio' ? 'Próprio morador' : '-')}</div></div>
+    <div class="campo"><div class="label">Tipo de retirada</div><div class="valor">${e.retiranteTipo === 'outro' ? 'Terceiro autorizado' : 'Próprio morador'}</div></div>
+    <div class="campo"><div class="label">Responsável pela baixa</div><div class="valor">${responsavel}</div></div>
+  </div>
+
+  <section class="secao">
+    <h2>Evidências da retirada</h2>
+    <div class="evidencias">
+      <div class="box">
+        <div class="label">Foto do retirante/documento</div>
+        ${evidenciaHtml}
+      </div>
+      <div class="box">
+        <div class="label">Assinatura</div>
+        ${assinaturaHtml}
+      </div>
+    </div>
+  </section>
+
+  <div class="observacao">
+    Este comprovante registra os dados informados no momento da retirada, incluindo evidência visual quando aplicável, assinatura e usuário responsável pela baixa no sistema.
+  </div>
+
+  <div class="rodape">
+    <span>${nomeAssociacao}</span>
+    <span>${protocolo}</span>
+  </div>
+</main>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('⚠️ O navegador bloqueou a janela do comprovante. Permita pop-ups para este sistema.'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 function gerarRelatorio() {
   const ini = document.getElementById('filtroDataInicio').value;
   const fim = document.getElementById('filtroDataFim').value;
@@ -3658,6 +4502,7 @@ function selecionarMoradorSugestao(id, remetente) {
 (async function init() {
   await iniciarLogin();
   renderListaUsuarios();
+  await restaurarSessao();
 })();
 </script>
 </body>

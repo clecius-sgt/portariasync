@@ -12,6 +12,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const ZAPI_URL = process.env.ZAPI_URL || '';
 const ZAPI_CLIENT = process.env.ZAPI_CLIENT || '';
+const OCRSPACE_API_KEY = process.env.OCRSPACE_API_KEY || 'K85992490088957';
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
@@ -118,6 +119,12 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/api/auth/me') {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    sendJson(res, 200, { user: publicUser(session) });
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/auth/logout') {
     const token = bearerToken(req);
     if (token) sessions.delete(token);
@@ -155,25 +162,35 @@ async function handleApi(req, res) {
 
   if (req.method === 'GET' && req.url === '/api/app-state') {
     requireRole(req, ['admin', 'porteiro', 'supervisor']);
-    sendJson(res, 200, readAppState());
+    sendJson(res, 200, await readAppState());
     return;
   }
 
   if (req.method === 'PUT' && req.url === '/api/app-state') {
     requireRole(req, ['admin', 'porteiro']);
     const body = await readJson(req, 50 * 1024 * 1024);
+    const atual = await readAppState();
+    const resetEncomendasAt = body.resetEncomendasAt || atual.resetEncomendasAt || null;
+    const preservarReset = resetEncomendasAt && !body.resetEncomendasAt;
+    const encomendasRecebidas = Array.isArray(body.encomendas) ? body.encomendas : [];
+    const encomendasAtuais = Array.isArray(atual.encomendas) ? atual.encomendas : [];
+    const retirantesRecebidos = Array.isArray(body.retirantesRelacionados) ? body.retirantesRelacionados : [];
+    const retirantesAtuais = Array.isArray(atual.retirantesRelacionados) ? atual.retirantesRelacionados : [];
+    const detalhesRecebidos = body.detalhesRetirada && typeof body.detalhesRetirada === 'object' ? body.detalhesRetirada : {};
+    const detalhesAtuais = atual.detalhesRetirada && typeof atual.detalhesRetirada === 'object' ? atual.detalhesRetirada : {};
     const state = {
       version: Number(body.version || Date.now()),
       updatedAt: new Date().toISOString(),
       moradores: Array.isArray(body.moradores) ? body.moradores : [],
-      encomendas: Array.isArray(body.encomendas) ? body.encomendas : [],
-      retirantesRelacionados: Array.isArray(body.retirantesRelacionados) ? body.retirantesRelacionados : [],
+      encomendas: preservarReset ? encomendasAtuais : mergeEncomendas(encomendasAtuais, encomendasRecebidas),
+      retirantesRelacionados: preservarReset ? retirantesAtuais : mergePorChave(retirantesAtuais, retirantesRecebidos, chaveRetirante),
       auditoria: Array.isArray(body.auditoria) ? body.auditoria : [],
-      detalhesRetirada: body.detalhesRetirada && typeof body.detalhesRetirada === 'object' ? body.detalhesRetirada : {},
+      detalhesRetirada: preservarReset ? detalhesAtuais : { ...detalhesAtuais, ...detalhesRecebidos },
       memoriaRemetentes: body.memoriaRemetentes && typeof body.memoriaRemetentes === 'object' ? body.memoriaRemetentes : {},
-      configPublica: body.configPublica && typeof body.configPublica === 'object' ? body.configPublica : {}
+      configPublica: body.configPublica && typeof body.configPublica === 'object' ? body.configPublica : {},
+      resetEncomendasAt
     };
-    writeAppState(state);
+    await writeAppState(state);
     sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt });
     return;
   }
@@ -213,6 +230,35 @@ async function handleApi(req, res) {
       body: JSON.stringify(body)
     });
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/ocr') {
+    requireRole(req, ['admin', 'porteiro']);
+    const { base64Image, language = 'por' } = await readJson(req, 12 * 1024 * 1024);
+    if (!base64Image) {
+      sendJson(res, 400, { error: 'Imagem não informada' });
+      return;
+    }
+    const formData = new FormData();
+    formData.append('base64Image', base64Image);
+    formData.append('language', language);
+    formData.append('isOverlayRequired', 'false');
+    formData.append('detectOrientation', 'true');
+    formData.append('scale', 'true');
+    formData.append('OCREngine', '2');
+
+    const resp = await fetch('https://api.ocr.space/parse/image', {
+      method: 'POST',
+      headers: { apikey: OCRSPACE_API_KEY },
+      body: formData
+    });
+    const text = await resp.text();
+    res.writeHead(resp.ok ? 200 : 502, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(text || '{}');
     return;
   }
 
@@ -282,18 +328,92 @@ function writeUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
-function readAppState() {
-  if (!fs.existsSync(APP_STATE_FILE)) {
-    return { exists: false, version: 0, updatedAt: null };
+async function readAppState() {
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    try {
+      const rows = await supabaseRequest('/rest/v1/app_state?id=eq.main&select=*');
+      if (Array.isArray(rows) && rows.length > 0) {
+        return {
+          exists: true,
+          ...(rows[0].state || {}),
+          version: Number(rows[0].version || rows[0].state?.version || 0),
+          updatedAt: rows[0].updated_at || rows[0].state?.updatedAt || null,
+          storage: 'supabase'
+        };
+      }
+    } catch (e) {
+      console.warn('App state no Supabase indisponível, usando arquivo local:', e.message);
+    }
   }
-  return { exists: true, ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')) };
+
+  if (!fs.existsSync(APP_STATE_FILE)) return { exists: false, version: 0, updatedAt: null, storage: 'local' };
+  return { exists: true, ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')), storage: 'local' };
 }
 
-function writeAppState(state) {
+async function writeAppState(state) {
+  let savedRemote = false;
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    try {
+      await supabaseRequest('/rest/v1/app_state', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          id: 'main',
+          version: state.version,
+          state,
+          updated_at: state.updatedAt
+        })
+      });
+      savedRemote = true;
+    } catch (e) {
+      console.warn('Não foi possível gravar app_state no Supabase, salvando local:', e.message);
+    }
+  }
+
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const tmp = APP_STATE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify({ ...state, storage: savedRemote ? 'supabase+local' : 'local' }, null, 2));
   fs.renameSync(tmp, APP_STATE_FILE);
+  return savedRemote;
+}
+
+function scoreEncomenda(e) {
+  let score = 1;
+  if (!e) return 0;
+  if (e.status === 'pendente') score += 2;
+  if (e.status === 'cancelado') score += 4;
+  if (e.status === 'retirado') score += 6;
+  if (e.dataRetirada) score += 2;
+  if (e.retiradoPor) score += 1;
+  if (e.assinatura) score += 2;
+  if (e.fotoRetirante) score += 2;
+  return score;
+}
+
+function mergeEncomendas(base, recebidas) {
+  const mapa = new Map();
+  for (const e of base || []) if (e && e.id) mapa.set(String(e.id), e);
+  for (const e of recebidas || []) {
+    if (!e || !e.id) continue;
+    const id = String(e.id);
+    const atual = mapa.get(id);
+    if (!atual || scoreEncomenda(e) >= scoreEncomenda(atual)) mapa.set(id, { ...atual, ...e });
+  }
+  return Array.from(mapa.values());
+}
+
+function chaveRetirante(r) {
+  return [r?.moradorId || '', String(r?.rg || '').replace(/\D/g, ''), String(r?.nome || '').toLowerCase()].join('|');
+}
+
+function mergePorChave(base, recebidas, chaveFn) {
+  const mapa = new Map();
+  for (const item of base || []) mapa.set(chaveFn(item), item);
+  for (const item of recebidas || []) {
+    const chave = chaveFn(item);
+    mapa.set(chave, { ...(mapa.get(chave) || {}), ...item });
+  }
+  return Array.from(mapa.values()).filter(item => item && Object.keys(item).length);
 }
 
 function publicUser(user) {
@@ -381,7 +501,7 @@ function sendJson(res, status, payload) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   });
   res.end(JSON.stringify(payload));
 }
