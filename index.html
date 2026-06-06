@@ -3028,13 +3028,13 @@ function extrairCodigoEtiquetaOCR(texto) {
   const candidatos = [];
   const palavrasProximas = /(ETIQUETA|SERIE|SAIDA|PEDIDO|REMESSA|RASTREIO|CODIGO|BARRAS|ENVIO|NF)/;
   const pistasCodigoBarras = /(CODIGO\s*DE\s*BARRAS|C[O0]DIGO|BARRAS|ETIQUETA|RASTREIO|RASTREAMENTO|PEDIDO|REMESSA|SERIE|SAIDA|OBJETO)/;
-  const palavrasBloqueadas = /(DESTINATARIO|REMETENTE|ENDERECO|BAIRRO|CIDADE|AGENCIA|CORREIOS|SHOPEE|AMAZON|MERCADO|LIVRE|DATA|EMISSAO|PREVISTO|CEP|RUA|AVENIDA|CLIENTE|TECNOLOGIA|SERVICOS|SERVICOSLTDA|LTDA|TAXID|SERVICE|COURIER|REMESSA)/;
+  const palavrasBloqueadas = /(DESTINATARIO|REMETENTE|ENDERECO|BAIRRO|CIDADE|AGENCIA|CORREIOS|SHOPEE|AMAZON|MERCADO|LIVRE|DATA|EMISSAO|PREVISTO|CEP|RUA|AVENIDA|CLIENTE|TECNOLOGIA|SERVICOS|SERVICOSLTDA|LTDA|TAXID|SERVICE|COURIER|REMESSA|ORDER|ORDERN|ORDERNO|ORDERNUMBER)/;
 
   function extrairNucleoCodigo(valor) {
     const limpo = String(valor || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const padroesFortes = [
+      /AJ\d{15}/,
       /BR\d{10,20}/,
-      /AJ\d{12,20}/,
       /[A-Z]{2}\d{12,20}/,
       /[A-Z]{2}\d{9}[A-Z]{2}/,
       /(TBR|TBA|SHP|SPX|MLB)\d{8,24}/,
@@ -3058,15 +3058,17 @@ function extrairCodigoEtiquetaOCR(texto) {
   }
 
   function adicionar(valor, contexto = '', bonus = 0) {
+    const valorTexto = String(valor || '').toUpperCase();
     const limpo = extrairNucleoCodigo(valor);
     if (!codigoEtiquetaValido(limpo)) return;
+    if (/\bORDER\b|ORDERN|ORDERNO|ORDERNUMBER/.test(valorTexto)) return;
     if (palavrasBloqueadas.test(contexto) && !palavrasProximas.test(contexto) && !/^[A-Z]{2}\d{9,20}[A-Z]{0,2}$/.test(limpo)) return;
     let score = limpo.length + bonus;
     if (/^\d{10,}$/.test(limpo)) score += 10;
     if (/^\d{20,}$/.test(limpo)) score += 30;
     if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(limpo)) score += 28;
-    if (/^BR\d{10,20}$/.test(limpo)) score += 65;
-    if (/^AJ\d{12,20}$/.test(limpo)) score += 45;
+    if (/^AJ\d{15}$/.test(limpo)) score += 100;
+    if (/^BR\d{10,20}$/.test(limpo)) score += 20;
     if (/^(TBR|TBA|SHP|SPX|MLB|BR|RR|AA|RA)/.test(limpo)) score += 24;
     if (limpo.length >= 20) score += 12;
     if (limpo.length >= 30) score += 12;
@@ -3104,8 +3106,8 @@ function normalizarCodigoBarras(valor) {
   } catch(e) {}
   const limpo = codigo.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const padroesFortes = [
+    /AJ\d{15}/,
     /BR\d{10,20}/,
-    /AJ\d{12,20}/,
     /[A-Z]{2}\d{12,20}/,
     /[A-Z]{2}\d{9}[A-Z]{2}/,
     /(TBR|TBA|SHP|SPX|MLB)\d{8,24}/,
@@ -3125,8 +3127,8 @@ function pontuarCodigoBarras(valor, format = '', origem = '') {
   if (/^\d{20,}$/.test(codigo)) score += 30;
   if (/^\d{30,}$/.test(codigo)) score += 20;
   if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(codigo)) score += 28;
-  if (/^BR\d{10,20}$/.test(codigo)) score += 65;
-  if (/^AJ\d{12,20}$/.test(codigo)) score += 45;
+  if (/^AJ\d{15}$/.test(codigo)) score += 100;
+  if (/^BR\d{10,20}$/.test(codigo)) score += 20;
   if (/^(TBR|TBA|SHP|SPX|MLB|BR|RR|AA|RA)/.test(codigo)) score += 24;
   if (['code_128', 'code_39', 'ean_13', 'ean_8'].includes(format)) score += 12;
   if (['qr_code', 'data_matrix', 'pdf417', 'aztec'].includes(format)) score -= 18;
@@ -3509,7 +3511,7 @@ async function processarImagemEtiqueta(imgBase64) {
   if (codigoLido) {
     document.getElementById('inputCodigo').value = codigoLido;
     if (transpLida) document.getElementById('inputTransportadora').value = transpLida;
-    const origemTexto = origemCodigo === 'dynamsoft' ? 'Dynamsoft' : 'leitor do navegador';
+    const origemTexto = origemCodigo.includes('dynamsoft') ? 'Dynamsoft' : 'leitor do navegador';
     statusEl.textContent = '✅ Código de barras lido por ' + origemTexto + ': ' + codigoLido + '. Identificando morador...';
   } else {
     statusEl.textContent = '⏳ QR/código não detectado — lendo código, transportadora e morador pelo OCR...';
