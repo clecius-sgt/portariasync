@@ -3032,6 +3032,7 @@ function extrairCodigoEtiquetaOCR(texto) {
   function extrairNucleoCodigo(valor) {
     const limpo = String(valor || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const padroesFortes = [
+      /BR\d{10,20}/,
       /AJ\d{12,20}/,
       /[A-Z]{2}\d{12,20}/,
       /[A-Z]{2}\d{9}[A-Z]{2}/,
@@ -3063,8 +3064,8 @@ function extrairCodigoEtiquetaOCR(texto) {
     if (/^\d{10,}$/.test(limpo)) score += 10;
     if (/^\d{20,}$/.test(limpo)) score += 30;
     if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(limpo)) score += 28;
-    if (/^AJ\d{12,20}$/.test(limpo)) score += 70;
-    if (/^BR\d{10,20}$/.test(limpo)) score -= 35;
+    if (/^BR\d{10,20}$/.test(limpo)) score += 65;
+    if (/^AJ\d{12,20}$/.test(limpo)) score += 45;
     if (/^(TBR|TBA|SHP|SPX|MLB|BR|RR|AA|RA)/.test(limpo)) score += 24;
     if (limpo.length >= 20) score += 12;
     if (limpo.length >= 30) score += 12;
@@ -3092,6 +3093,7 @@ function normalizarCodigoBarras(valor) {
   } catch(e) {}
   const limpo = codigo.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const padroesFortes = [
+    /BR\d{10,20}/,
     /AJ\d{12,20}/,
     /[A-Z]{2}\d{12,20}/,
     /[A-Z]{2}\d{9}[A-Z]{2}/,
@@ -3112,8 +3114,8 @@ function pontuarCodigoBarras(valor, format = '', origem = '') {
   if (/^\d{20,}$/.test(codigo)) score += 30;
   if (/^\d{30,}$/.test(codigo)) score += 20;
   if (/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(codigo)) score += 28;
-  if (/^AJ\d{12,20}$/.test(codigo)) score += 70;
-  if (/^BR\d{10,20}$/.test(codigo)) score -= 35;
+  if (/^BR\d{10,20}$/.test(codigo)) score += 65;
+  if (/^AJ\d{12,20}$/.test(codigo)) score += 45;
   if (/^(TBR|TBA|SHP|SPX|MLB|BR|RR|AA|RA)/.test(codigo)) score += 24;
   if (['code_128', 'code_39', 'ean_13', 'ean_8'].includes(format)) score += 12;
   if (['qr_code', 'data_matrix', 'pdf417', 'aztec'].includes(format)) score -= 18;
@@ -3142,6 +3144,17 @@ function canvasRotacionado(origem, graus) {
   ctx.rotate(graus * Math.PI / 180);
   ctx.drawImage(origem, -w / 2, -h / 2);
   return canvas;
+}
+
+function imagemEtiquetaLeveBase64(origem, maxLado = 1280, qualidade = 0.72) {
+  const largura = origem.videoWidth || origem.naturalWidth || origem.width;
+  const altura = origem.videoHeight || origem.naturalHeight || origem.height;
+  const escala = Math.min(1, maxLado / Math.max(largura, altura));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(largura * escala));
+  canvas.height = Math.max(1, Math.round(altura * escala));
+  canvas.getContext('2d').drawImage(origem, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', qualidade);
 }
 
 let _dynamsoftRouter = null;
@@ -3224,15 +3237,22 @@ function cortarCanvas(origem, xPct, yPct, wPct, hPct) {
 async function gerarVariacoesEtiqueta(imgBase64) {
   const img = await carregarImagemBase64(imgBase64);
   const base = canvasDeImagem(img);
-  const regioes = [
-    { nome: 'etiqueta-inteira', x: 0, y: 0, w: 1, h: 1 },
-    { nome: 'topo', x: 0, y: 0, w: 1, h: 0.35 },
-    { nome: 'meio', x: 0, y: 0.25, w: 1, h: 0.45 },
-    { nome: 'inferior', x: 0, y: 0.55, w: 1, h: 0.45 },
-    { nome: 'codigo-central', x: 0.02, y: 0.30, w: 0.96, h: 0.35 },
-    { nome: 'codigo-horizontal', x: 0.02, y: 0.18, w: 0.96, h: 0.38 },
-    { nome: 'danfe-codigo', x: 0.03, y: 0.70, w: 0.94, h: 0.28 }
-  ];
+  const mobile = matchMedia('(max-width: 700px)').matches;
+  const regioes = mobile
+    ? [
+        { nome: 'codigo-central', x: 0.02, y: 0.25, w: 0.96, h: 0.42 },
+        { nome: 'codigo-horizontal', x: 0.02, y: 0.15, w: 0.96, h: 0.40 },
+        { nome: 'etiqueta-inteira', x: 0, y: 0, w: 1, h: 1 }
+      ]
+    : [
+        { nome: 'etiqueta-inteira', x: 0, y: 0, w: 1, h: 1 },
+        { nome: 'topo', x: 0, y: 0, w: 1, h: 0.35 },
+        { nome: 'meio', x: 0, y: 0.25, w: 1, h: 0.45 },
+        { nome: 'inferior', x: 0, y: 0.55, w: 1, h: 0.45 },
+        { nome: 'codigo-central', x: 0.02, y: 0.30, w: 0.96, h: 0.35 },
+        { nome: 'codigo-horizontal', x: 0.02, y: 0.18, w: 0.96, h: 0.38 },
+        { nome: 'danfe-codigo', x: 0.03, y: 0.70, w: 0.94, h: 0.28 }
+      ];
   return regioes.map(r => ({ origem: r.nome, imagem: cortarCanvas(base, r.x, r.y, r.w, r.h) }));
 }
 
@@ -3249,14 +3269,20 @@ async function detectarCodigoDynamsoft(imgBase64) {
       'ReadDistantBarcodes'
     ];
     for (const variacao of variacoes) {
-      const rotacoes = [
-        { nome: variacao.origem, imagem: variacao.imagem },
-        { nome: variacao.origem + '-90', imagem: canvasRotacionado(variacao.imagem, 90) },
-        { nome: variacao.origem + '-180', imagem: canvasRotacionado(variacao.imagem, 180) },
-        { nome: variacao.origem + '-270', imagem: canvasRotacionado(variacao.imagem, 270) }
-      ];
+      const mobile = matchMedia('(max-width: 700px)').matches;
+      const rotacoes = mobile
+        ? [
+            { nome: variacao.origem, imagem: variacao.imagem },
+            { nome: variacao.origem + '-90', imagem: canvasRotacionado(variacao.imagem, 90) }
+          ]
+        : [
+            { nome: variacao.origem, imagem: variacao.imagem },
+            { nome: variacao.origem + '-90', imagem: canvasRotacionado(variacao.imagem, 90) },
+            { nome: variacao.origem + '-180', imagem: canvasRotacionado(variacao.imagem, 180) },
+            { nome: variacao.origem + '-270', imagem: canvasRotacionado(variacao.imagem, 270) }
+          ];
       for (const rotacao of rotacoes) {
-        const imagemBase64 = rotacao.imagem.toDataURL('image/jpeg', 0.96);
+        const imagemBase64 = imagemEtiquetaLeveBase64(rotacao.imagem, 1000, 0.70);
         for (const template of templates) {
           try {
             const result = await router.capture(imagemBase64, template);
@@ -3318,12 +3344,18 @@ async function detectarMelhorCodigoBarras(imgBase64) {
   const variacoes = await gerarVariacoesEtiqueta(imgBase64);
   const encontrados = [];
   for (const variacao of variacoes) {
-    const tentativas = [
-      { imagem: variacao.imagem, origem: variacao.origem },
-      { imagem: canvasRotacionado(variacao.imagem, 90), origem: variacao.origem + '-90' },
-      { imagem: canvasRotacionado(variacao.imagem, 180), origem: variacao.origem + '-180' },
-      { imagem: canvasRotacionado(variacao.imagem, 270), origem: variacao.origem + '-270' }
-    ];
+    const mobile = matchMedia('(max-width: 700px)').matches;
+    const tentativas = mobile
+      ? [
+          { imagem: variacao.imagem, origem: variacao.origem },
+          { imagem: canvasRotacionado(variacao.imagem, 90), origem: variacao.origem + '-90' }
+        ]
+      : [
+          { imagem: variacao.imagem, origem: variacao.origem },
+          { imagem: canvasRotacionado(variacao.imagem, 90), origem: variacao.origem + '-90' },
+          { imagem: canvasRotacionado(variacao.imagem, 180), origem: variacao.origem + '-180' },
+          { imagem: canvasRotacionado(variacao.imagem, 270), origem: variacao.origem + '-270' }
+        ];
     for (const tentativa of tentativas) {
       try {
         const codes = await detector.detect(tentativa.imagem);
@@ -3429,7 +3461,7 @@ async function capturarUnificado() {
   canvas.getContext('2d').drawImage(video, 0, 0);
   fecharCameraUnificada();
 
-  const imgBase64 = canvas.toDataURL('image/jpeg', 0.92);
+  const imgBase64 = imagemEtiquetaLeveBase64(canvas, 1280, 0.72);
   await processarImagemEtiqueta(imgBase64);
 }
 
@@ -3537,7 +3569,7 @@ async function processarFotoOCR(input) {
   const img = new Image();
   img.onload = async function() {
     try {
-      const imgBase64 = imagemCompactadaBase64(img, 2200, 0.92);
+      const imgBase64 = imagemEtiquetaLeveBase64(img, 1280, 0.72);
       URL.revokeObjectURL(img.src);
       input.value = '';
       await processarImagemEtiqueta(imgBase64);
@@ -3587,16 +3619,6 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
     console.log('OCR lido:\n', textoOCR);
     const codigoExtraidoOCR = extrairCodigoEtiquetaOCR(textoOCR);
     let codigoOCR = codigoJaLido || codigoExtraidoOCR;
-    if (
-      codigoJaLido &&
-      codigoExtraidoOCR &&
-      /^BR\d{10,20}$/.test(codigoJaLido) &&
-      /^AJ\d{12,20}$/.test(codigoExtraidoOCR)
-    ) {
-      codigoOCR = codigoExtraidoOCR;
-      document.getElementById('inputCodigo').value = codigoOCR;
-      console.log('Código corrigido pelo OCR:', { anterior: codigoJaLido, corrigido: codigoOCR });
-    }
 
     // Só preenche transportadora se ainda não foi detectada pelo QR Code
     const transpOCR = transpJaLida || detectarTransportadoraOCR(textoOCR) || (codigoOCR ? detectarTransportadora(codigoOCR) : '');
