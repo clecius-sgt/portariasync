@@ -3027,6 +3027,7 @@ function extrairCodigoEtiquetaOCR(texto) {
   const linhas = linhasOriginais.length ? linhasOriginais : [normalizado.trim()].filter(Boolean);
   const candidatos = [];
   const palavrasProximas = /(ETIQUETA|SERIE|SAIDA|PEDIDO|REMESSA|RASTREIO|CODIGO|BARRAS|ENVIO|NF)/;
+  const pistasCodigoBarras = /(CODIGO\s*DE\s*BARRAS|C[O0]DIGO|BARRAS|ETIQUETA|RASTREIO|RASTREAMENTO|PEDIDO|REMESSA|SERIE|SAIDA|OBJETO)/;
   const palavrasBloqueadas = /(DESTINATARIO|REMETENTE|ENDERECO|BAIRRO|CIDADE|AGENCIA|CORREIOS|SHOPEE|AMAZON|MERCADO|LIVRE|DATA|EMISSAO|PREVISTO|CEP|RUA|AVENIDA|CLIENTE|TECNOLOGIA|SERVICOS|SERVICOSLTDA|LTDA|TAXID|SERVICE|COURIER|REMESSA)/;
 
   function extrairNucleoCodigo(valor) {
@@ -3070,13 +3071,23 @@ function extrairCodigoEtiquetaOCR(texto) {
     if (limpo.length >= 20) score += 12;
     if (limpo.length >= 30) score += 12;
     if (palavrasProximas.test(contexto)) score += 15;
+    if (pistasCodigoBarras.test(contexto)) score += 55;
     if (palavrasBloqueadas.test(contexto) && !palavrasProximas.test(contexto)) score -= 18;
     candidatos.push({ codigo: limpo, score });
   }
 
   linhas.forEach((linha, idx) => {
-    const contexto = [linhas[idx - 1] || '', linha, linhas[idx + 1] || ''].join(' ');
-    (linha.match(/[A-Z0-9][A-Z0-9\s.-]{6,}[A-Z0-9]/g) || []).forEach(n => adicionar(n, contexto));
+    const acima = linhas[idx - 1] || '';
+    const abaixo = linhas[idx + 1] || '';
+    const contexto = [acima, linha, abaixo].join(' ');
+    const bonusVizinho = pistasCodigoBarras.test(acima) || pistasCodigoBarras.test(abaixo) ? 75 : 0;
+    (linha.match(/[A-Z0-9][A-Z0-9\s.-]{6,}[A-Z0-9]/g) || []).forEach(n => adicionar(n, contexto, bonusVizinho));
+    if (idx < linhas.length - 1) {
+      const par = linha + ' ' + linhas[idx + 1];
+      const contextoPar = [linhas[idx - 1] || '', par, linhas[idx + 2] || ''].join(' ');
+      const bonusPar = pistasCodigoBarras.test(contextoPar) ? 65 : 0;
+      (par.match(/[A-Z0-9][A-Z0-9\s.-]{6,}[A-Z0-9]/g) || []).forEach(n => adicionar(n, contextoPar, bonusPar));
+    }
   });
 
   (normalizado.match(/[A-Z]{2}\d{9,20}[A-Z]{0,2}|\d{18,44}|(?:TBR|TBA|SHP|SPX|MLB)\d{8,24}/g) || []).forEach(n => adicionar(n, normalizado, 6));
