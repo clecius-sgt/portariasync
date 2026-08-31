@@ -236,6 +236,49 @@
     font-size: 16px;
   }
 
+  .form-alert {
+    display: none;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .form-alert.warn { display: block; background: #fff8e1; color: #7a5600; border: 1px solid #f5d36a; }
+  .form-alert.error { display: block; background: #fce8e6; color: #c5221f; border: 1px solid #f3b7af; }
+  .form-alert.ok { display: block; background: #e6f4ea; color: #137333; border: 1px solid #aad7b8; }
+
+  .quick-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .quick-chip {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .quick-chip:hover { background: #f0f4f8; }
+
+  .registro-preview {
+    display: none;
+    margin-top: 14px;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .registro-preview strong { color: var(--text); }
+
   #toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: #333; color: white; padding: 12px 24px; border-radius: 8px;
@@ -373,8 +416,9 @@
 
     <label>Código da encomenda (etiqueta)</label>
     <div style="display:flex;gap:8px;align-items:center;">
-      <input type="text" id="inputCodigo" placeholder="Ex: TBR364591209" autocomplete="off" style="font-size:18px;">
+      <input type="text" id="inputCodigo" placeholder="Ex: TBR364591209" autocomplete="off" style="font-size:18px;" oninput="atualizarCadastroEncomenda()" onblur="normalizarCampoCodigo()">
     </div>
+    <div id="avisoCodigo" class="form-alert"></div>
     <button class="btn btn-full" style="background:#e8f0fe;color:#1a73e8;font-size:16px;padding:12px;margin-top:10px;border-radius:10px;font-weight:700;" onclick="colarCodigoScannerExterno()">
       📲 Usar código lido no scanner externo
     </button>
@@ -417,10 +461,11 @@
     <div id="moradorSelecionado" style="margin-top:8px; padding:12px; background:#e8f0fe; border-radius:8px; display:none;">
       <strong id="nomeMoradorSel"></strong><br>
       <small id="casaMoradorSel" style="color:var(--muted)"></small>
+      <button type="button" onclick="limparMoradorSelecionado()" style="margin-top:8px;border:none;background:transparent;color:#1a73e8;font-weight:700;cursor:pointer;padding:0;">Trocar morador</button>
     </div>
 
     <label>Transportadora</label>
-    <select id="inputTransportadora">
+    <select id="inputTransportadora" onchange="atualizarCadastroEncomenda()">
       <option value="">Selecione...</option>
       <option>Mercado Livre</option>
       <option>Shopee</option>
@@ -436,9 +481,22 @@
       <option>Jadlog</option>
       <option>Outro</option>
     </select>
+    <div class="quick-options">
+      <button type="button" class="quick-chip" onclick="selecionarTransportadoraRapida('Mercado Livre')">Mercado Livre</button>
+      <button type="button" class="quick-chip" onclick="selecionarTransportadoraRapida('Shopee')">Shopee</button>
+      <button type="button" class="quick-chip" onclick="selecionarTransportadoraRapida('Amazon')">Amazon</button>
+      <button type="button" class="quick-chip" onclick="selecionarTransportadoraRapida('Correios')">Correios</button>
+    </div>
 
     <label>Observações (opcional)</label>
-    <input type="text" id="inputObs" placeholder="Ex: Frágil, Refrigerado, etc.">
+    <input type="text" id="inputObs" placeholder="Ex: Frágil, Refrigerado, volume grande, etc." oninput="atualizarCadastroEncomenda()">
+    <div class="quick-options">
+      <button type="button" class="quick-chip" onclick="adicionarObsRapida('Frágil')">Frágil</button>
+      <button type="button" class="quick-chip" onclick="adicionarObsRapida('Volume grande')">Volume grande</button>
+      <button type="button" class="quick-chip" onclick="adicionarObsRapida('Refrigerado')">Refrigerado</button>
+    </div>
+
+    <div id="previewRegistro" class="registro-preview"></div>
 
     <button class="btn btn-primary btn-full" onclick="registrarEncomenda()">
       ✅ Registrar e notificar morador
@@ -1717,6 +1775,16 @@ function limparFormRegistrar() {
   document.getElementById('searchMorador').value = '';
   document.getElementById('inputTransportadora').value = '';
   document.getElementById('inputObs').value = '';
+  const avisoCodigo = document.getElementById('avisoCodigo');
+  if (avisoCodigo) {
+    avisoCodigo.className = 'form-alert';
+    avisoCodigo.textContent = '';
+  }
+  const preview = document.getElementById('previewRegistro');
+  if (preview) {
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+  }
   document.getElementById('moradorSelecionado').style.display = 'none';
   document.getElementById('listaMoradores').style.display = 'none';
   document.getElementById('ocrStatus').style.display = 'none';
@@ -1755,6 +1823,14 @@ function selecionarMorador(id) {
   document.getElementById('nomeMoradorSel').textContent = m.nome;
   document.getElementById('casaMoradorSel').textContent = m.casa + ' · ' + formatarWhats(m.whats);
   document.getElementById('moradorSelecionado').style.display = 'block';
+  atualizarCadastroEncomenda();
+}
+
+function limparMoradorSelecionado() {
+  moradorSelecionadoId = null;
+  document.getElementById('searchMorador').value = '';
+  document.getElementById('moradorSelecionado').style.display = 'none';
+  atualizarCadastroEncomenda();
 }
 
 function formatarWhats(w) {
@@ -1762,19 +1838,93 @@ function formatarWhats(w) {
   return '(' + w.slice(0,2) + ') ' + w.slice(2,7) + '-' + w.slice(7);
 }
 
+function codigoDigitadoNormalizado() {
+  return normalizarCodigoBarras(document.getElementById('inputCodigo').value);
+}
+
+function normalizarCampoCodigo() {
+  const input = document.getElementById('inputCodigo');
+  const normalizado = codigoDigitadoNormalizado();
+  if (normalizado) input.value = normalizado;
+  atualizarCadastroEncomenda();
+}
+
+function atualizarCadastroEncomenda() {
+  const codigo = codigoDigitadoNormalizado();
+  const aviso = document.getElementById('avisoCodigo');
+  const preview = document.getElementById('previewRegistro');
+  const duplicada = codigo ? verificarDuplicidade(codigo) : null;
+
+  if (aviso) {
+    aviso.className = 'form-alert';
+    aviso.textContent = '';
+    if (duplicada) {
+      aviso.className = 'form-alert error';
+      aviso.innerHTML = `Código já cadastrado em aberto para <strong>${duplicada.moradorNome}</strong>, ${duplicada.moradorCasa}. Entrada: ${duplicada.dataEntrada}.`;
+    } else if (codigo && codigo.length < 8) {
+      aviso.className = 'form-alert warn';
+      aviso.textContent = 'O código parece curto. Confira a etiqueta antes de registrar.';
+    } else if (codigo) {
+      const transp = detectarTransportadora(codigo);
+      aviso.className = 'form-alert ok';
+      aviso.textContent = transp ? 'Código reconhecido. Transportadora sugerida: ' + transp + '.' : 'Código pronto para registro.';
+      if (transp && !document.getElementById('inputTransportadora').value) {
+        document.getElementById('inputTransportadora').value = transp;
+      }
+    }
+  }
+
+  if (!preview) return;
+  const morador = moradorSelecionadoId ? moradores.find(m => m.id === moradorSelecionadoId) : null;
+  const transp = document.getElementById('inputTransportadora').value || 'Não informada';
+  const obs = document.getElementById('inputObs').value.trim();
+
+  if (!codigo && !morador && !obs && transp === 'Não informada') {
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+    return;
+  }
+
+  preview.style.display = 'block';
+  preview.innerHTML = `
+    <div style="font-weight:700;color:#1a1f3a;margin-bottom:6px;">Prévia do cadastro</div>
+    <div><strong>Código:</strong> ${codigo || 'não informado'}</div>
+    <div><strong>Morador:</strong> ${morador ? morador.nome : 'não selecionado'}</div>
+    <div><strong>Casa:</strong> ${morador ? morador.casa : 'não selecionada'}</div>
+    <div><strong>Transportadora:</strong> ${transp}</div>
+    ${obs ? `<div><strong>Observação:</strong> ${obs}</div>` : ''}
+  `;
+}
+
+function selecionarTransportadoraRapida(nome) {
+  document.getElementById('inputTransportadora').value = nome;
+  atualizarCadastroEncomenda();
+}
+
+function adicionarObsRapida(texto) {
+  const input = document.getElementById('inputObs');
+  const atual = input.value.trim();
+  const partes = atual ? atual.split(',').map(p => p.trim().toLowerCase()) : [];
+  if (!partes.includes(texto.toLowerCase())) {
+    input.value = atual ? atual + ', ' + texto : texto;
+  }
+  atualizarCadastroEncomenda();
+}
+
 async function registrarEncomenda() {
   if (!exigirPerfil(['admin', 'porteiro'])) return;
-  const codigo = document.getElementById('inputCodigo').value.trim();
+  const codigo = codigoDigitadoNormalizado();
   const transp = document.getElementById('inputTransportadora').value;
   const obs = document.getElementById('inputObs').value.trim();
 
   if (!codigo) { toast('⚠️ Informe o código da encomenda'); return; }
+  if (codigo.length < 8) { toast('⚠️ Código muito curto. Confira a etiqueta.'); return; }
   if (!moradorSelecionadoId) { toast('⚠️ Selecione o morador destinatário'); return; }
 
   // Bloqueio de duplicidade
   const duplicada = verificarDuplicidade(codigo);
   if (duplicada) {
-    toast(`⚠️ Este código já está registrado e aguarda retirada por ${duplicada.moradorNome}`, 5000);
+    toast(`⚠️ Código já registrado em aberto para ${duplicada.moradorNome}`, 6000);
     return;
   }
 
@@ -1813,6 +1963,7 @@ async function registrarEncomenda() {
   document.getElementById('inputObs').value = '';
   document.getElementById('moradorSelecionado').style.display = 'none';
   moradorSelecionadoId = null;
+  atualizarCadastroEncomenda();
 
   toast('✅ Encomenda registrada!');
 
@@ -3953,7 +4104,8 @@ function executarBackup() {
 // ========== BLOQUEIO DE DUPLICIDADE ==========
 function verificarDuplicidade(codigo) {
   if (!codigo) return null;
-  return encomendas.find(e => e.codigo === codigo && e.status === 'pendente') || null;
+  const alvo = normalizarCodigoBarras(codigo);
+  return encomendas.find(e => normalizarCodigoBarras(e.codigo) === alvo && e.status === 'pendente') || null;
 }
 
 // ========== CONSULTAS ==========
