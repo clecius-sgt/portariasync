@@ -142,7 +142,7 @@ function workflow() {
     detectarTransportadoraOCR() { return 'Amazon'; },
     detectarTransportadora() { return 'Amazon'; },
     abrirModalSugestaoMorador(...args) { context.modal = args; },
-    apiFetch: async () => ({ ParsedResults: [{ ParsedText: label }] })
+    LocalOCR: { recognize: async () => ({ text: label, confidence: 95 }) }
   });
   vm.runInContext(html.slice(html.indexOf('let _fotoEtiquetaBase64'), html.indexOf('function fotografarEtiqueta()')), context);
   vm.runInContext(html.slice(html.indexOf('async function enviarParaOCR('), html.indexOf('function detectarTransportadoraOCR(', html.indexOf('async function enviarParaOCR('))), context);
@@ -167,10 +167,10 @@ test('unknown recipient opens confirmation and does not reuse previous resident'
   assert.ok(context.modal);
 });
 
-for (const [name, response] of [['empty OCR', { ParsedResults: [{ ParsedText: '' }] }], ['provider error with partial text', { IsErroredOnProcessing: true, ParsedResults: [{ ParsedText: label }] }], ['partial page', { ParsedResults: [{ ParsedText: label, FileParseExitCode: 0 }] }]]) {
+for (const [name, response] of [['empty OCR', { text: '', confidence: 95 }], ['low confidence', { text: label, confidence: 40 }], ['missing confidence', { text: label }]]) {
   test(name + ' leaves no resident selected', async () => {
     const { run, context } = workflow();
-    context.apiFetch = async () => response;
+    context.LocalOCR.recognize = async () => response;
     await run('enviarParaOCR("image", document.getElementById("ocrStatus"))');
     assert.equal(context.moradorSelecionadoId, null);
     assert.equal(run('_leituraEtiquetaPendente'), false);
@@ -180,11 +180,11 @@ for (const [name, response] of [['empty OCR', { ParsedResults: [{ ParsedText: ''
 test('late OCR response cannot overwrite the next label', async () => {
   const { run, context, element } = workflow();
   let resolve;
-  context.apiFetch = () => new Promise(r => { resolve = r; });
+  context.LocalOCR.recognize = () => new Promise(r => { resolve = r; });
   const pending = run('enviarParaOCR("old", document.getElementById("ocrStatus"))');
   run('iniciarLeituraEtiqueta()');
   element('inputCodigo').value = 'NEW-CODE';
-  resolve({ ParsedResults: [{ ParsedText: label }] });
+  resolve({ text: label, confidence: 95 });
   await pending;
   assert.equal(context.moradorSelecionadoId, null);
   assert.equal(element('inputCodigo').value, 'NEW-CODE');
@@ -194,18 +194,36 @@ test('late OCR response cannot overwrite the next label', async () => {
 test('clearing form invalidates pending OCR', async () => {
   const { run, context } = workflow();
   let resolve;
-  context.apiFetch = () => new Promise(r => { resolve = r; });
+  context.LocalOCR.recognize = () => new Promise(r => { resolve = r; });
   const pending = run('enviarParaOCR("old", document.getElementById("ocrStatus"))');
   run('invalidarLeituraEtiqueta()');
-  resolve({ ParsedResults: [{ ParsedText: label }] });
+  resolve({ text: label, confidence: 95 });
   await pending;
   assert.equal(context.moradorSelecionadoId, null);
   assert.equal(run('_leituraEtiquetaPendente'), false);
 });
 
-test('all OCR results are considered, not just the first empty result', async () => {
+test('local OCR failure clears pending state without selecting a resident', async () => {
   const { run, context } = workflow();
-  context.apiFetch = async () => ({ ParsedResults: [{ ParsedText: '' }, { ParsedText: label }] });
+  context.LocalOCR.recognize = async () => { throw new Error('worker failed'); };
   await run('enviarParaOCR("image", document.getElementById("ocrStatus"))');
-  assert.equal(context.moradorSelecionadoId, carlos.id);
+  assert.equal(context.moradorSelecionadoId, null);
+  assert.equal(run('_leituraEtiquetaPendente'), false);
+});
+
+test('printed tracking code beside CEP survives OCR context filtering', () => {
+  const context = vm.createContext({});
+  const start = html.indexOf('function extrairCodigoEtiquetaOCR(');
+  vm.runInContext(html.slice(start, html.indexOf('function normalizarCodigoBarras(', start)), context);
+  const text = 'DESTINATARIO\nCarlos Augusto\nRua Londres 160\nCEP 15115000\n\nTBR123456789';
+  assert.equal(context.extrairCodigoEtiquetaOCR(text), 'TBR123456789');
+  assert.equal(context.extrairCodigoEtiquetaOCR('CEP 15115000\nRua Londres 160'), '');
+});
+
+test('TBR does not falsely select Mercado Livre and TBA reaches its Amazon rule', () => {
+  const context = vm.createContext({});
+  const start = html.indexOf('function detectarTransportadora(codigo)');
+  vm.runInContext(html.slice(start, html.indexOf('function detectarTransportadoraOCR(', start)), context);
+  assert.equal(context.detectarTransportadora('TBR123456789'), '');
+  assert.equal(context.detectarTransportadora('TBA123456789'), 'Amazon');
 });

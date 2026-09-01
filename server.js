@@ -12,7 +12,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const ZAPI_URL = process.env.ZAPI_URL || '';
 const ZAPI_CLIENT = process.env.ZAPI_CLIENT || '';
-const OCRSPACE_API_KEY = process.env.OCRSPACE_API_KEY || 'K85992490088957';
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
@@ -29,7 +28,9 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml; charset=utf-8'
+  '.svg': 'image/svg+xml; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.gz': 'application/gzip'
 };
 
 const server = http.createServer(async (req, res) => {
@@ -75,6 +76,8 @@ function serveStatic(req, res) {
   if (
     !abs.startsWith(PUBLIC_DIR) ||
     partes.includes('data') ||
+    partes.includes('node_modules') ||
+    path.basename(abs).toLowerCase() === 'index~1.htm' ||
     partes.some(p => p.startsWith('.')) ||
     path.basename(abs).toLowerCase() === 'package-lock.json'
   ) {
@@ -233,32 +236,8 @@ async function handleApi(req, res) {
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/api/ocr') {
-    requireRole(req, ['admin', 'porteiro']);
-    const { base64Image, language = 'por' } = await readJson(req, 12 * 1024 * 1024);
-    if (!base64Image) {
-      sendJson(res, 400, { error: 'Imagem não informada' });
-      return;
-    }
-    const formData = new FormData();
-    formData.append('base64Image', base64Image);
-    formData.append('language', language);
-    formData.append('isOverlayRequired', 'false');
-    formData.append('detectOrientation', 'true');
-    formData.append('scale', 'true');
-    formData.append('OCREngine', '2');
-
-    const resp = await fetch('https://api.ocr.space/parse/image', {
-      method: 'POST',
-      headers: { apikey: OCRSPACE_API_KEY },
-      body: formData
-    });
-    const text = await resp.text();
-    res.writeHead(resp.ok ? 200 : 502, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*'
-    });
-    res.end(text || '{}');
+  if (req.url === '/api/ocr') {
+    sendJson(res, 410, { error: 'A leitura agora é local. Atualize a página com Ctrl+F5.' });
     return;
   }
 

@@ -24,6 +24,7 @@ Ele cria a tabela `app_state`, usada para espelhar celular e computador pelo ban
 No terminal, dentro da pasta do sistema:
 
 ```bash
+npm ci
 npm start
 ```
 
@@ -72,3 +73,15 @@ Assim, o que for lançado em um dispositivo é salvo no backend e carregado pelo
 ## 7. Próximo endurecimento recomendado
 
 O próximo passo de produção é mover usuários e sessões para o banco, mantendo senhas com hash e controle de expiração de sessão.
+
+## 8. Etiquetas sem serviço contratado
+
+O OCR usa Tesseract.js e o leitor de códigos usa ZXing, ambos executados no
+navegador com arquivos do próprio servidor. `npm ci` prepara os arquivos em
+`vendor/`; `npm start` também verifica essa preparação. Não configurar chave de
+OCR. Chaves de WhatsApp e banco continuam destinadas às respectivas funções.
+
+A captura automática requer acesso **HTTPS** e permissão da câmera. Acesso por
+`http://IP-DO-VPS:3000` não oferece câmera contínua nos navegadores que exigem
+contexto seguro. Configure HTTPS no endereço usado pela portaria antes do teste
+no celular. Consulte `TESTING.md` para atualização e validação.
