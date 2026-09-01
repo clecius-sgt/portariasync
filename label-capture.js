@@ -34,6 +34,7 @@
 
   // Dependency injection keeps camera timing and cancellation testable without hardware.
   function create({ sample, snapshot, recognize, onCapture, onStatus = () => {},
+    formatError = error => String(error?.message || error || 'Erro sem descrição').slice(0, 400),
     now = () => Date.now(), schedule = setTimeout, unschedule = clearTimeout, stableMs = 1200 }) {
     let stopped = false, timer, previous, stableSince = null, generation = 0;
     let busy = false, retryAt = 0, failure = false;
@@ -49,7 +50,9 @@
       try {
         const image = snapshot();
         onStatus('Conferindo o texto. Mantenha a etiqueta parada...');
-        const result = await recognize(image);
+        const result = await recognize(image, text => {
+          if (!stopped) onStatus(text);
+        });
         if (stopped || version !== generation) return;
         if (!looksLikeLabel(result)) {
           onStatus('Aproxime a etiqueta, com nome e endereço visíveis e texto na posição correta.');
@@ -61,7 +64,7 @@
       } catch (error) {
         if (!stopped) {
           failure = true;
-          onStatus('Leitura automática indisponível. Use Capturar agora ou reabra a câmera.');
+          onStatus('Leitura automática indisponível. ' + formatError(error));
         }
       } finally {
         busy = false;

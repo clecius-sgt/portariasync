@@ -23,7 +23,7 @@ Não colocar fotos de moradores, chaves ou dados de produção nos testes.
 A câmera virtual verifica o fluxo, mas não substitui o teste no celular usado na
 portaria, com iluminação, foco e etiquetas reais.
 
-## Resultado desta alteração
+## Validação da implementação inicial
 
 Validação concluída: 54 testes de lógica e o teste de navegador nas duas dimensões
 acima. O motor local leu corretamente o texto da etiqueta sintética; a câmera
@@ -90,3 +90,23 @@ legada `INDEX~1.HTM` é bloqueada pelo servidor para não reativar o leitor anti
 - https://github.com/naptha/tesseract.js/blob/master/docs/local-installation.md
 - https://github.com/zxing-js/library
 - https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
+
+## Diagnóstico de falha imediata no celular (2026-09-01.2)
+
+O cadastro inclui o link **Testar leitor neste aparelho**, também disponível em
+`/diagnostico-leitor.html`. A página lê uma etiqueta fictícia usando o mesmo
+`LocalOCR` da aplicação, informa endereço, navegador, versão do leitor, etapa,
+tempo e erro recebido. Não consulta moradores, não registra encomendas e não
+transmite fotos. O resultado só é copiado quando o operador usa o botão.
+
+A câmera agora prepara o leitor antes de iniciar a análise dos quadros. O
+progresso aparece acima do vídeo. Falhas de inicialização permanecem visíveis;
+não se abre a câmera nativa como se o problema fosse permissão de câmera.
+Erros retornados como texto pelo Tesseract são preservados junto com a etapa.
+
+Validação desta atualização: 63 testes de lógica aprovados, incluindo
+inicialização, cancelamento durante a preparação, erro em texto, script ausente,
+progresso, recuperação e prevenção de associação incorreta. A verificação no
+navegador remoto não pôde acessar o servidor local de teste. O diagnóstico no
+Chrome do JOVI J2507 e a captura com câmera física ainda precisam ser executados;
+a causa da falha específica nesse aparelho ainda não foi identificada.

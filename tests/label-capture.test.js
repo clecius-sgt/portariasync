@@ -64,3 +64,28 @@ test('low confidence and ordinary text are not treated as a label', async () => 
 test('unknown resident with legible address can be captured for manual review', () => {
   assert.equal(capture.looksLikeLabel({ text: 'Ana Pessoa\nRua Nova 999\nCEP 15115000', confidence: 90 }), true);
 });
+
+test('automatic OCR failure stays visible and never captures a label', async () => {
+  let clock = 0, tick, progress;
+  const messages = [], captures = [];
+  const controller = capture.create({
+    sample: () => frame(), snapshot: () => 'photo',
+    recognize: async (image, onProgress) => {
+      progress = onProgress;
+      onProgress('Carregando idioma (50%)');
+      throw 'Failed to construct Worker';
+    },
+    onStatus: text => messages.push(text), onCapture: (...args) => captures.push(args),
+    now: () => clock, schedule: fn => { tick = fn; return 1; }, unschedule() {}
+  });
+  for (let i = 0; i < 15; i++) { clock += 180; tick(); }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(messages.includes('Carregando idioma (50%)'));
+  assert.match(messages.at(-1), /Failed to construct Worker/);
+  for (let i = 0; i < 10; i++) { clock += 180; tick(); }
+  assert.match(messages.at(-1), /Failed to construct Worker/);
+  assert.equal(captures.length, 0);
+  controller.stop();
+  progress('Late progress');
+  assert.match(messages.at(-1), /Failed to construct Worker/);
+});

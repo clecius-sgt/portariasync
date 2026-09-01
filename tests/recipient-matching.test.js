@@ -211,6 +211,24 @@ test('local OCR failure clears pending state without selecting a resident', asyn
   assert.equal(run('_leituraEtiquetaPendente'), false);
 });
 
+test('string OCR errors are displayed without hiding their cause', async () => {
+  const { run, context, element } = workflow();
+  context.LocalOCR.recognize = async () => { throw 'Failed to fetch /vendor/ocr/lang/por.traineddata.gz'; };
+  await run('enviarParaOCR("image", document.getElementById("ocrStatus"))');
+  assert.match(element('ocrStatus').textContent, /Failed to fetch/);
+  assert.equal(context.moradorSelecionadoId, null);
+  assert.equal(run('_leituraEtiquetaPendente'), false);
+});
+
+test('missing local OCR script explains the failure without assigning a resident', async () => {
+  const { run, context, element } = workflow();
+  delete context.LocalOCR;
+  await run('enviarParaOCR("image", document.getElementById("ocrStatus"))');
+  assert.match(element('ocrStatus').textContent, /arquivo do leitor não carregou/);
+  assert.equal(context.moradorSelecionadoId, null);
+  assert.equal(run('_leituraEtiquetaPendente'), false);
+});
+
 test('printed tracking code beside CEP survives OCR context filtering', () => {
   const context = vm.createContext({});
   const start = html.indexOf('function extrairCodigoEtiquetaOCR(');

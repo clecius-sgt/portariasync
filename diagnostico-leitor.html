@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste do leitor | PortariaSync</title>
+  <script defer src="/vendor/ocr/tesseract.min.js"></script>
+  <script defer src="local-ocr.js?v=20260901-2"></script>
+  <script defer src="diagnostico-leitor.js?v=20260901-2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px; background: #f4f6f9; color: #1a1f3a; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 640px; margin: auto; padding: 24px; background: white; border-radius: 14px; }
+    h1 { font-size: 25px; line-height: 1.2; }
+    button { padding: 14px 18px; font: inherit; border: 0; border-radius: 8px; cursor: pointer; }
+    #testar { background: #1a1f3a; color: white; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #estado { padding: 14px; background: #e8f0fe; border-radius: 8px; overflow-wrap: anywhere; }
+    #estado[data-result="erro"] { background: #fce8e6; }
+    #estado[data-result="ok"] { background: #e6f4ea; }
+    textarea { width: 100%; min-height: 230px; font: 13px/1.5 monospace; margin: 10px 0; padding: 10px; }
+    details { margin: 18px 0; }
+    canvas { max-width: 100%; height: auto; border: 1px solid #ddd; }
+    a { color: #1a4b84; }
+  </style>
+</head>
+<body>
+<main>
+  <a href="./">Voltar ao PortariaSync</a>
+  <h1>Testar leitor neste aparelho</h1>
+  <p>Este teste lê uma etiqueta fictícia. Ele ajuda a verificar o leitor sem depender do foco ou da iluminação da câmera.</p>
+  <button id="testar" type="button">Testar leitor</button>
+  <p id="estado" role="status" aria-live="polite">Toque em Testar leitor. A primeira execução pode demorar até um minuto.</p>
+  <details><summary>Ver etiqueta fictícia</summary><canvas id="etiqueta" width="1280" height="720"></canvas></details>
+  <label for="relatorio">Resultado para conferência</label>
+  <textarea id="relatorio" readonly aria-label="Resultado para conferência"></textarea>
+  <button id="copiar" type="button">Copiar resultado</button>
+  <p>Nenhuma encomenda é registrada. O teste não usa fotos, cadastros de moradores nem WhatsApp.</p>
+  <noscript>Ative o JavaScript neste navegador para executar o teste.</noscript>
+</main>
+</body>
+</html>
