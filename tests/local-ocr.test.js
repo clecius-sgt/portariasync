@@ -57,3 +57,51 @@ test('a hung recognition times out and a new attempt can recover', async () => {
   assert.equal((await context.LocalOCR.recognize('next')).text, 'recovered');
   assert.equal(terminated, true);
 });
+
+test('initialization rejects with the real string error and phase, then can recover', async () => {
+  let created = 0;
+  const context = vm.createContext({ setTimeout, clearTimeout, Tesseract: {
+    async createWorker() {
+      if (++created === 1) throw 'Network error while fetching language. Response code: 404';
+      return { setParameters: async () => {}, recognize: async () => ({ data: { text: 'ok', confidence: 90 } }) };
+    }
+  } });
+  vm.runInContext(source, context);
+  await assert.rejects(context.LocalOCR.prepare(), error => {
+    assert.equal(error.ocrPhase, 'inicialização');
+    assert.match(context.LocalOCR.formatError(error), /inicialização.*Response code: 404/);
+    return true;
+  });
+  assert.equal((await context.LocalOCR.recognize('next')).text, 'ok');
+});
+
+test('preparation and immediate manual photo share one worker and forward loading progress', async () => {
+  let created = 0;
+  const progress = [];
+  const context = vm.createContext({ setTimeout, clearTimeout, Tesseract: {
+    async createWorker(lang, engine, options) {
+      created++;
+      options.logger({ status: 'loading language traineddata', progress: 0.5 });
+      return { setParameters: async () => {}, recognize: async () => ({ data: { text: 'ok', confidence: 90 } }) };
+    }
+  } });
+  vm.runInContext(source, context);
+  const ready = context.LocalOCR.prepare(event => progress.push(context.LocalOCR.progressText(event)));
+  const photo = context.LocalOCR.recognize('photo');
+  await ready;
+  assert.equal((await photo).text, 'ok');
+  assert.equal(created, 1);
+  assert.match(progress[0], /idioma português \(50%\)/);
+});
+
+test('a worker that fails parameter initialization is terminated', async () => {
+  let terminated = 0;
+  const context = vm.createContext({ setTimeout, clearTimeout, Tesseract: {
+    async createWorker() {
+      return { setParameters: async () => { throw new Error('initialization failed'); }, terminate: async () => { terminated++; } };
+    }
+  } });
+  vm.runInContext(source, context);
+  await assert.rejects(context.LocalOCR.prepare(), /initialization failed/);
+  assert.equal(terminated, 1);
+});
