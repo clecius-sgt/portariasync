@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PortariaSync – Controle de Encomendas</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/dynamsoft-barcode-reader-bundle@11.4.2001/dist/dbr.bundle.js"></script>
+<script defer src="/vendor/ocr/tesseract.min.js"></script>
+<script defer src="/vendor/barcode/zxing.min.js"></script>
+<script defer src="local-ocr.js"></script>
+<script src="label-capture.js"></script>
 <style>
   :root {
     --primary: #1a1f3a;
@@ -425,7 +428,7 @@
 
     <!-- Botão único unificado -->
     <button class="btn btn-full" style="background:linear-gradient(135deg,#1a1f3a,#2d3561);color:white;font-size:17px;padding:16px;margin-top:12px;border-radius:10px;letter-spacing:0.3px;" onclick="fotografarEtiqueta()">
-      📷 Fotografar etiqueta — ler código + identificar morador
+      📷 Ler etiqueta com captura automática
     </button>
     <input type="file" id="inputFotoOCR" accept="image/*" capture="environment" style="display:none;" onchange="processarFotoOCR(this)">
     <div id="ocrStatus" style="display:none;margin-top:8px;padding:10px;background:#e8f0fe;border-radius:8px;font-size:14px;color:#1a1f3a;text-align:center;"></div>
@@ -433,10 +436,10 @@
     <!-- Modal câmera unificada -->
     <div id="modalUnificado" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.97);z-index:9999;flex-direction:column;align-items:center;justify-content:center;padding:16px;">
       <div style="color:white;font-size:15px;margin-bottom:10px;font-weight:600;text-align:center;letter-spacing:0.3px;">
-        📷 Enquadre a etiqueta inteira e toque em Capturar
+        📷 Enquadre a etiqueta inteira. A captura é automática.
       </div>
       <div style="position:relative;width:100%;max-width:420px;">
-        <video id="uniVideo" style="width:100%;border-radius:12px;display:block;" autoplay playsinline></video>
+        <video id="uniVideo" style="width:100%;max-height:62vh;object-fit:contain;border-radius:12px;display:block;" autoplay muted playsinline></video>
         <!-- mira de enquadramento -->
         <div style="position:absolute;inset:0;pointer-events:none;">
           <div style="position:absolute;top:12px;left:12px;width:36px;height:36px;border-top:3px solid #c9a84c;border-left:3px solid #c9a84c;border-radius:3px 0 0 0;"></div>
@@ -446,9 +449,9 @@
         </div>
         <canvas id="uniCanvas" style="display:none;"></canvas>
       </div>
-      <div id="uniStatus" style="color:#c9a84c;font-size:13px;margin-top:10px;text-align:center;min-height:20px;"></div>
+      <div id="uniStatus" role="status" aria-live="polite" style="color:#c9a84c;font-size:13px;margin-top:10px;text-align:center;min-height:20px;"></div>
       <div style="display:flex;gap:12px;margin-top:14px;">
-        <button class="btn" style="background:linear-gradient(135deg,#c9a84c,#e8c97a);color:#1a1f3a;font-size:16px;font-weight:700;padding:14px 32px;border-radius:10px;" onclick="capturarUnificado()">📸 Capturar</button>
+        <button class="btn" style="background:linear-gradient(135deg,#c9a84c,#e8c97a);color:#1a1f3a;font-size:16px;font-weight:700;padding:14px 32px;border-radius:10px;" onclick="capturarUnificado()">📸 Capturar agora</button>
         <button class="btn" style="background:#333;color:white;padding:14px 20px;border-radius:10px;" onclick="fecharCameraUnificada()">✕ Cancelar</button>
       </div>
     </div>
@@ -1559,6 +1562,8 @@ async function fazerLogin() {
 
 function fazerLogout() {
   if (!confirm('Deseja sair do sistema?')) return;
+  fecharCameraUnificada();
+  invalidarLeituraEtiqueta();
   registrarAuditoria('Logout realizado', {});
   apiFetch('/api/auth/logout', { method: 'POST', body: '{}' }).catch(() => {});
   authToken = '';
@@ -1680,6 +1685,7 @@ function showPage(id) {
   if (id === 'config' && !exigirPerfil(['admin'])) return;
   if ((id === 'moradores' || id === 'auditoria') && !exigirPerfil(['admin', 'supervisor'])) return;
   const pageId = id === 'inicio' ? 'dashboard' : id;
+  if (pageId !== 'registrar') { fecharCameraUnificada(); invalidarLeituraEtiqueta(); }
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -3139,7 +3145,7 @@ async function colarCodigoScannerExterno() {
 
 function detectarTransportadora(codigo) {
   const v = codigo.toUpperCase();
-  if (v.startsWith('TBR') || v.startsWith('TBA')) return 'Mercado Livre';
+  // Do not infer Mercado Livre from an unrelated tracking prefix.
   if (v.startsWith('SHP') || v.includes('SHOPEE')) return 'Shopee';
   if (v.startsWith('TBA') || v.includes('AMAZON')) return 'Amazon';
   if (v.startsWith('SB') || v.startsWith('RR') || v.startsWith('AA') || v.startsWith('RA')) return 'Correios';
@@ -3218,7 +3224,8 @@ function extrairCodigoEtiquetaOCR(texto) {
     const limpo = extrairNucleoCodigo(valor);
     if (!codigoEtiquetaValido(limpo)) return;
     if (/\bORDER\b|ORDERN|ORDERNO|ORDERNUMBER/.test(valorTexto)) return;
-    if (palavrasBloqueadas.test(contexto) && !palavrasProximas.test(contexto) && !/^[A-Z]{2}\d{9,20}[A-Z]{0,2}$/.test(limpo)) return;
+    if (palavrasBloqueadas.test(contexto) && !palavrasProximas.test(contexto) &&
+        !/^(?:[A-Z]{2}\d{9,20}[A-Z]{0,2}|(?:TBR|TBA|SHP|SPX|MLB)\d{8,24})$/.test(limpo)) return;
     let score = limpo.length + bonus;
     if (/^\d{10,}$/.test(limpo)) score += 10;
     if (/^\d{20,}$/.test(limpo)) score += 30;
@@ -3326,53 +3333,6 @@ function imagemEtiquetaLeveBase64(origem, maxLado = 1280, qualidade = 0.72) {
   return canvas.toDataURL('image/jpeg', qualidade);
 }
 
-let _dynamsoftRouter = null;
-let _dynamsoftInicializando = null;
-let _dynamsoftLicencaOk = false;
-const DYNAMSOFT_LICENSE_KEY = localStorage.getItem('dynamsoftLicenseKey') || '';
-
-async function inicializarDynamsoft() {
-  if (!window.Dynamsoft || !Dynamsoft.CVR) {
-    console.warn('Dynamsoft não carregado.');
-    return false;
-  }
-  try {
-    if (!_dynamsoftLicencaOk) {
-      if (Dynamsoft.Core?.CoreModule?.engineResourcePaths) {
-        Dynamsoft.Core.CoreModule.engineResourcePaths.rootDirectory = 'https://cdn.jsdelivr.net/npm/';
-      }
-      if (DYNAMSOFT_LICENSE_KEY && Dynamsoft.License?.LicenseManager?.initLicense) {
-        Dynamsoft.License.LicenseManager.initLicense(DYNAMSOFT_LICENSE_KEY);
-      }
-      if (Dynamsoft.Core?.CoreModule?.loadWasm) {
-        await Dynamsoft.Core.CoreModule.loadWasm();
-      }
-      _dynamsoftLicencaOk = true;
-    }
-    return true;
-  } catch(e) {
-    console.warn('Falha ao inicializar Dynamsoft:', e);
-    return false;
-  }
-}
-
-async function obterDynamsoftRouter() {
-  if (_dynamsoftRouter) return _dynamsoftRouter;
-  if (_dynamsoftInicializando) return _dynamsoftInicializando;
-  _dynamsoftInicializando = (async () => {
-    const ok = await inicializarDynamsoft();
-    if (!ok) return null;
-    try {
-      _dynamsoftRouter = await Dynamsoft.CVR.CaptureVisionRouter.createInstance();
-      return _dynamsoftRouter;
-    } catch(e) {
-      console.warn('Dynamsoft indisponível:', e);
-      return null;
-    }
-  })();
-  return _dynamsoftInicializando;
-}
-
 function carregarImagemBase64(imgBase64) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -3425,68 +3385,34 @@ async function gerarVariacoesEtiqueta(imgBase64) {
   return regioes.map(r => ({ origem: r.nome, imagem: cortarCanvas(base, r.x, r.y, r.w, r.h) }));
 }
 
-async function detectarCodigoDynamsoft(imgBase64) {
-  const router = await obterDynamsoftRouter();
-  if (!router) return null;
-  const candidatos = [];
+async function detectarCodigoLivre(imgBase64) {
   try {
-    const variacoes = await gerarVariacoesEtiqueta(imgBase64);
-    const templates = [
-      'ReadBarcodes_ReadRateFirst',
-      'ReadBarcodes_Default',
-      'ReadDenseBarcodes',
-      'ReadDistantBarcodes'
-    ];
-    for (const variacao of variacoes) {
-      const mobile = matchMedia('(max-width: 700px)').matches;
-      const rotacoes = mobile
-        ? [
-            { nome: variacao.origem, imagem: variacao.imagem },
-            { nome: variacao.origem + '-90', imagem: canvasRotacionado(variacao.imagem, 90) }
-          ]
-        : [
-            { nome: variacao.origem, imagem: variacao.imagem },
-            { nome: variacao.origem + '-90', imagem: canvasRotacionado(variacao.imagem, 90) },
-            { nome: variacao.origem + '-180', imagem: canvasRotacionado(variacao.imagem, 180) },
-            { nome: variacao.origem + '-270', imagem: canvasRotacionado(variacao.imagem, 270) }
-          ];
-      for (const rotacao of rotacoes) {
-        const imagemBase64 = imagemEtiquetaLeveBase64(rotacao.imagem, 1000, 0.70);
-        for (const template of templates) {
-          try {
-            const result = await router.capture(imagemBase64, template);
-            const itens = [
-              ...(Array.isArray(result?.items) ? result.items : []),
-              ...(Array.isArray(result?.barcodeResultItems) ? result.barcodeResultItems : [])
-            ];
-            for (const item of itens) {
-              const raw = item.text || item.barcodeText || item.rawText || '';
-              const format = item.formatString || item.format || item.barcodeFormatString || '';
-              const codigo = normalizarCodigoBarras(raw);
-              const score = pontuarCodigoBarras(raw, format, 'dynamsoft-' + rotacao.nome) +
-                40 +
-                (rotacao.nome.includes('codigo') ? 15 : 0) +
-                (template === 'ReadBarcodes_ReadRateFirst' ? 20 : 0);
-              if (codigo && score >= 0) {
-                candidatos.push({ codigo, rawValue: raw, format, origem: 'dynamsoft-' + rotacao.nome + '-' + template, score });
-              }
-            }
-          } catch(e) {
-            console.log('Falha no template Dynamsoft:', template, rotacao.nome, e);
-          }
-        }
-      }
+    const native = await detectarMelhorCodigoBarras(imgBase64);
+    if (native) return native;
+  } catch (e) { /* Continue with the local JS reader if native detection fails. */ }
+  if (!window.ZXing) return null;
+  const reader = new ZXing.MultiFormatReader();
+  const hints = new Map([[ZXing.DecodeHintType.TRY_HARDER, true]]);
+  const results = [];
+  for (const variant of await gerarVariacoesEtiqueta(imgBase64)) {
+    for (const canvas of [variant.imagem, canvasRotacionado(variant.imagem, 90)]) {
+      const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+      const gray = new Uint8ClampedArray(width * height);
+      for (let i = 0; i < gray.length; i++) gray[i] = (data[i*4] + 2*data[i*4+1] + data[i*4+2]) / 4;
+      try {
+        const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.RGBLuminanceSource(gray, width, height)));
+        const result = reader.decode(bitmap, hints);
+        const raw = result.getText();
+        const format = String(ZXing.BarcodeFormat[result.getBarcodeFormat()] || '').toLowerCase();
+        const codigo = normalizarCodigoBarras(raw);
+        const score = pontuarCodigoBarras(raw, format, variant.origem);
+        if (codigo && score >= 0) results.push({ codigo, score, origem: 'leitor local' });
+      } catch (e) {
+        // A frame without a decodable barcode is normal; OCR can read printed text.
+      } finally { reader.reset(); }
     }
-    const unicos = new Map();
-    for (const item of candidatos) {
-      const atual = unicos.get(item.codigo);
-      if (!atual || item.score > atual.score) unicos.set(item.codigo, item);
-    }
-    return Array.from(unicos.values()).sort((a, b) => b.score - a.score || b.codigo.length - a.codigo.length)[0] || null;
-  } catch(e) {
-    console.warn('Dynamsoft não conseguiu ler a etiqueta:', e);
-    return null;
   }
+  return results.sort((a, b) => b.score - a.score)[0] || null;
 }
 
 async function detectarMelhorCodigoBarras(imgBase64) {
@@ -3558,6 +3484,9 @@ function identificarMorador(val) {
 
 // ========== CÂMERA UNIFICADA — QR Code + OCR em uma foto ==========
 let uniStream = null;
+let uniCapture = null;
+let uniSession = 0;
+let uniCapturando = false;
 let _fotoEtiquetaBase64 = null;
 let _leituraEtiquetaId = 0;
 let _leituraEtiquetaPendente = false;
@@ -3593,46 +3522,82 @@ function fotografarEtiqueta() {
   }
 
   const input = document.getElementById('inputFotoOCR');
+  toast('A captura automática precisa de HTTPS e permissão da câmera. Abrindo seleção de foto.', 6000);
   if (input) input.click();
 }
 
 async function abrirCameraUnificada() {
+  fecharCameraUnificada();
+  invalidarLeituraEtiqueta();
+  limparMoradorSelecionado();
+  const session = uniSession;
   const modal = document.getElementById('modalUnificado');
   modal.style.display = 'flex';
-  document.getElementById('uniStatus').textContent = '';
+  document.getElementById('uniStatus').textContent = 'Aguardando acesso à câmera...';
   try {
-    uniStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
     });
+    if (session !== uniSession) { stream.getTracks().forEach(t => t.stop()); return; }
+    uniStream = stream;
     const video = document.getElementById('uniVideo');
-    video.srcObject = uniStream;
+    video.srcObject = stream;
     await video.play();
+    if (session !== uniSession) return;
+    const analysis = document.createElement('canvas');
+    analysis.width = 240;
+    analysis.height = Math.max(1, Math.round(240 * video.videoHeight / video.videoWidth));
+    const ctx = analysis.getContext('2d', { willReadFrequently: true });
+    uniCapture = LabelCapture.create({
+      sample: () => {
+        if (document.hidden || video.readyState < 2) return null;
+        ctx.drawImage(video, 0, 0, analysis.width, analysis.height);
+        return ctx.getImageData(0, 0, analysis.width, analysis.height);
+      },
+      snapshot: () => imagemEtiquetaLeveBase64(video, 2000, 0.92),
+      recognize: image => LocalOCR.recognize(image),
+      onStatus: text => { if (session === uniSession) document.getElementById('uniStatus').textContent = text; },
+      onCapture: (image, result) => {
+        if (session !== uniSession) return;
+        void capturarUnificado(image, result);
+      }
+    });
+    document.getElementById('uniStatus').textContent = 'Mantenha nome e endereço visíveis, com a etiqueta parada.';
   } catch(e) {
+    if (session !== uniSession) return;
     fecharCameraUnificada();
-    toast('📷 Abrindo a câmera nativa do aparelho...', 5000);
-    const input = document.getElementById('inputFotoOCR');
-    if (input) input.click();
+    toast('Não foi possível abrir a câmera automática. Use uma foto da etiqueta.', 5000);
+    document.getElementById('inputFotoOCR')?.click();
   }
 }
 
 function fecharCameraUnificada() {
+  uniSession++;
+  uniCapture?.stop();
+  uniCapture = null;
+  uniCapturando = false;
   document.getElementById('modalUnificado').style.display = 'none';
   if (uniStream) { uniStream.getTracks().forEach(t => t.stop()); uniStream = null; }
+  document.getElementById('uniVideo').srcObject = null;
 }
 
-async function capturarUnificado() {
+async function capturarUnificado(image = null, ocrResult = null) {
+  if (uniCapturando || !uniStream) return;
   const video = document.getElementById('uniVideo');
-  const canvas = document.getElementById('uniCanvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
+  if (!video.videoWidth || !video.videoHeight) return;
+  uniCapturando = true;
+  const imgBase64 = image || imagemEtiquetaLeveBase64(video, 2000, 0.92);
   fecharCameraUnificada();
-
-  const imgBase64 = imagemEtiquetaLeveBase64(canvas, 2000, 0.9);
-  await processarImagemEtiqueta(imgBase64);
+  await processarImagemEtiqueta(imgBase64, iniciarLeituraEtiqueta(), ocrResult);
 }
 
-async function processarImagemEtiqueta(imgBase64, leituraId = iniciarLeituraEtiqueta()) {
+window.addEventListener('pagehide', () => { fecharCameraUnificada(); invalidarLeituraEtiqueta(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && uniStream) fecharCameraUnificada();
+});
+
+async function processarImagemEtiqueta(imgBase64, leituraId = iniciarLeituraEtiqueta(), ocrResult = null) {
   if (leituraId !== _leituraEtiquetaId) return;
   const statusEl = document.getElementById('ocrStatus');
   statusEl.style.display = 'block';
@@ -3645,17 +3610,11 @@ async function processarImagemEtiqueta(imgBase64, leituraId = iniciarLeituraEtiq
   // PASSO 1: tentar ler todos os codigos de barras/QR e escolher o mais legivel/completo.
   let codigoLido = null;
   let transpLida = '';
-  let origemCodigo = '';
   try {
-    statusEl.textContent = '⏳ Lendo código de barras com Dynamsoft...';
-    let melhorCodigo = await detectarCodigoDynamsoft(imgBase64);
-    if (!melhorCodigo) {
-      statusEl.textContent = '⏳ Lendo código de barras pelo navegador...';
-      melhorCodigo = await detectarMelhorCodigoBarras(imgBase64);
-    }
+    statusEl.textContent = '⏳ Lendo código de barras no aparelho...';
+    const melhorCodigo = await detectarCodigoLivre(imgBase64);
     if (melhorCodigo) {
       codigoLido = melhorCodigo.codigo;
-      origemCodigo = melhorCodigo.origem || '';
       transpLida = detectarTransportadora(codigoLido);
       console.log('Codigo de barras escolhido:', melhorCodigo);
     }
@@ -3667,14 +3626,14 @@ async function processarImagemEtiqueta(imgBase64, leituraId = iniciarLeituraEtiq
   if (codigoLido) {
     document.getElementById('inputCodigo').value = codigoLido;
     if (transpLida) document.getElementById('inputTransportadora').value = transpLida;
-    const origemTexto = origemCodigo.includes('dynamsoft') ? 'Dynamsoft' : 'leitor do navegador';
+    const origemTexto = 'leitor local';
     statusEl.textContent = '✅ Código de barras lido por ' + origemTexto + ': ' + codigoLido + '. Identificando morador...';
   } else {
     statusEl.textContent = '⏳ QR/código não detectado — lendo código, transportadora e morador pelo OCR...';
   }
 
   // PASSO 2: OCR para identificar o morador (independente de ter lido QR Code ou não)
-  await enviarParaOCR(imgBase64, statusEl, codigoLido, transpLida, leituraId);
+  await enviarParaOCR(imgBase64, statusEl, codigoLido, transpLida, leituraId, ocrResult);
 }
 
 // Funções legadas mantidas por compatibilidade (não usadas na UI)
@@ -3683,50 +3642,13 @@ function fecharScanner() { fecharCameraUnificada(); }
 let scannerStream = null;
 let scannerInterval = null;
 
-// ========== OCR – FOTO DA ETIQUETA ==========
-let ocrStream = null;
-
-async function abrirCameraOCR() {
-  const modal = document.getElementById('ocrModal');
-  modal.style.display = 'flex';
-  try {
-    ocrStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-    });
-    const video = document.getElementById('ocrVideo');
-    video.srcObject = ocrStream;
-    await video.play();
-  } catch(e) {
-    fecharCameraOCR();
-    toast('⚠️ Não foi possível acessar a câmera. Verifique as permissões.');
-  }
-}
-
-function fecharCameraOCR() {
-  document.getElementById('ocrModal').style.display = 'none';
-  if (ocrStream) { ocrStream.getTracks().forEach(t => t.stop()); ocrStream = null; }
-}
-
-async function capturarFotoOCR() {
-  const video = document.getElementById('ocrVideo');
-  const canvas = document.getElementById('ocrCanvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  fecharCameraOCR();
-
-  const statusEl = document.getElementById('ocrStatus');
-  statusEl.style.background = '#e8f0fe';
-  statusEl.style.color = '#1a73e8';
-  statusEl.style.display = 'block';
-  statusEl.textContent = '⏳ Lendo a etiqueta...';
-
-  // Converter canvas para base64 jpeg
-  const imgBase64 = canvas.toDataURL('image/jpeg', 0.88);
-  await processarImagemEtiqueta(imgBase64);
-}
+// Entry points retained for older integrations.
+function abrirCameraOCR() { return abrirCameraUnificada(); }
+function fecharCameraOCR() { fecharCameraUnificada(); }
+function capturarFotoOCR() { return capturarUnificado(); }
 
 async function processarFotoOCR(input) {
+  fecharCameraUnificada();
   const file = input.files && input.files[0];
   if (!file) return;
   const leituraId = iniciarLeituraEtiqueta();
@@ -3762,39 +3684,18 @@ async function processarFotoOCR(input) {
   img.src = URL.createObjectURL(file);
 }
 
-async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '', leituraId = iniciarLeituraEtiqueta()) {
+async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '', leituraId = iniciarLeituraEtiqueta(), ocrResult = null) {
   try {
-    let result;
-    if (backendAuthDisponivel && authToken) {
-      result = await apiFetch('/api/ocr', {
-        method: 'POST',
-        body: JSON.stringify({ base64Image: imgBase64, language: 'por' }),
-        signal: AbortSignal.timeout(45000)
-      });
-    } else {
-      const formData = new FormData();
-      formData.append('base64Image', imgBase64);
-      formData.append('language', 'por');
-      formData.append('isOverlayRequired', 'false');
-      formData.append('detectOrientation', 'true');
-      formData.append('scale', 'true');
-      formData.append('OCREngine', '2');
-
-      const resp = await fetch('https://api.ocr.space/parse/image', {
-        method: 'POST',
-        headers: { 'apikey': 'K85992490088957' },
-        body: formData,
-        signal: AbortSignal.timeout(45000)
-      });
-      if (!resp.ok) throw new Error('Serviço de leitura indisponível (' + resp.status + ').');
-      result = await resp.json();
-    }
-
+    const result = ocrResult || await LocalOCR.recognize(imgBase64, event => {
+      if (leituraId !== _leituraEtiquetaId) return;
+      statusEl.textContent = event.status === 'recognizing text'
+        ? 'Lendo no aparelho: ' + Math.round(event.progress * 100) + '%'
+        : 'Preparando leitor local. A primeira leitura pode demorar mais...';
+    });
     if (leituraId !== _leituraEtiquetaId) return;
-    const textoOCR = (result?.ParsedResults || []).map(p => p.ParsedText || '').join('\n').trim();
-    const leituraParcial = result?.ParsedResults?.some(p => p.FileParseExitCode != null && Number(p.FileParseExitCode) !== 1);
-    if (result?.IsErroredOnProcessing || leituraParcial || !textoOCR) {
-      mostrarStatusOCR(statusEl, 'erro', '❌ Não foi possível ler o texto. Tente com melhor iluminação.');
+    const textoOCR = String(result?.text || '').trim();
+    if (!textoOCR) {
+      mostrarStatusOCR(statusEl, 'erro', 'Não foi possível ler o texto. Aproxime a etiqueta e melhore a iluminação.');
       return;
     }
 
@@ -3811,6 +3712,11 @@ async function enviarParaOCR(imgBase64, statusEl, codigoJaLido = null, transpJaL
     }
 
     const resultado = identificarMoradorOCR(textoOCR);
+    if (!Number.isFinite(result.confidence) || result.confidence < 75) {
+      resultado.confiavel = false;
+      resultado.morador = null;
+      resultado.motivo = 'A leitura tem baixa confiança. Confira nome e endereço na foto.';
+    }
     _leituraEtiquetaPendente = false;
     atualizarCadastroEncomenda();
 
