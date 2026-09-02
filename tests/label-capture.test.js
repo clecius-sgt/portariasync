@@ -62,6 +62,22 @@ test('native photo mode fails closed when photo input is unavailable', () => {
   assert.equal(capture.triggerNativePhotoInput(doc), false);
 });
 
+test('scanner externo deixa de aparecer na tela Registrar sem remover a capacidade interna', () => {
+  let removed = false;
+  const scannerButton = {
+    textContent: '📲 Usar código lido no scanner externo',
+    remove() { removed = true; }
+  };
+  const photoButton = { textContent: '📷 Ler etiqueta com captura automática' };
+  const doc = {
+    getElementById() { return null; },
+    querySelectorAll(selector) { return selector === 'button' ? [scannerButton, photoButton] : []; }
+  };
+  capture.updateManualCaptureUi(doc);
+  assert.equal(removed, true);
+  assert.equal(photoButton.textContent, '📷 Fotografar etiqueta');
+});
+
 test('image quality measurement remains available for diagnostics', () => {
   const dark = frame('dark');
   const text = frame('text');
