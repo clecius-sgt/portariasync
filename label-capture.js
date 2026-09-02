@@ -35,19 +35,20 @@
     return readableAddress || strongShippingLabel;
   }
 
-  function updateManualCaptureUi() {
-    if (typeof document === 'undefined') return;
+  function updateManualCaptureUi(doc) {
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!doc) return;
 
-    const modal = document.getElementById('modalUnificado');
+    const modal = doc.getElementById('modalUnificado');
     if (modal && modal.firstElementChild) {
       const title = String(modal.firstElementChild.textContent || '');
       if (/captura\s+(?:e|é)\s+autom[aá]tica/i.test(title)) {
-        modal.firstElementChild.textContent = '📷 Enquadre a etiqueta inteira, aguarde o foco e fotografe.';
+        modal.firstElementChild.textContent = '📷 Use a câmera do celular e fotografe a etiqueta inteira.';
       }
     }
 
-    if (document.querySelectorAll) {
-      document.querySelectorAll('button').forEach(button => {
+    if (doc.querySelectorAll) {
+      doc.querySelectorAll('button').forEach(button => {
         const text = String(button.textContent || '').trim();
         if (/Ler etiqueta com captura autom[aá]tica/i.test(text)) button.textContent = '📷 Fotografar etiqueta';
         else if (/Capturar agora/i.test(text)) button.textContent = '📸 Fotografar etiqueta';
@@ -55,14 +56,41 @@
     }
   }
 
-  // Modo manual: testes em aparelhos reais mostraram que autofocus e exposição variáveis
-  // tornam a seleção automática do quadro menos consistente que uma foto deliberada.
-  // A API create é preservada para compatibilidade com index.html, mas não amostra a câmera,
-  // não tira fotos e não chama OCR. O operador congela um único quadro e só então o OCR lê.
+  function triggerNativePhotoInput(doc) {
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!doc) return false;
+    const input = doc.getElementById('inputFotoOCR');
+    if (!input || typeof input.click !== 'function') return false;
+    input.value = '';
+    input.click();
+    return true;
+  }
+
+  function installNativePhotoMode(doc, host) {
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    host = host || root;
+    if (!doc || !host) return false;
+    updateManualCaptureUi(doc);
+    const input = doc.getElementById('inputFotoOCR');
+    if (!input) return false;
+
+    // Sobrescreve a função global definida depois no index.html. O input possui
+    // accept="image/*" e capture="environment", portanto Android/iPhone usam a
+    // câmera nativa e entregam uma fotografia de resolução maior que um frame de vídeo.
+    host.fotografarEtiqueta = function() {
+      try {
+        if (typeof host.fecharCameraUnificada === 'function') host.fecharCameraUnificada();
+      } catch (_) {}
+      return triggerNativePhotoInput(doc);
+    };
+    return true;
+  }
+
+  // Modo manual: não há amostragem contínua, fotografia automática nem OCR em tempo real.
   function create({ onStatus = () => {} } = {}) {
     let stopped = false;
     updateManualCaptureUi();
-    onStatus('Enquadre a etiqueta inteira, aguarde o foco e toque em Fotografar etiqueta.');
+    onStatus('Use Fotografar etiqueta, enquadre toda a etiqueta e confirme uma única foto.');
     return {
       stop() { stopped = true; },
       get stopped() { return stopped; }
@@ -70,12 +98,23 @@
   }
 
   if (typeof document !== 'undefined') {
+    const install = () => installNativePhotoMode(document, root);
     if (document.readyState === 'loading' && document.addEventListener) {
-      document.addEventListener('DOMContentLoaded', updateManualCaptureUi, { once: true });
-    } else updateManualCaptureUi();
+      document.addEventListener('DOMContentLoaded', install, { once: true });
+    } else install();
   }
 
-  const api = { measure, looksLikeLabel, create, updateManualCaptureUi, automaticCapture: false, version: '2026-09-01.7' };
+  const api = {
+    measure,
+    looksLikeLabel,
+    create,
+    updateManualCaptureUi,
+    triggerNativePhotoInput,
+    installNativePhotoMode,
+    automaticCapture: false,
+    nativePhotoCapture: true,
+    version: '2026-09-02.1'
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
