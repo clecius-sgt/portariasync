@@ -38,6 +38,28 @@ test('manual capture mode never samples camera or starts OCR by itself', async (
 
 test('automatic capture is explicitly disabled', () => {
   assert.equal(capture.automaticCapture, false);
+  assert.equal(capture.nativePhotoCapture, true);
+});
+
+test('native photo mode opens the hidden capture input exactly once', () => {
+  let clicks = 0;
+  const input = { value: 'old-photo', click() { clicks++; } };
+  const doc = {
+    getElementById(id) { return id === 'inputFotoOCR' ? input : null; },
+    querySelectorAll() { return []; }
+  };
+  const host = {};
+  assert.equal(capture.installNativePhotoMode(doc, host), true);
+  assert.equal(typeof host.fotografarEtiqueta, 'function');
+  assert.equal(host.fotografarEtiqueta(), true);
+  assert.equal(clicks, 1);
+  assert.equal(input.value, '');
+});
+
+test('native photo mode fails closed when photo input is unavailable', () => {
+  const doc = { getElementById() { return null; }, querySelectorAll() { return []; } };
+  assert.equal(capture.installNativePhotoMode(doc, {}), false);
+  assert.equal(capture.triggerNativePhotoInput(doc), false);
 });
 
 test('image quality measurement remains available for diagnostics', () => {
