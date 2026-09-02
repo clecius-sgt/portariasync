@@ -11,31 +11,40 @@
       sum += value;
       square += value * value;
       if (previous?.length === gray.length) motion += Math.abs(value - previous[i]);
-      if (i % width && Math.abs(value - gray[i - 1]) > 30) edges++;
+      if (i % width && Math.abs(value - gray[i - 1]) > 26) edges++;
     }
     const mean = sum / gray.length;
     const contrast = Math.sqrt(Math.max(0, square / gray.length - mean * mean));
     const movement = previous?.length === gray.length ? motion / gray.length : Infinity;
     const detail = edges / gray.length;
-    return { gray, mean, contrast, movement, detail,
-      ready: mean > 45 && mean < 254 && contrast > 18 && detail > 0.018 && movement < 4.5 };
+
+    // Mobile cameras keep making tiny exposure/focus adjustments even when the phone is still.
+    // These limits reject blank/dark frames but no longer require an unrealistically motionless image.
+    const ready = mean > 38 && mean < 252 && contrast > 13 && detail > 0.010 && movement < 7.5;
+    return { gray, mean, contrast, movement, detail, ready };
   }
 
   function looksLikeLabel(result) {
-    if (!result || result.confidence < 65) return false;
+    if (!result || result.confidence < 50) return false;
     const text = String(result.text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const address = /\b(rua|r\.?|avenida|av\.?|alameda|travessa)\s+[^\n]{2,80}\d/i.test(text);
-    const shipping = /\b(destinatario|recipient|entrega|cep|correios|shopee|amazon|jadlog|loggi)\b/i.test(text)
-      || /\b(?:[A-Z]{2}\d{9}BR|TBR\d{8,}|BR\d{8,})\b/i.test(text);
+    const address = /\b(rua|r\.?|rva|avenida|av\.?|alameda|travessa)\s+[^\n]{2,80}(?:\d|[il]\d|\d[oO])/i.test(text);
+    const tracking = /\b(?:[A-Z]{2}\d{9}BR|TBR\d{8,}|TBA\d{8,}|BR\d{8,})\b/i.test(text);
+    const shippingWord = /\b(destinatario|recipient|entrega|cep|correios|shopee|amazon|jadlog|loggi|order)\b/i.test(text);
+    const cep = /\b(?:cep\s*)?\d{5}[- ]?\d{3}\b/i.test(text);
     const name = lines.some(s => /^[a-z]+(?:[ '\-]+[a-z]+){1,7}$/i.test(s));
-    return lines.length >= 2 && text.length >= 25 && address && (name || shipping);
+
+    // Preferred path: readable recipient/address. Fallback: a strong shipping identifier.
+    // The fallback is important because Tesseract can miss the small address on a real label
+    // while still reading the large tracking code. The final resident match remains conservative.
+    const readableAddress = lines.length >= 2 && text.length >= 25 && address && (name || shippingWord || tracking);
+    const strongShippingLabel = lines.length >= 3 && text.length >= 35 && tracking && (shippingWord || cep || /\d/.test(text));
+    return readableAddress || strongShippingLabel;
   }
 
-  // Dependency injection keeps camera timing and cancellation testable without hardware.
   function create({ sample, snapshot, recognize, onCapture, onStatus = () => {},
     formatError = error => String(error?.message || error || 'Erro sem descrição').slice(0, 400),
-    now = () => Date.now(), schedule = setTimeout, unschedule = clearTimeout, stableMs = 1200 }) {
+    now = () => Date.now(), schedule = setTimeout, unschedule = clearTimeout, stableMs = 700 }) {
     let stopped = false, timer, previous, stableSince = null, generation = 0;
     let busy = false, retryAt = 0, failure = false;
 
@@ -49,17 +58,19 @@
       busy = true;
       try {
         const image = snapshot();
-        onStatus('Conferindo o texto. Mantenha a etiqueta parada...');
+        onStatus('Etiqueta estável. Lendo automaticamente...');
         const result = await recognize(image, text => {
           if (!stopped) onStatus(text);
         });
         if (stopped || version !== generation) return;
         if (!looksLikeLabel(result)) {
-          onStatus('Aproxime a etiqueta, com nome e endereço visíveis e texto na posição correta.');
-          retryAt = now() + 2500;
+          onStatus('Aproxime a etiqueta e mantenha nome, endereço ou código de rastreio visíveis.');
+          retryAt = now() + 1800;
+          stableSince = null;
           return;
         }
-        stop(); // Latch before handing off: exactly one capture per camera session.
+        stop();
+        onStatus('Etiqueta capturada automaticamente. Conferindo destinatário...');
         onCapture(image, result);
       } catch (error) {
         if (!stopped) {
@@ -82,7 +93,9 @@
           if (!m.ready) {
             stableSince = null;
             generation++;
-            if (!busy && !failure && now() >= retryAt) onStatus(m.mean <= 45 ? 'Melhore a iluminação.' : 'Enquadre a etiqueta inteira e mantenha o aparelho parado.');
+            if (!busy && !failure && now() >= retryAt) {
+              onStatus(m.mean <= 38 ? 'Melhore a iluminação.' : 'Enquadre a etiqueta inteira e mantenha o aparelho parado por um instante.');
+            }
           } else {
             if (stableSince === null) stableSince = now();
             if (!busy && !failure && now() >= retryAt && now() - stableSince >= stableMs) void probe(generation);
@@ -92,9 +105,10 @@
         stop();
         onStatus('Não foi possível analisar a câmera. Use Capturar agora.');
       }
-      if (!stopped) timer = schedule(tick, 180);
+      if (!stopped) timer = schedule(tick, 160);
     }
-    timer = schedule(tick, 180);
+
+    timer = schedule(tick, 160);
     return { stop };
   }
 
