@@ -69,6 +69,23 @@ test('shipping label can auto-capture from strong tracking evidence even when sm
   assert.equal(capture.looksLikeLabel(result), true);
 });
 
+test('real noisy OCR completes automatic capture instead of looping forever', async () => {
+  const noisy = {
+    confidence: 68,
+    text: 'Bary Bassi! $P 151 15000 Brayil\nR 15115000\nDroerID: 701 - 5478255 - 5618634\n2 lentativa de estraga\nAvenida A tr ABONO BENHAS, 6\nBassiit SP 151 15000 Brazil'
+  };
+  assert.equal(capture.looksLikeLabel(noisy), false);
+  assert.equal(capture.usableLabelRead(noisy), true);
+  const h = harness(noisy);
+  h.step(15);
+  assert.equal(h.calls(), 1);
+  await h.finish();
+  h.step(60);
+  assert.equal(h.calls(), 1);
+  assert.equal(h.received.length, 1);
+  assert.equal(h.received[0][1].autoCaptureUncertain, true);
+});
+
 test('automatic OCR failure stays visible and never captures a label', async () => {
   let clock = 0, tick, progress;
   const messages = [], captures = [];
