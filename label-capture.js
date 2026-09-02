@@ -17,9 +17,6 @@
     const contrast = Math.sqrt(Math.max(0, square / gray.length - mean * mean));
     const movement = previous?.length === gray.length ? motion / gray.length : Infinity;
     const detail = edges / gray.length;
-
-    // Mobile cameras keep making tiny exposure/focus adjustments even when the phone is still.
-    // These limits reject blank/dark frames but no longer require an unrealistically motionless image.
     const ready = mean > 38 && mean < 252 && contrast > 13 && detail > 0.010 && movement < 7.5;
     return { gray, mean, contrast, movement, detail, ready };
   }
@@ -30,23 +27,36 @@
     const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     const address = /\b(rua|r\.?|rva|avenida|av\.?|alameda|travessa)\s+[^\n]{2,80}(?:\d|[il]\d|\d[oO])/i.test(text);
     const tracking = /\b(?:[A-Z]{2}\d{9}BR|TBR\d{8,}|TBA\d{8,}|BR\d{8,})\b/i.test(text);
-    const shippingWord = /\b(destinatario|recipient|entrega|cep|correios|shopee|amazon|jadlog|loggi|order)\b/i.test(text);
+    const shippingWord = /\b(destinatario|recipient|entrega|cep|correios|shopee|amazon|jadlog|loggi|order|tentativa)\b/i.test(text);
     const cep = /\b(?:cep\s*)?\d{5}[- ]?\d{3}\b/i.test(text);
     const name = lines.some(s => /^[a-z]+(?:[ '\-]+[a-z]+){1,7}$/i.test(s));
-
-    // Preferred path: readable recipient/address. Fallback: a strong shipping identifier.
-    // The fallback is important because Tesseract can miss the small address on a real label
-    // while still reading the large tracking code. The final resident match remains conservative.
     const readableAddress = lines.length >= 2 && text.length >= 25 && address && (name || shippingWord || tracking);
     const strongShippingLabel = lines.length >= 3 && text.length >= 35 && tracking && (shippingWord || cep || /\d/.test(text));
     return readableAddress || strongShippingLabel;
+  }
+
+  // OCR de etiquetas reais pode produzir bastante texto útil sem conseguir reconstruir
+  // perfeitamente nome/endereço. Nesse caso a fotografia deve ser concluída, e a etapa
+  // seguinte faz a conferência conservadora do destinatário, em vez de reiniciar OCR sem fim.
+  function usableLabelRead(result) {
+    if (!result) return false;
+    const text = String(result.text || '').trim();
+    if (looksLikeLabel(result)) return true;
+    if (text.length < 45) return false;
+    const letters = (text.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    const digits = (text.match(/\d/g) || []).length;
+    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length;
+    const logistic = /\b(entrega|tentativa|order|id|cep|brazil|brasil|kg|liquid|remetente|destinatario)\b/i.test(text)
+      || /\b\d{5}[ -]?\d{3}\b/.test(text)
+      || /\b[A-Z0-9]{9,}\b/i.test(text);
+    return lines >= 4 && letters >= 15 && digits >= 5 && logistic;
   }
 
   function create({ sample, snapshot, recognize, onCapture, onStatus = () => {},
     formatError = error => String(error?.message || error || 'Erro sem descrição').slice(0, 400),
     now = () => Date.now(), schedule = setTimeout, unschedule = clearTimeout, stableMs = 700 }) {
     let stopped = false, timer, previous, stableSince = null, generation = 0;
-    let busy = false, retryAt = 0, failure = false;
+    let busy = false, retryAt = 0, failure = false, attempts = 0;
 
     function stop() {
       stopped = true;
@@ -56,6 +66,7 @@
 
     async function probe(version) {
       busy = true;
+      attempts++;
       try {
         const image = snapshot();
         onStatus('Etiqueta estável. Lendo automaticamente...');
@@ -63,15 +74,25 @@
           if (!stopped) onStatus(text);
         });
         if (stopped || version !== generation) return;
-        if (!looksLikeLabel(result)) {
-          onStatus('Aproxime a etiqueta e mantenha nome, endereço ou código de rastreio visíveis.');
-          retryAt = now() + 1800;
-          stableSince = null;
+
+        if (usableLabelRead(result)) {
+          stop();
+          result.autoCaptureUncertain = !looksLikeLabel(result);
+          onStatus(result.autoCaptureUncertain
+            ? 'Imagem capturada. A leitura precisa de conferência do destinatário.'
+            : 'Etiqueta capturada automaticamente. Conferindo destinatário...');
+          onCapture(image, result);
           return;
         }
-        stop();
-        onStatus('Etiqueta capturada automaticamente. Conferindo destinatário...');
-        onCapture(image, result);
+
+        if (attempts >= 2) {
+          stop();
+          onStatus('Não consegui validar a etiqueta automaticamente. Use Capturar agora uma única vez.');
+          return;
+        }
+        onStatus('Aproxime a etiqueta e mantenha-a parada para uma segunda tentativa automática.');
+        retryAt = now() + 1000;
+        stableSince = null;
       } catch (error) {
         if (!stopped) {
           failure = true;
@@ -112,7 +133,7 @@
     return { stop };
   }
 
-  const api = { measure, looksLikeLabel, create };
+  const api = { measure, looksLikeLabel, usableLabelRead, create, version: '2026-09-01.6' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
