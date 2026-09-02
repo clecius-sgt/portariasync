@@ -127,6 +127,7 @@
     }
     const explicit = usable.some(l => l.recipient);
     const focus = explicit ? usable.filter(l => l.recipient) : usable;
+    const evidenceText = focus.map(l => l.text).join('\n');
     const blocks = [];
     const addresses = focus.map(l => address(l.text)).filter(Boolean);
     for (let i = 0; i < focus.length; i++) {
@@ -140,13 +141,13 @@
       if (addr && focus[i + 2] && /^(apto|apartamento|ap|bloco|bl|sala|casa)\b/.test(normalize(focus[i + 2].text))) addr = address(addr.text + ' ' + focus[i + 2].text);
       blocks.push({ name, address: addr, explicit: focus[i].recipient });
     }
-    return { blocks, addresses };
+    return { blocks, addresses, evidenceText };
   }
 
   function match(text, residents) {
-    const { blocks, addresses } = extract(text);
+    const { blocks, addresses, evidenceText } = extract(text);
     const candidates = [];
-    const normalizedText = ' ' + normalize(text) + ' ';
+    const normalizedText = ' ' + normalize(evidenceText) + ' ';
     for (const resident of residents || []) {
       const tokens = nameTokens(resident.nome);
       if (!resident.id || tokens.length < 2) continue;
@@ -180,7 +181,7 @@
       }
 
       if (!best) {
-        const evidence = addressEvidence(text, home);
+        const evidence = addressEvidence(evidenceText, home);
         if (evidence) {
           const residentName = normalize(resident.nome);
           const exactNameAnywhere = residentName && normalizedText.includes(' ' + residentName + ' ');
@@ -226,7 +227,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-01.5' };
+  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-01.6' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
