@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { PaddleOcrClient } = require('./paddle-ocr-client');
 
 loadEnv();
 
@@ -17,6 +18,7 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000);
 const sessions = new Map();
+const paddleOcr = new PaddleOcrClient({ baseDir: __dirname });
 
 ensureUsersFile();
 
@@ -52,6 +54,14 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`PortariaSync rodando em http://localhost:${PORT}`);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.once(signal, () => {
+    paddleOcr.stop();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
+  });
+}
 
 function loadEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -99,7 +109,8 @@ async function handleApi(req, res) {
     sendJson(res, 200, {
       ok: true,
       supabase: !!(SUPABASE_URL && SUPABASE_SERVICE_KEY),
-      whatsapp: !!(ZAPI_URL && ZAPI_CLIENT)
+      whatsapp: !!(ZAPI_URL && ZAPI_CLIENT),
+      paddleocr: paddleOcr.status()
     });
     return;
   }
@@ -236,8 +247,26 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/api/ocr-paddle/status') {
+    requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    sendJson(res, 200, { ok: true, paddleocr: paddleOcr.status() });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/ocr-paddle') {
+    requireRole(req, ['admin', 'porteiro']);
+    const { imagemBase64 } = await readJson(req, 14 * 1024 * 1024);
+    if (!imagemBase64) {
+      sendJson(res, 400, { error: 'Fotografia da etiqueta não enviada.' });
+      return;
+    }
+    const result = await paddleOcr.recognize(imagemBase64);
+    sendJson(res, 200, { ok: true, result });
+    return;
+  }
+
   if (req.url === '/api/ocr') {
-    sendJson(res, 410, { error: 'A leitura agora é local. Atualize a página com Ctrl+F5.' });
+    sendJson(res, 410, { error: 'Endpoint antigo. O leitor principal agora é PaddleOCR no VPS.' });
     return;
   }
 
