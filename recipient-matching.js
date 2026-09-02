@@ -22,14 +22,26 @@
     return row[b.length] <= 1;
   }
 
+  function normalizeHouseNumber(value) {
+    const raw = String(value || '').toLowerCase().replace(/[^0-9ilo]/g, '');
+    if (!/\d/.test(raw)) return '';
+    return raw.replace(/[il]/g, '1').replace(/o/g, '0').replace(/^0+(?=\d)/, '');
+  }
+
   function address(value) {
-    const raw = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const original = String(value || '').trim();
+    const raw = original.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/\brva\b/g, 'rua').replace(/\brua\./g, 'rua');
     const street = raw.match(/\b(rua|r\.?|avenida|av\.?|alameda|travessa|trav\.?)\s+(.+)/);
     if (!street) return null;
     const rest = street[2];
-    const parts = rest.match(/^(.+?),\s*(?:n(?:umero|ro)?\.?[\sº°]*)?(\d{1,5}[a-z]?)(?=\s|,|$)(.*)$/)
-      || rest.match(/^([a-z][a-z\s.'-]*?)\s+(?:n(?:umero|ro)?\.?[\sº°]*)?(\d{1,5}[a-z]?)(?=\s|,|$)(.*)$/);
+    const numberToken = '[0-9ilo]{1,5}[a-z]?';
+    const commaPattern = new RegExp('^(.+?),\\s*(?:n(?:umero|ro)?\\.?[\\sº°]*)?(' + numberToken + ')(?=\\s|,|$)(.*)$', 'i');
+    const spacePattern = new RegExp("^([a-z][a-z\\s.'-]*?)\\s+(?:n(?:umero|ro)?\\.?[\\sº°]*)?(" + numberToken + ')(?=\\s|,|$)(.*)$', 'i');
+    const parts = rest.match(commaPattern) || rest.match(spacePattern);
     if (!parts) return null;
+    const number = normalizeHouseNumber(parts[2]);
+    if (!number) return null;
     const kind = /^(r|rua)\.?$/.test(street[1]) ? 'rua' : /^(av|avenida)\.?$/.test(street[1]) ? 'avenida' : /^trav/.test(street[1]) ? 'travessa' : street[1];
     const extra = normalize(parts[3]);
     const unit = {};
@@ -37,7 +49,7 @@
       const key = /^(apto|apartamento|ap)$/.test(match[1]) ? 'apto' : /^(bloco|bl)$/.test(match[1]) ? 'bloco' : match[1];
       unit[key] = match[2];
     }
-    return { street: kind + ' ' + normalize(parts[1]), number: parts[2].replace(/^0+(?=\d)/, ''), unit, text: String(value).trim() };
+    return { street: kind + ' ' + normalize(parts[1]), number, unit, text: original };
   }
 
   function addressRelation(a, b) {
@@ -52,7 +64,7 @@
   function probableName(line) {
     const norm = normalize(line);
     return !/\d/.test(norm) && nameTokens(norm).length >= 2 && nameTokens(norm).length <= 8
-      && !/^(rua|r|avenida|av|alameda|travessa|res|residencial|condominio|bairro|cidade|estado|cep|br|brasil|brazil|predio|remetente|destinatario|origem|destino|endereco|complemento|nota|order|tentativa|liquid|cycle|mercado livre|amazon|shopee)\b/.test(norm);
+      && !/^(rua|r|rva|avenida|av|alameda|travessa|res|residencial|condominio|bairro|cidade|estado|cep|br|brasil|brazil|predio|remetente|destinatario|origem|destino|endereco|complemento|nota|order|tentativa|liquid|cycle|mercado livre|amazon|shopee)\b/.test(norm);
   }
 
   function extract(text) {
@@ -149,7 +161,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, address, addressRelation, extract, match };
+  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, extract, match };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
