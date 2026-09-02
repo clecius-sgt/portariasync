@@ -219,13 +219,24 @@
     if (!doc) return;
     const overlay = doc.getElementById('modalAssinaturaTelaCheia');
     if (overlay && overlay._signatureController) overlay._signatureController.destruir();
-    try {
-      if (doc.fullscreenElement && typeof doc.exitFullscreen === 'function') await doc.exitFullscreen();
-    } catch (_) {}
+
+    // No Android alguns navegadores deixam a Promise de exitFullscreen pendente.
+    // A tela de assinatura precisa desaparecer imediatamente, sem depender dessa Promise.
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.remove();
+    }
+
     try {
       if (host.screen && host.screen.orientation && typeof host.screen.orientation.unlock === 'function') host.screen.orientation.unlock();
     } catch (_) {}
-    if (overlay) overlay.remove();
+
+    try {
+      if (doc.fullscreenElement && typeof doc.exitFullscreen === 'function') {
+        const saida = doc.exitFullscreen();
+        if (saida && typeof saida.catch === 'function') saida.catch(function() {});
+      }
+    } catch (_) {}
   }
 
   async function abrirAssinaturaTelaCheia(doc, host) {
@@ -465,7 +476,7 @@
     nativePhotoCapture: true,
     paddleOCRServer: true,
     fullscreenLandscapeSignature: true,
-    version: '2026-09-02.4'
+    version: '2026-09-02.5'
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
