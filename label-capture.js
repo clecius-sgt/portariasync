@@ -56,6 +56,27 @@
     }
   }
 
+  function installAdminShortcut(doc) {
+    doc = doc || (typeof document !== 'undefined' ? document : null);
+    if (!doc || typeof doc.getElementById !== 'function') return false;
+    const page = doc.getElementById('page-config');
+    if (!page) return false;
+
+    const nav = doc.getElementById('navConfig');
+    if (nav) nav.textContent = '🛠 Admin';
+    if (doc.getElementById('adminPanelShortcut')) return true;
+    if (typeof doc.createElement !== 'function') return false;
+
+    const card = doc.createElement('div');
+    card.id = 'adminPanelShortcut';
+    card.className = 'card';
+    card.innerHTML = '<h2>🛠 Painel administrativo</h2>' +
+      '<p style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px;">Acompanhe o estado do PaddleOCR, armazenamento, integrações e resumo operacional do PortariaSync.</p>' +
+      '<a href="/admin.html" class="btn btn-primary btn-full" style="text-decoration:none;">Abrir painel administrativo</a>';
+    page.insertBefore(card, page.firstChild || null);
+    return true;
+  }
+
   function triggerNativePhotoInput(doc) {
     doc = doc || (typeof document !== 'undefined' ? document : null);
     if (!doc) return false;
@@ -139,7 +160,6 @@
     return true;
   }
 
-  // Modo manual: não há amostragem contínua, fotografia automática nem OCR em tempo real.
   function create({ onStatus = () => {} } = {}) {
     let stopped = false;
     updateManualCaptureUi();
@@ -154,6 +174,7 @@
     const install = () => {
       installNativePhotoMode(document, root);
       installPaddleOcrMode(root);
+      installAdminShortcut(document);
     };
     if (document.readyState === 'loading' && document.addEventListener) {
       document.addEventListener('DOMContentLoaded', install, { once: true });
@@ -165,6 +186,7 @@
     looksLikeLabel,
     create,
     updateManualCaptureUi,
+    installAdminShortcut,
     triggerNativePhotoInput,
     installNativePhotoMode,
     recognizeWithPaddle,
@@ -172,7 +194,7 @@
     automaticCapture: false,
     nativePhotoCapture: true,
     paddleOCRServer: true,
-    version: '2026-09-02.2'
+    version: '2026-09-02.3'
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
