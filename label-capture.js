@@ -35,105 +35,47 @@
     return readableAddress || strongShippingLabel;
   }
 
-  // OCR de etiquetas reais pode produzir bastante texto útil sem conseguir reconstruir
-  // perfeitamente nome/endereço. Nesse caso a fotografia deve ser concluída, e a etapa
-  // seguinte faz a conferência conservadora do destinatário, em vez de reiniciar OCR sem fim.
-  function usableLabelRead(result) {
-    if (!result) return false;
-    const text = String(result.text || '').trim();
-    if (looksLikeLabel(result)) return true;
-    if (text.length < 45) return false;
-    const letters = (text.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-    const digits = (text.match(/\d/g) || []).length;
-    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean).length;
-    const logistic = /\b(entrega|tentativa|order|id|cep|brazil|brasil|kg|liquid|remetente|destinatario)\b/i.test(text)
-      || /\b\d{5}[ -]?\d{3}\b/.test(text)
-      || /\b[A-Z0-9]{9,}\b/i.test(text);
-    return lines >= 4 && letters >= 15 && digits >= 5 && logistic;
-  }
+  function updateManualCaptureUi() {
+    if (typeof document === 'undefined') return;
 
-  function create({ sample, snapshot, recognize, onCapture, onStatus = () => {},
-    formatError = error => String(error?.message || error || 'Erro sem descrição').slice(0, 400),
-    now = () => Date.now(), schedule = setTimeout, unschedule = clearTimeout, stableMs = 700 }) {
-    let stopped = false, timer, previous, stableSince = null, generation = 0;
-    let busy = false, retryAt = 0, failure = false, attempts = 0;
-
-    function stop() {
-      stopped = true;
-      generation++;
-      if (timer != null) unschedule(timer);
-    }
-
-    async function probe(version) {
-      busy = true;
-      attempts++;
-      try {
-        const image = snapshot();
-        onStatus('Etiqueta estável. Lendo automaticamente...');
-        const result = await recognize(image, text => {
-          if (!stopped) onStatus(text);
-        });
-        if (stopped || version !== generation) return;
-
-        if (usableLabelRead(result)) {
-          stop();
-          result.autoCaptureUncertain = !looksLikeLabel(result);
-          onStatus(result.autoCaptureUncertain
-            ? 'Imagem capturada. A leitura precisa de conferência do destinatário.'
-            : 'Etiqueta capturada automaticamente. Conferindo destinatário...');
-          onCapture(image, result);
-          return;
-        }
-
-        if (attempts >= 2) {
-          stop();
-          onStatus('Não consegui validar a etiqueta automaticamente. Use Capturar agora uma única vez.');
-          return;
-        }
-        onStatus('Aproxime a etiqueta e mantenha-a parada para uma segunda tentativa automática.');
-        retryAt = now() + 1000;
-        stableSince = null;
-      } catch (error) {
-        if (!stopped) {
-          failure = true;
-          onStatus('Leitura automática indisponível. ' + formatError(error));
-        }
-      } finally {
-        busy = false;
+    const modal = document.getElementById('modalUnificado');
+    if (modal && modal.firstElementChild) {
+      const title = String(modal.firstElementChild.textContent || '');
+      if (/captura\s+(?:e|é)\s+autom[aá]tica/i.test(title)) {
+        modal.firstElementChild.textContent = '📷 Enquadre a etiqueta inteira, aguarde o foco e fotografe.';
       }
     }
 
-    function tick() {
-      if (stopped) return;
-      try {
-        const frame = sample();
-        if (!frame) { stableSince = null; previous = null; generation++; }
-        else {
-          const m = measure(frame.data, frame.width, frame.height, previous);
-          previous = m.gray;
-          if (!m.ready) {
-            stableSince = null;
-            generation++;
-            if (!busy && !failure && now() >= retryAt) {
-              onStatus(m.mean <= 38 ? 'Melhore a iluminação.' : 'Enquadre a etiqueta inteira e mantenha o aparelho parado por um instante.');
-            }
-          } else {
-            if (stableSince === null) stableSince = now();
-            if (!busy && !failure && now() >= retryAt && now() - stableSince >= stableMs) void probe(generation);
-          }
-        }
-      } catch (error) {
-        stop();
-        onStatus('Não foi possível analisar a câmera. Use Capturar agora.');
-      }
-      if (!stopped) timer = schedule(tick, 160);
+    if (document.querySelectorAll) {
+      document.querySelectorAll('button').forEach(button => {
+        const text = String(button.textContent || '').trim();
+        if (/Ler etiqueta com captura autom[aá]tica/i.test(text)) button.textContent = '📷 Fotografar etiqueta';
+        else if (/Capturar agora/i.test(text)) button.textContent = '📸 Fotografar etiqueta';
+      });
     }
-
-    timer = schedule(tick, 160);
-    return { stop };
   }
 
-  const api = { measure, looksLikeLabel, usableLabelRead, create, version: '2026-09-01.6' };
+  // Modo manual: testes em aparelhos reais mostraram que autofocus e exposição variáveis
+  // tornam a seleção automática do quadro menos consistente que uma foto deliberada.
+  // A API create é preservada para compatibilidade com index.html, mas não amostra a câmera,
+  // não tira fotos e não chama OCR. O operador congela um único quadro e só então o OCR lê.
+  function create({ onStatus = () => {} } = {}) {
+    let stopped = false;
+    updateManualCaptureUi();
+    onStatus('Enquadre a etiqueta inteira, aguarde o foco e toque em Fotografar etiqueta.');
+    return {
+      stop() { stopped = true; },
+      get stopped() { return stopped; }
+    };
+  }
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading' && document.addEventListener) {
+      document.addEventListener('DOMContentLoaded', updateManualCaptureUi, { once: true });
+    } else updateManualCaptureUi();
+  }
+
+  const api = { measure, looksLikeLabel, create, updateManualCaptureUi, automaticCapture: false, version: '2026-09-01.7' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
