@@ -50,6 +50,11 @@
     if (doc.querySelectorAll) {
       doc.querySelectorAll('button').forEach(button => {
         const text = String(button.textContent || '').trim();
+        if (/Usar código lido no scanner externo/i.test(text)) {
+          if (typeof button.remove === 'function') button.remove();
+          else if (button.style) button.style.display = 'none';
+          return;
+        }
         if (/Ler etiqueta com captura autom[aá]tica/i.test(text)) button.textContent = '📷 Fotografar etiqueta';
         else if (/Capturar agora/i.test(text)) button.textContent = '📸 Fotografar etiqueta';
       });
@@ -476,7 +481,7 @@
     nativePhotoCapture: true,
     paddleOCRServer: true,
     fullscreenLandscapeSignature: true,
-    version: '2026-09-02.5'
+    version: '2026-09-02.6'
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
