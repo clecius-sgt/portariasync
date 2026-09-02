@@ -23,9 +23,12 @@
   }
 
   function normalizeHouseNumber(value) {
-    const raw = String(value || '').toLowerCase().replace(/[^0-9ilo]/g, '');
-    if (!/\d/.test(raw)) return '';
-    return raw.replace(/[il]/g, '1').replace(/o/g, '0').replace(/^0+(?=\d)/, '');
+    const cleaned = String(value || '').toLowerCase().replace(/[^0-9a-z]/g, '');
+    const suffixMatch = cleaned.match(/[a-hj-km-np-z]$/);
+    const suffix = suffixMatch ? suffixMatch[0] : '';
+    const base = suffix ? cleaned.slice(0, -1) : cleaned;
+    if (!/\d/.test(base)) return '';
+    return base.replace(/[il]/g, '1').replace(/o/g, '0').replace(/^0+(?=\d)/, '') + suffix;
   }
 
   function address(value) {
