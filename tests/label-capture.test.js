@@ -64,6 +64,10 @@ test('low confidence and ordinary text are not treated as a label', async () => 
 test('unknown resident with legible address can be captured for manual review', () => {
   assert.equal(capture.looksLikeLabel({ text: 'Ana Pessoa\nRua Nova 999\nCEP 15115000', confidence: 90 }), true);
 });
+test('shipping label can auto-capture from strong tracking evidence even when small address was missed', () => {
+  const result = { text: 'Carlos Augusto\nOrder ID 701 5478255\nCEP 15115000\nTBR364591209', confidence: 71 };
+  assert.equal(capture.looksLikeLabel(result), true);
+});
 
 test('automatic OCR failure stays visible and never captures a label', async () => {
   let clock = 0, tick, progress;
