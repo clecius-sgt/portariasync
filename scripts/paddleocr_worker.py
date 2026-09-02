@@ -5,6 +5,8 @@ import sys
 import traceback
 
 PREFIX = "PORTARIASYNC_JSON:"
+DEFAULT_DET_MODEL = "PP-OCRv5_mobile_det"
+DEFAULT_REC_MODEL = "latin_PP-OCRv5_mobile_rec"
 
 
 def emit(payload):
@@ -42,12 +44,24 @@ def result_json(result):
     return {}
 
 
+def detector_model():
+    return os.environ.get("PADDLE_OCR_DET_MODEL", DEFAULT_DET_MODEL)
+
+
+def recognition_model():
+    return os.environ.get("PADDLE_OCR_REC_MODEL", DEFAULT_REC_MODEL)
+
+
 def build_engine():
     from paddleocr import PaddleOCR
 
+    # Etiquetas são fotografias planas e normalmente já chegam na orientação correta.
+    # Mantemos os módulos geométricos desligados e usamos o detector mobile PP-OCRv5,
+    # muito mais leve em CPU. O reconhecimento continua no modelo Latin PP-OCRv5 já
+    # utilizado para português. Os nomes podem ser sobrescritos por variáveis de ambiente.
     return PaddleOCR(
-        lang=os.environ.get("PADDLE_OCR_LANG", "pt"),
-        ocr_version=os.environ.get("PADDLE_OCR_VERSION", "PP-OCRv5"),
+        text_detection_model_name=detector_model(),
+        text_recognition_model_name=recognition_model(),
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
@@ -59,6 +73,8 @@ def recognize(engine, image_path):
     predictions = engine.predict(
         image_path,
         text_rec_score_thresh=float(os.environ.get("PADDLE_OCR_MIN_SCORE", "0.25")),
+        text_det_limit_side_len=int(os.environ.get("PADDLE_OCR_MAX_SIDE", "960")),
+        text_det_limit_type="max",
     )
     texts = []
     scores = []
@@ -91,13 +107,21 @@ def recognize(engine, image_path):
         "engine": "paddleocr",
         "ocrVersion": os.environ.get("PADDLE_OCR_VERSION", "PP-OCRv5"),
         "language": os.environ.get("PADDLE_OCR_LANG", "pt"),
+        "detModel": detector_model(),
+        "recModel": recognition_model(),
     }
 
 
 def main():
     try:
         engine = build_engine()
-        emit({"type": "ready", "engine": "paddleocr", "version": os.environ.get("PADDLE_OCR_VERSION", "PP-OCRv5")})
+        emit({
+            "type": "ready",
+            "engine": "paddleocr",
+            "version": os.environ.get("PADDLE_OCR_VERSION", "PP-OCRv5"),
+            "detModel": detector_model(),
+            "recModel": recognition_model(),
+        })
     except Exception as exc:
         emit({"type": "startup_error", "error": str(exc), "detail": traceback.format_exc(limit=4)})
         return 2
