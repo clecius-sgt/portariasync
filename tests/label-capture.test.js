@@ -1,7 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const capture = require('../label-capture');
-const label = { text: 'Carlos Augusto\nRua Londres 160\nTBR123456789', confidence: 95 };
 
 function frame(kind = 'text') {
   const width = 240, height = 135;
@@ -15,98 +14,45 @@ function frame(kind = 'text') {
   return { data, width, height };
 }
 
-function harness(result = label) {
-  let clock = 0, tick, current = frame(), resolve;
-  const received = [], messages = [];
-  let calls = 0;
+test('manual capture mode never samples camera or starts OCR by itself', async () => {
+  let samples = 0, snapshots = 0, reads = 0, captures = 0, schedules = 0;
+  const messages = [];
   const controller = capture.create({
-    sample: () => current, snapshot: () => 'same-snapshot',
-    recognize: () => { calls++; return new Promise(r => { resolve = r; }); },
-    onCapture: (...args) => received.push(args), onStatus: text => messages.push(text),
-    now: () => clock, schedule: fn => { tick = fn; return 1; }, unschedule: () => { tick = null; }
+    sample: () => { samples++; return frame(); },
+    snapshot: () => { snapshots++; return 'photo'; },
+    recognize: async () => { reads++; return { text: 'Carlos Augusto\nRua Londres 160', confidence: 95 }; },
+    onCapture: () => { captures++; },
+    onStatus: text => messages.push(text),
+    schedule: () => { schedules++; return 1; }
   });
-  return { controller, received, messages, calls: () => calls,
-    change: kind => { current = frame(kind); },
-    step: (count = 1) => { for (let i = 0; i < count; i++) { clock += 180; if (tick) tick(); } },
-    finish: async () => { resolve(result); await new Promise(r => setImmediate(r)); }
-  };
-}
-
-test('blank and dark frames never trigger OCR or capture', () => {
-  for (const type of ['blank', 'dark']) {
-    const h = harness(); h.change(type); h.step(60);
-    assert.equal(h.calls(), 0); assert.equal(h.received.length, 0);
-  }
-});
-test('stable readable label captures exactly once, with the recognized snapshot', async () => {
-  const h = harness(); h.step(4); assert.equal(h.calls(), 0);
-  h.step(10); assert.equal(h.calls(), 1);
-  await h.finish(); h.step(100);
-  assert.equal(h.calls(), 1);
-  assert.deepEqual(h.received, [['same-snapshot', label]]);
-});
-test('movement during OCR rejects stale snapshot even if camera stabilizes again', async () => {
-  const h = harness(); h.step(15);
-  h.change('blank'); h.step(); h.change('text'); h.step(15);
-  await h.finish(); assert.equal(h.received.length, 0);
-});
-test('closing camera while reading prevents late capture', async () => {
-  const h = harness(); h.step(15); h.controller.stop();
-  await h.finish(); h.step(100); assert.equal(h.received.length, 0);
-});
-test('low confidence and ordinary text are not treated as a label', async () => {
-  for (const result of [{ ...label, confidence: 40 }, { text: 'Um texto qualquer\nSem endereco', confidence: 95 }]) {
-    const h = harness(result); h.step(15); await h.finish();
-    assert.equal(h.received.length, 0);
-    assert.match(h.messages.at(-1), /Aproxime/);
-  }
-});
-test('unknown resident with legible address can be captured for manual review', () => {
-  assert.equal(capture.looksLikeLabel({ text: 'Ana Pessoa\nRua Nova 999\nCEP 15115000', confidence: 90 }), true);
-});
-test('shipping label can auto-capture from strong tracking evidence even when small address was missed', () => {
-  const result = { text: 'Carlos Augusto\nOrder ID 701 5478255\nCEP 15115000\nTBR364591209', confidence: 71 };
-  assert.equal(capture.looksLikeLabel(result), true);
-});
-
-test('real noisy OCR completes automatic capture instead of looping forever', async () => {
-  const noisy = {
-    confidence: 68,
-    text: 'Bary Bassi! $P 151 15000 Brayil\nR 15115000\nDroerID: 701 - 5478255 - 5618634\n2 lentativa de estraga\nAvenida A tr ABONO BENHAS, 6\nBassiit SP 151 15000 Brazil'
-  };
-  assert.equal(capture.looksLikeLabel(noisy), false);
-  assert.equal(capture.usableLabelRead(noisy), true);
-  const h = harness(noisy);
-  h.step(15);
-  assert.equal(h.calls(), 1);
-  await h.finish();
-  h.step(60);
-  assert.equal(h.calls(), 1);
-  assert.equal(h.received.length, 1);
-  assert.equal(h.received[0][1].autoCaptureUncertain, true);
-});
-
-test('automatic OCR failure stays visible and never captures a label', async () => {
-  let clock = 0, tick, progress;
-  const messages = [], captures = [];
-  const controller = capture.create({
-    sample: () => frame(), snapshot: () => 'photo',
-    recognize: async (image, onProgress) => {
-      progress = onProgress;
-      onProgress('Carregando idioma (50%)');
-      throw 'Failed to construct Worker';
-    },
-    onStatus: text => messages.push(text), onCapture: (...args) => captures.push(args),
-    now: () => clock, schedule: fn => { tick = fn; return 1; }, unschedule() {}
-  });
-  for (let i = 0; i < 15; i++) { clock += 180; tick(); }
   await new Promise(resolve => setImmediate(resolve));
-  assert.ok(messages.includes('Carregando idioma (50%)'));
-  assert.match(messages.at(-1), /Failed to construct Worker/);
-  for (let i = 0; i < 10; i++) { clock += 180; tick(); }
-  assert.match(messages.at(-1), /Failed to construct Worker/);
-  assert.equal(captures.length, 0);
+  assert.equal(samples, 0);
+  assert.equal(snapshots, 0);
+  assert.equal(reads, 0);
+  assert.equal(captures, 0);
+  assert.equal(schedules, 0);
+  assert.match(messages.at(-1), /Fotografar etiqueta/);
   controller.stop();
-  progress('Late progress');
-  assert.match(messages.at(-1), /Failed to construct Worker/);
+  assert.equal(controller.stopped, true);
+});
+
+test('automatic capture is explicitly disabled', () => {
+  assert.equal(capture.automaticCapture, false);
+});
+
+test('image quality measurement remains available for diagnostics', () => {
+  const dark = frame('dark');
+  const text = frame('text');
+  assert.equal(capture.measure(dark.data, dark.width, dark.height).ready, false);
+  const first = capture.measure(text.data, text.width, text.height);
+  const second = capture.measure(text.data, text.width, text.height, first.gray);
+  assert.equal(second.ready, true);
+});
+
+test('label validator remains available for post-photo diagnostics', () => {
+  assert.equal(capture.looksLikeLabel({
+    text: 'Carlos Augusto\nRua Londres 160\nCEP 15115000\nTBR364591209',
+    confidence: 90
+  }), true);
+  assert.equal(capture.looksLikeLabel({ text: 'Um texto qualquer', confidence: 90 }), false);
 });
