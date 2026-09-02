@@ -27,3 +27,34 @@ test('canvas fullscreen bloqueia gesto de rolagem durante assinatura', () => {
   assert.match(source, /pointerdown/);
   assert.match(source, /pointermove/);
 });
+
+test('fechamento da assinatura não espera a Promise do fullscreen no Android', async () => {
+  let removido = false;
+  let destruido = false;
+  let exitChamado = false;
+  let unlockChamado = false;
+  const overlay = {
+    style: {},
+    _signatureController: { destruir() { destruido = true; } },
+    remove() { removido = true; }
+  };
+  const doc = {
+    getElementById(id) { return id === 'modalAssinaturaTelaCheia' ? overlay : null; },
+    fullscreenElement: {},
+    exitFullscreen() {
+      exitChamado = true;
+      return new Promise(() => {});
+    }
+  };
+  const host = {
+    screen: { orientation: { unlock() { unlockChamado = true; } } }
+  };
+
+  const fechamento = capture.fecharAssinaturaTelaCheia(doc, host);
+  assert.equal(destruido, true);
+  assert.equal(removido, true);
+  assert.equal(overlay.style.display, 'none');
+  assert.equal(unlockChamado, true);
+  assert.equal(exitChamado, true);
+  assert.ok(fechamento instanceof Promise);
+});
