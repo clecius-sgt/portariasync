@@ -74,15 +74,68 @@
     const input = doc.getElementById('inputFotoOCR');
     if (!input) return false;
 
-    // Sobrescreve a função global definida depois no index.html. O input possui
-    // accept="image/*" e capture="environment", portanto Android/iPhone usam a
-    // câmera nativa e entregam uma fotografia de resolução maior que um frame de vídeo.
     host.fotografarEtiqueta = function() {
       try {
         if (typeof host.fecharCameraUnificada === 'function') host.fecharCameraUnificada();
       } catch (_) {}
       return triggerNativePhotoInput(doc);
     };
+    return true;
+  }
+
+  async function recognizeWithPaddle(imgBase64, statusEl, host) {
+    host = host || root;
+    if (!host || typeof host.fetch !== 'function') throw new Error('Navegador sem suporte ao leitor do servidor.');
+    const storage = host.localStorage;
+    const token = storage && typeof storage.getItem === 'function' ? (storage.getItem('authToken') || '') : '';
+    const apiBase = storage && typeof storage.getItem === 'function' ? (storage.getItem('apiBaseUrl') || '') : '';
+    if (!token) throw new Error('Sessão expirada. Entre novamente no sistema.');
+    if (statusEl) statusEl.textContent = 'Lendo a fotografia com PaddleOCR no servidor...';
+
+    const response = await host.fetch(apiBase + '/api/ocr-paddle', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token
+      },
+      body: JSON.stringify({ imagemBase64: imgBase64 })
+    });
+    let payload = {};
+    try { payload = await response.json(); } catch (_) {}
+    if (!response.ok) throw new Error(payload.error || payload.detail || ('PaddleOCR respondeu ' + response.status));
+    const result = payload.result || payload;
+    if (!String(result.text || '').trim()) throw new Error('PaddleOCR não encontrou texto legível na fotografia.');
+    return {
+      text: String(result.text || ''),
+      confidence: Number(result.confidence || 0),
+      lines: Array.isArray(result.lines) ? result.lines : [],
+      engine: 'paddleocr'
+    };
+  }
+
+  function installPaddleOcrMode(host) {
+    host = host || root;
+    if (!host || typeof host.enviarParaOCR !== 'function') return false;
+    const original = host.enviarParaOCR;
+    if (original.__paddleWrapped) return true;
+
+    const wrapped = async function(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '', leituraId, ocrResult = null) {
+      if (ocrResult) {
+        return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, ocrResult);
+      }
+      try {
+        const paddleResult = await recognizeWithPaddle(imgBase64, statusEl, host);
+        if (statusEl) statusEl.textContent = 'PaddleOCR concluiu a leitura. Conferindo destinatário...';
+        return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, paddleResult);
+      } catch (error) {
+        console.warn('PaddleOCR indisponível, usando leitor local como contingência:', error);
+        if (statusEl) statusEl.textContent = 'Leitor do servidor indisponível. Tentando leitor local...';
+        return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, null);
+      }
+    };
+    wrapped.__paddleWrapped = true;
+    wrapped.__original = original;
+    host.enviarParaOCR = wrapped;
     return true;
   }
 
@@ -98,7 +151,10 @@
   }
 
   if (typeof document !== 'undefined') {
-    const install = () => installNativePhotoMode(document, root);
+    const install = () => {
+      installNativePhotoMode(document, root);
+      installPaddleOcrMode(root);
+    };
     if (document.readyState === 'loading' && document.addEventListener) {
       document.addEventListener('DOMContentLoaded', install, { once: true });
     } else install();
@@ -111,9 +167,12 @@
     updateManualCaptureUi,
     triggerNativePhotoInput,
     installNativePhotoMode,
+    recognizeWithPaddle,
+    installPaddleOcrMode,
     automaticCapture: false,
     nativePhotoCapture: true,
-    version: '2026-09-02.1'
+    paddleOCRServer: true,
+    version: '2026-09-02.2'
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
