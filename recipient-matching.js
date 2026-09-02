@@ -198,18 +198,24 @@
     const safe = candidates.filter(c => c.safe);
     const best = candidates[0];
     const addressOwners = candidates.filter(c => c.addressOwner && ['exact', 'incomplete', 'address-only'].includes(c.relation));
-    const chosenBlock = best?.block || blocks.find(b => b.address) || blocks.find(b => b.explicit) || blocks[0];
+    const uniqueAddressOwner = addressOwners.length === 1 ? addressOwners[0] : null;
     const competing = safe.length === 1 && candidates.some(c => c !== safe[0] && c.plausible && ['exact', 'incomplete'].includes(c.relation));
     const blockKeys = new Set(blocks.filter(b => b.address).map(b => normalize(b.name) + '|' + b.address.street + '|' + b.address.number));
     const multipleBlocks = blockKeys.size > 1;
     const confident = safe.length === 1 && !competing && !multipleBlocks;
+    const principal = confident ? safe[0] : (uniqueAddressOwner && safe.length === 0 ? uniqueAddressOwner : best);
+    const chosenBlock = principal?.block || best?.block || blocks.find(b => b.address) || blocks.find(b => b.explicit) || blocks[0];
+    const addressText = chosenBlock?.address?.text || uniqueAddressOwner?.block?.address?.text || uniqueAddressOwner?.evidenceText || addresses[0]?.text || best?.evidenceText || '';
+    const rankedCandidates = uniqueAddressOwner && safe.length === 0
+      ? [uniqueAddressOwner, ...candidates.filter(c => c !== uniqueAddressOwner)]
+      : candidates;
+
     let reason = 'Não foi possível cruzar nome completo e endereço. Confira a etiqueta.';
     if (!(residents || []).length) reason = 'O cadastro de moradores está vazio. Cadastre ou sincronize os moradores.';
     else if (confident) reason = 'Nome completo e endereço coincidem com um único cadastro.';
     else if (multipleBlocks) reason = 'A etiqueta contém mais de um bloco de nome e endereço. Confirme qual é o destinatário.';
     else if (safe.length > 1 || competing) reason = 'Há mais de um cadastro compatível. Confirme o destinatário.';
-    else if (addressOwners.length === 1 && chosenBlock) reason = 'Destinatário não cadastrado, mas o endereço foi localizado. Confirme o morador responsável pelo endereço antes de registrar.';
-    else if (addressOwners.length === 1) reason = 'O nome do destinatário não está cadastrado, mas a rua e o número foram localizados. Confirme o responsável pelo endereço.';
+    else if (addressOwners.length === 1) reason = 'Destinatário não cadastrado, mas o endereço foi localizado. Confirme o morador responsável pelo endereço antes de registrar.';
     else if (addressOwners.length > 1) reason = 'Destinatário não cadastrado. O endereço corresponde a mais de um cadastro; confirme o responsável.';
     else if (best?.relation === 'conflict') reason = 'O nome é parecido, mas o endereço diverge do cadastro.';
     else if (best?.plausible && !best.exactName) reason = 'Nome parcial ou possível erro de leitura. Confirme nome e endereço.';
@@ -217,17 +223,17 @@
     return {
       morador: confident ? safe[0].morador : null,
       confiavel: confident,
-      candidatoPrincipal: best?.morador || null,
-      candidatos: candidates.slice(0, 8),
+      candidatoPrincipal: principal?.morador || null,
+      candidatos: rankedCandidates.slice(0, 8),
       responsaveisEndereco: addressOwners.map(c => c.morador),
       destinatarioNaoCadastrado: !confident && addressOwners.length > 0,
-      nomeExtraido: chosenBlock?.name || '',
-      enderecoExtraido: chosenBlock?.address?.text || addresses[0]?.text || best?.evidenceText || '',
+      nomeExtraido: chosenBlock?.name || blocks.find(b => b.explicit)?.name || '',
+      enderecoExtraido: addressText,
       motivo: reason
     };
   }
 
-  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-01.6' };
+  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-02.1' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
