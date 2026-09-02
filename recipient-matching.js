@@ -27,20 +27,20 @@
     const suffixMatch = cleaned.match(/[a-hj-km-np-z]$/);
     const suffix = suffixMatch ? suffixMatch[0] : '';
     const base = suffix ? cleaned.slice(0, -1) : cleaned;
-    if (!/\d/.test(base)) return '';
+    if (!/[0-9ilo]/.test(base)) return '';
     return base.replace(/[il]/g, '1').replace(/o/g, '0').replace(/^0+(?=\d)/, '') + suffix;
   }
 
   function address(value) {
     const original = String(value || '').trim();
     const raw = original.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-      .replace(/\brva\b/g, 'rua').replace(/\brua\./g, 'rua');
+      .replace(/\brva\b/g, 'rua').replace(/\brva\./g, 'rua').replace(/\brua\./g, 'rua');
     const street = raw.match(/\b(rua|r\.?|avenida|av\.?|alameda|travessa|trav\.?)\s+(.+)/);
     if (!street) return null;
     const rest = street[2];
     const numberToken = '[0-9ilo]{1,5}[a-z]?';
     const commaPattern = new RegExp('^(.+?),\\s*(?:n(?:umero|ro)?\\.?[\\sº°]*)?(' + numberToken + ')(?=\\s|,|$)(.*)$', 'i');
-    const spacePattern = new RegExp("^([a-z][a-z\\s.'-]*?)\\s+(?:n(?:umero|ro)?\\.?[\\sº°]*)?(" + numberToken + ')(?=\\s|,|$)(.*)$', 'i');
+    const spacePattern = new RegExp("^([a-z0-9][a-z0-9\\s.'-]*?)\\s+(?:n(?:umero|ro)?\\.?[\\sº°]*)?(" + numberToken + ')(?=\\s|,|$)(.*)$', 'i');
     const parts = rest.match(commaPattern) || rest.match(spacePattern);
     if (!parts) return null;
     const number = normalizeHouseNumber(parts[2]);
@@ -62,6 +62,46 @@
     if ([...keys].some(k => a.unit[k] && b.unit[k] && a.unit[k] !== b.unit[k])) return 'conflict';
     if ([...keys].some(k => !a.unit[k] || !b.unit[k])) return 'incomplete';
     return 'exact';
+  }
+
+  function streetTokens(street) {
+    return normalize(street).split(' ').filter(t => t && !/^(rua|r|avenida|av|alameda|travessa|trav|de|da|do|das|dos)$/.test(t));
+  }
+
+  // Fallback for real labels where Tesseract reads e.g. "Rva Londres I60" or breaks
+  // the address across adjacent lines. It never matches by house number alone: street
+  // tokens and number must agree with the resident record.
+  function addressEvidence(text, home) {
+    if (!home) return null;
+    const wanted = streetTokens(home.street);
+    if (!wanted.length) return null;
+    const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i++) {
+      const window = lines.slice(i, i + 2).join(' ');
+      const words = normalize(window).split(' ').filter(Boolean);
+      let streetHits = 0;
+      for (const token of wanted) {
+        if (words.some(word => word === token || similar(word, token))) streetHits++;
+      }
+      const required = wanted.length <= 2 ? wanted.length : Math.ceil(wanted.length * 0.7);
+      if (streetHits < Math.max(1, required)) continue;
+      const rawNumbers = window.toLowerCase().match(/\b[0-9ilo]{1,5}[a-z]?\b/g) || [];
+      if (!rawNumbers.some(n => normalizeHouseNumber(n) === home.number)) continue;
+
+      let relation = 'exact';
+      const unitKeys = Object.keys(home.unit || {});
+      if (unitKeys.length) {
+        const parsed = address(window);
+        if (parsed) {
+          for (const key of unitKeys) {
+            if (parsed.unit[key] && parsed.unit[key] !== home.unit[key]) return null;
+            if (!parsed.unit[key]) relation = 'incomplete';
+          }
+        } else relation = 'incomplete';
+      }
+      return { relation, text: window };
+    }
+    return null;
   }
 
   function probableName(line) {
@@ -106,6 +146,7 @@
   function match(text, residents) {
     const { blocks, addresses } = extract(text);
     const candidates = [];
+    const normalizedText = ' ' + normalize(text) + ' ';
     for (const resident of residents || []) {
       const tokens = nameTokens(resident.nome);
       if (!resident.id || tokens.length < 2) continue;
@@ -129,9 +170,29 @@
           relation === 'exact' ? 'Rua e número coincidem' : relation === 'conflict' ? 'Endereço divergente' : 'Endereço ausente ou incompleto'];
         if (!best || score > best.score) best = { morador: resident, score, safe, addressOwner, exactName, plausible, relation, block, motivos: reasons };
       }
-      if (!best && addresses.some(a => ['exact', 'incomplete'].includes(addressRelation(a, home)))) best = { morador: resident, score: 15, safe: false, addressOwner: true, relation: 'address-only', motivos: ['Destinatário não cadastrado', 'Endereço localizado no cadastro: confirme o responsável'] };
+
+      if (!best) {
+        const direct = addresses.find(a => ['exact', 'incomplete'].includes(addressRelation(a, home)));
+        if (direct) {
+          best = { morador: resident, score: 20, safe: false, addressOwner: true, relation: 'address-only', evidenceText: direct.text,
+            motivos: ['Destinatário não cadastrado', 'Endereço localizado no cadastro: confirme o responsável'] };
+        }
+      }
+
+      if (!best) {
+        const evidence = addressEvidence(text, home);
+        if (evidence) {
+          const residentName = normalize(resident.nome);
+          const exactNameAnywhere = residentName && normalizedText.includes(' ' + residentName + ' ');
+          const safe = exactNameAnywhere && evidence.relation === 'exact';
+          best = { morador: resident, score: safe ? 95 : 18, safe, addressOwner: !exactNameAnywhere,
+            exactName: exactNameAnywhere, plausible: false, relation: evidence.relation === 'exact' ? 'address-only' : 'incomplete', evidenceText: evidence.text,
+            motivos: exactNameAnywhere ? ['Nome completo coincide', 'Endereço confirmado mesmo com ruído de OCR'] : ['Destinatário não cadastrado', 'Rua e número reconhecidos apesar de erro de OCR: confirme o responsável'] };
+        }
+      }
       if (best) candidates.push(best);
     }
+
     candidates.sort((a, b) => b.score - a.score || String(a.morador.id).localeCompare(String(b.morador.id)));
     const safe = candidates.filter(c => c.safe);
     const best = candidates[0];
@@ -147,7 +208,8 @@
     else if (multipleBlocks) reason = 'A etiqueta contém mais de um bloco de nome e endereço. Confirme qual é o destinatário.';
     else if (safe.length > 1 || competing) reason = 'Há mais de um cadastro compatível. Confirme o destinatário.';
     else if (addressOwners.length === 1 && chosenBlock) reason = 'Destinatário não cadastrado, mas o endereço foi localizado. Confirme o morador responsável pelo endereço antes de registrar.';
-    else if (addressOwners.length > 1 && chosenBlock) reason = 'Destinatário não cadastrado. O endereço corresponde a mais de um cadastro; confirme o responsável.';
+    else if (addressOwners.length === 1) reason = 'O nome do destinatário não está cadastrado, mas a rua e o número foram localizados. Confirme o responsável pelo endereço.';
+    else if (addressOwners.length > 1) reason = 'Destinatário não cadastrado. O endereço corresponde a mais de um cadastro; confirme o responsável.';
     else if (best?.relation === 'conflict') reason = 'O nome é parecido, mas o endereço diverge do cadastro.';
     else if (best?.plausible && !best.exactName) reason = 'Nome parcial ou possível erro de leitura. Confirme nome e endereço.';
     else if (!best && chosenBlock) reason = 'Destinatário não localizado no cadastro. Confira a leitura e o cadastro de moradores.';
@@ -159,12 +221,12 @@
       responsaveisEndereco: addressOwners.map(c => c.morador),
       destinatarioNaoCadastrado: !confident && addressOwners.length > 0,
       nomeExtraido: chosenBlock?.name || '',
-      enderecoExtraido: chosenBlock?.address?.text || addresses[0]?.text || '',
+      enderecoExtraido: chosenBlock?.address?.text || addresses[0]?.text || best?.evidenceText || '',
       motivo: reason
     };
   }
 
-  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, extract, match };
+  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-01.5' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
