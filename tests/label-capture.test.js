@@ -78,6 +78,20 @@ test('scanner externo deixa de aparecer na tela Registrar sem remover a capacida
   assert.equal(photoButton.textContent, '📷 Fotografar etiqueta');
 });
 
+test('aviso amarelo de destinatário é ocultado sem alterar a validação de segurança', () => {
+  const appended = [];
+  const doc = {
+    head: { appendChild(node) { appended.push(node); } },
+    getElementById() { return null; },
+    createElement(tag) { return { tagName: tag.toUpperCase(), id: '', textContent: '' }; },
+    querySelectorAll() { return []; }
+  };
+  capture.updateManualCaptureUi(doc);
+  assert.equal(appended.length, 1);
+  assert.equal(appended[0].id, 'portariaUiCleanup');
+  assert.match(appended[0].textContent, /#motivoSugestao\{display:none!important;\}/);
+});
+
 test('image quality measurement remains available for diagnostics', () => {
   const dark = frame('dark');
   const text = frame('text');
