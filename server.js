@@ -4,8 +4,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { PaddleOcrClient } = require('./paddle-ocr-client');
 const { WhatsAppProvider } = require('./whatsapp-provider');
-const { StructuredDatabase } = require('./structured-database');
 const { ResidentPortalService } = require('./resident-portal-service');
+const { AssociationManager, DEFAULT_ASSOCIATION_ID } = require('./association-manager');
 
 loadEnv();
 
@@ -16,24 +16,23 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
-const DATABASE_FILE = path.join(DATA_DIR, 'portariasync.sqlite');
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000);
 const sessions = new Map();
 const paddleOcr = new PaddleOcrClient({ baseDir: __dirname });
 const whatsapp = new WhatsAppProvider();
-const database = new StructuredDatabase({ file: DATABASE_FILE });
+const associations = new AssociationManager({
+  dataDir: DATA_DIR,
+  defaultName: process.env.DEFAULT_ASSOCIATION_NAME || 'Associação de Moradores'
+});
+const database = associations.database(DEFAULT_ASSOCIATION_ID);
 
 ensureUsersFile();
-const databaseStartup = database.initializeFromJsonMirror(APP_STATE_FILE);
-if (databaseStartup.migrated) {
-  console.log('Banco estruturado inicializado a partir de data/app-state.json.');
-}
 
 const residentPortal = new ResidentPortalService({
   readState: readAppState,
   writeState: writeAppState,
-  sendText: (numero, mensagem) => whatsapp.sendText(numero, mensagem)
+  sendText: (numero, mensagem) => whatsapp.sendText(numero, mensagem),
+  defaultAssociationId: DEFAULT_ASSOCIATION_ID
 });
 
 const MIME = {
@@ -67,12 +66,13 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`PortariaSync rodando em http://localhost:${PORT}`);
+  console.log('Multi-Associação ativa:', associations.status(false).total, 'associação(ões) cadastrada(s).');
 });
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     paddleOcr.stop();
-    try { database.close(); } catch (_) {}
+    try { associations.closeAll(); } catch (_) {}
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000).unref();
   });
@@ -133,6 +133,7 @@ async function handleApi(req, res) {
       whatsapp: whats.configured,
       whatsappProvider: whats,
       database: database.status(),
+      multiAssociation: associations.status(false),
       residentPortal: residentPortal.status(),
       paddleocr: paddleOcr.status()
     });
@@ -140,14 +141,48 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'GET' && req.url === '/api/database/status') {
-    requireRole(req, ['admin', 'supervisor']);
-    sendJson(res, 200, { ok: true, database: database.status() });
+    const session = requireRole(req, ['admin', 'supervisor']);
+    sendJson(res, 200, {
+      ok: true,
+      association: associations.publicInfo(session.associacaoId),
+      database: associations.database(session.associacaoId).status()
+    });
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/associations') {
+    requirePlatformAdmin(req);
+    sendJson(res, 200, { ok: true, multiAssociation: associations.status(true) });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/associations') {
+    requirePlatformAdmin(req);
+    const body = await readJson(req);
+    const association = associations.create({ id: body.id, nome: body.nome || body.name });
+    sendJson(res, 201, { ok: true, association: { id: association.id, nome: association.name } });
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/associations/current') {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    sendJson(res, 200, { ok: true, association: associations.publicInfo(session.associacaoId), platformAdmin: session.plataforma === true });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/auth/switch-association') {
+    const session = requirePlatformAdmin(req);
+    const { associacaoId } = await readJson(req);
+    const association = associations.require(associacaoId);
+    session.associacaoId = association.id;
+    sendJson(res, 200, { ok: true, user: publicUser(session) });
     return;
   }
 
   if (req.method === 'POST' && req.url === '/api/morador/auth/request') {
-    const { phone } = await readJson(req);
-    const result = await residentPortal.requestCode(phone, clientIp(req));
+    const { phone, associationId } = await readJson(req);
+    const scoped = associations.require(associationId || DEFAULT_ASSOCIATION_ID);
+    const result = await residentPortal.requestCode(phone, clientIp(req), scoped.id);
     sendJson(res, 200, result);
     return;
   }
@@ -193,9 +228,17 @@ async function handleApi(req, res) {
       sendJson(res, 401, { error: 'Usuário ou senha incorretos' });
       return;
     }
+    const associacaoId = validUserAssociation(user);
     const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, { id: user.id, nome: user.nome, perfil: user.perfil, createdAt: Date.now() });
-    sendJson(res, 200, { token, user: publicUser(user) });
+    sessions.set(token, {
+      id: user.id,
+      nome: user.nome,
+      perfil: user.perfil,
+      associacaoId,
+      plataforma: user.plataforma === true || user.id === 'u1',
+      createdAt: Date.now()
+    });
+    sendJson(res, 200, { token, user: publicUser(sessions.get(token)) });
     return;
   }
 
@@ -213,14 +256,24 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/users') {
-    requireRole(req, ['admin']);
-    const { nome, perfil, senha } = await readJson(req);
+    const session = requireRole(req, ['admin']);
+    const { nome, perfil, senha, associacaoId } = await readJson(req);
     if (!nome || !['admin', 'porteiro', 'supervisor'].includes(perfil) || !senha || String(senha).length < 4) {
       sendJson(res, 400, { error: 'Dados do usuário inválidos' });
       return;
     }
+    const targetAssociation = session.plataforma === true
+      ? associations.require(associacaoId || session.associacaoId).id
+      : session.associacaoId;
     const users = readUsers();
-    const user = { id: 'u' + Date.now(), nome, perfil, password: hashPassword(senha) };
+    const user = {
+      id: 'u' + Date.now(),
+      nome,
+      perfil,
+      associacaoId: targetAssociation,
+      plataforma: false,
+      password: hashPassword(senha)
+    };
     users.push(user);
     writeUsers(users);
     sendJson(res, 200, { user: publicUser(user) });
@@ -229,27 +282,33 @@ async function handleApi(req, res) {
 
   const deleteUserMatch = req.url.match(/^\/api\/users\/([^/]+)$/);
   if (req.method === 'DELETE' && deleteUserMatch) {
-    requireRole(req, ['admin']);
+    const session = requireRole(req, ['admin']);
     const id = decodeURIComponent(deleteUserMatch[1]);
     if (id === 'u1') {
       sendJson(res, 400, { error: 'Usuário padrão não pode ser removido' });
       return;
     }
-    writeUsers(readUsers().filter(u => u.id !== id));
+    const users = readUsers();
+    const target = users.find(u => u.id === id);
+    if (target && session.plataforma !== true && validUserAssociation(target) !== session.associacaoId) {
+      sendJson(res, 403, { error: 'Usuário pertence a outra associação.' });
+      return;
+    }
+    writeUsers(users.filter(u => u.id !== id));
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (req.method === 'GET' && req.url === '/api/app-state') {
-    requireRole(req, ['admin', 'porteiro', 'supervisor']);
-    sendJson(res, 200, await readAppState());
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    sendJson(res, 200, await readAppState(session.associacaoId));
     return;
   }
 
   if (req.method === 'PUT' && req.url === '/api/app-state') {
-    requireRole(req, ['admin', 'porteiro']);
+    const session = requireRole(req, ['admin', 'porteiro']);
     const body = await readJson(req, 50 * 1024 * 1024);
-    const atual = await readAppState();
+    const atual = await readAppState(session.associacaoId);
     const resetEncomendasAt = body.resetEncomendasAt || atual.resetEncomendasAt || null;
     const preservarReset = resetEncomendasAt && !body.resetEncomendasAt;
     const encomendasRecebidas = Array.isArray(body.encomendas) ? body.encomendas : [];
@@ -270,13 +329,13 @@ async function handleApi(req, res) {
       configPublica: body.configPublica && typeof body.configPublica === 'object' ? body.configPublica : {},
       resetEncomendasAt
     };
-    await writeAppState(state);
-    sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt, storage: 'sqlite' });
+    await writeAppState(session.associacaoId, state);
+    sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt, storage: 'sqlite', associacaoId: session.associacaoId });
     return;
   }
 
   if (req.method === 'GET' && req.url === '/api/sync-data') {
-    requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    requirePrincipalSession(req, ['admin', 'porteiro', 'supervisor']);
     requireSupabase();
     const [encomendas, moradores, remetentes] = await Promise.all([
       supabaseRequest('/rest/v1/encomendas?select=*&order=created_at.desc'),
@@ -288,7 +347,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/encomendas') {
-    requireRole(req, ['admin', 'porteiro']);
+    requirePrincipalSession(req, ['admin', 'porteiro']);
     requireSupabase();
     const body = await readJson(req);
     await supabaseRequest('/rest/v1/encomendas', {
@@ -301,7 +360,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/remetentes') {
-    requireRole(req, ['admin', 'porteiro']);
+    requirePrincipalSession(req, ['admin', 'porteiro']);
     requireSupabase();
     const body = await readJson(req);
     await supabaseRequest('/rest/v1/remetentes', {
@@ -395,11 +454,38 @@ function requireSupabase() {
 
 function ensureUsersFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(USERS_FILE)) return;
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  writeUsers([
-    { id: 'u1', nome: 'Administrador', perfil: 'admin', password: hashPassword(adminPassword) }
-  ]);
+  if (!fs.existsSync(USERS_FILE)) {
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    writeUsers([
+      {
+        id: 'u1',
+        nome: 'Administrador',
+        perfil: 'admin',
+        associacaoId: DEFAULT_ASSOCIATION_ID,
+        plataforma: true,
+        password: hashPassword(adminPassword)
+      }
+    ]);
+    return;
+  }
+
+  const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  let changed = false;
+  for (const user of users) {
+    if (!user.associacaoId || !associations.get(user.associacaoId)) {
+      user.associacaoId = DEFAULT_ASSOCIATION_ID;
+      changed = true;
+    }
+    if (user.id === 'u1' && user.plataforma !== true) {
+      user.plataforma = true;
+      changed = true;
+    }
+    if (user.id !== 'u1' && typeof user.plataforma !== 'boolean') {
+      user.plataforma = false;
+      changed = true;
+    }
+  }
+  if (changed) writeUsers(users);
 }
 
 function readUsers() {
@@ -408,25 +494,26 @@ function readUsers() {
 }
 
 function writeUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  const tmp = USERS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(users, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, USERS_FILE);
 }
 
-function writeJsonMirror(state, storage) {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  const tmp = APP_STATE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ ...state, storage: storage || 'sqlite+json-mirror' }, null, 2));
-  fs.renameSync(tmp, APP_STATE_FILE);
+function validUserAssociation(user) {
+  const requested = String(user?.associacaoId || DEFAULT_ASSOCIATION_ID);
+  return associations.get(requested)?.id || DEFAULT_ASSOCIATION_ID;
 }
 
-async function readAppState() {
+async function readAppState(associationId = DEFAULT_ASSOCIATION_ID) {
+  const scoped = associations.require(associationId).id;
   try {
-    const local = database.readState();
+    const local = associations.readState(scoped);
     if (local.exists) return local;
   } catch (e) {
-    console.warn('Banco SQLite indisponível para leitura, tentando espelhos:', e.message);
+    console.warn('Banco SQLite indisponível para leitura na associação ' + scoped + ':', e.message);
   }
 
-  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+  if (scoped === DEFAULT_ASSOCIATION_ID && SUPABASE_URL && SUPABASE_SERVICE_KEY) {
     try {
       const rows = await supabaseRequest('/rest/v1/app_state?id=eq.main&select=*');
       if (Array.isArray(rows) && rows.length > 0) {
@@ -436,45 +523,38 @@ async function readAppState() {
           version: Number(rows[0].version || rows[0].state?.version || 0),
           updatedAt: rows[0].updated_at || rows[0].state?.updatedAt || null
         };
-        try {
-          database.writeState(remote);
-          writeJsonMirror(remote, 'sqlite+supabase+json-mirror');
-          return database.readState();
-        } catch (mirrorError) {
-          console.warn('Não foi possível espelhar o estado remoto no SQLite:', mirrorError.message);
-        }
-        return { ...remote, storage: 'supabase' };
+        associations.writeState(scoped, remote);
+        return associations.readState(scoped);
       }
     } catch (e) {
-      console.warn('App state no Supabase indisponível, usando arquivo local:', e.message);
+      console.warn('App state no Supabase indisponível, usando armazenamento local:', e.message);
     }
   }
 
-  if (!fs.existsSync(APP_STATE_FILE)) return { exists: false, version: 0, updatedAt: null, storage: 'local' };
-  const state = JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8'));
-  try {
-    database.writeState(state);
-    return database.readState();
-  } catch (e) {
-    console.warn('Não foi possível importar o espelho JSON no SQLite:', e.message);
-    return { exists: true, ...state, storage: 'local' };
-  }
+  return associations.readState(scoped);
 }
 
-async function writeAppState(state) {
-  database.writeState(state);
+async function writeAppState(associationId = DEFAULT_ASSOCIATION_ID, state) {
+  if (state === undefined && associationId && typeof associationId === 'object') {
+    state = associationId;
+    associationId = DEFAULT_ASSOCIATION_ID;
+  }
+  const scoped = associations.require(associationId).id;
+  const clean = { ...state };
+  delete clean.associacao;
+  associations.database(scoped).writeState(clean);
 
   let savedRemote = false;
-  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+  if (scoped === DEFAULT_ASSOCIATION_ID && SUPABASE_URL && SUPABASE_SERVICE_KEY) {
     try {
       await supabaseRequest('/rest/v1/app_state', {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify({
           id: 'main',
-          version: state.version,
-          state,
-          updated_at: state.updatedAt
+          version: clean.version,
+          state: clean,
+          updated_at: clean.updatedAt
         })
       });
       savedRemote = true;
@@ -483,7 +563,7 @@ async function writeAppState(state) {
     }
   }
 
-  writeJsonMirror(state, savedRemote ? 'sqlite+supabase+json-mirror' : 'sqlite+json-mirror');
+  associations.writeMirror(scoped, clean, savedRemote ? 'sqlite+supabase+json-mirror' : 'sqlite+json-mirror');
   return savedRemote;
 }
 
@@ -527,7 +607,16 @@ function mergePorChave(base, recebidas, chaveFn) {
 }
 
 function publicUser(user) {
-  return { id: user.id, nome: user.nome, perfil: user.perfil };
+  const associacaoId = validUserAssociation(user);
+  const association = associations.get(associacaoId);
+  return {
+    id: user.id,
+    nome: user.nome,
+    perfil: user.perfil,
+    associacaoId,
+    associacaoNome: association?.name || 'Associação de Moradores',
+    plataforma: user.plataforma === true || user.id === 'u1'
+  };
 }
 
 function publicUsers() {
@@ -574,7 +663,28 @@ function requireRole(req, roles) {
     err.statusCode = 403;
     throw err;
   }
+  associations.require(ativa.associacaoId || DEFAULT_ASSOCIATION_ID);
   return ativa;
+}
+
+function requirePlatformAdmin(req) {
+  const session = requireRole(req, ['admin']);
+  if (session.plataforma !== true) {
+    const err = new Error('Acesso restrito ao administrador da plataforma.');
+    err.statusCode = 403;
+    throw err;
+  }
+  return session;
+}
+
+function requirePrincipalSession(req, roles) {
+  const session = requireRole(req, roles);
+  if (session.associacaoId !== DEFAULT_ASSOCIATION_ID) {
+    const err = new Error('Integração remota legada disponível apenas para a associação principal.');
+    err.statusCode = 409;
+    throw err;
+  }
+  return session;
 }
 
 async function supabaseRequest(endpoint, options = {}) {
