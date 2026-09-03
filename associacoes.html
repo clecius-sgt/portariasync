@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PortalSync | Multi-Associação</title>
+<style>
+:root{--navy:#1a1f3a;--navy2:#2d3561;--gold:#c9a84c;--bg:#f4f6f9;--card:#fff;--text:#1a1f3a;--muted:#6b7280;--border:#e2e8f0;--ok:#137333;--okbg:#e6f4ea}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-bottom:2px solid var(--gold);padding:16px 20px;display:flex;justify-content:space-between;gap:16px;align-items:center}.brand{font-size:20px;font-weight:800}.brand span{color:var(--gold)}.sub{font-size:11px;text-transform:uppercase;letter-spacing:1px;opacity:.75;margin-top:3px}main{max-width:1050px;margin:0 auto;padding:20px}.intro{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:16px}h1{margin:0 0 5px;font-size:24px}p{margin:0;color:var(--muted);line-height:1.5}.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 1px 5px rgba(0,0,0,.05);margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.assoc{min-height:180px;display:flex;flex-direction:column}.assoc h3{margin:0 0 4px}.meta{font-size:12px;color:var(--muted);line-height:1.5}.badge{display:inline-flex;align-self:flex-start;background:var(--okbg);color:var(--ok);font-size:11px;font-weight:800;padding:5px 8px;border-radius:999px;margin:10px 0}.counts{font-size:12px;color:var(--muted);line-height:1.65;margin-bottom:12px}.actions{margin-top:auto;display:flex;gap:7px;flex-wrap:wrap}button,a.btn{border:0;border-radius:8px;padding:10px 12px;font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.primary{background:var(--navy);color:#fff}.gold{background:var(--gold);color:var(--navy)}.light{background:#eef2f7;color:var(--navy)}input{width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:15px}.form{display:grid;grid-template-columns:1.4fr 1fr auto;gap:10px;align-items:end}.form label{font-size:12px;font-weight:700;display:block;margin-bottom:5px}.msg{font-size:13px;margin-top:10px;color:var(--muted)}.current{border-color:var(--gold);box-shadow:0 0 0 2px rgba(201,168,76,.12)}.current-mark{font-size:11px;color:#856404;font-weight:800;margin-left:6px}.hidden{display:none!important}@media(max-width:760px){.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.intro{align-items:flex-start;flex-direction:column}header{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body>
+<header><div><div class="brand">Portaria<span>Sync</span></div><div class="sub">Multi-Associação</div></div><div><a class="btn light" href="/admin.html">Painel administrativo</a></div></header>
+<main>
+  <div class="intro"><div><h1>Associações de moradores</h1><p>Cada associação possui banco, moradores, encomendas, relatórios e histórico isolados.</p></div><div class="meta" id="currentAssociation">Carregando contexto...</div></div>
+  <section class="card">
+    <h2 style="margin-top:0;font-size:17px">Cadastrar nova associação</h2>
+    <div class="form">
+      <div><label for="associationName">Nome da associação</label><input id="associationName" placeholder="Ex.: Associação Residencial Jardim Sul"></div>
+      <div><label for="associationId">Identificador</label><input id="associationId" placeholder="jardim-sul"></div>
+      <button id="createButton" class="gold" type="button">Criar associação</button>
+    </div>
+    <div id="message" class="msg">O identificador será usado no endereço do Portal do Morador.</div>
+  </section>
+  <section id="associationGrid" class="grid"></section>
+</main>
+<script src="/associacoes.js?v=20260903-1"></script>
+</body>
+</html>
