@@ -217,8 +217,29 @@
     return null;
   }
 
+  function loadReviewUi(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.RecipientReviewUI) {
+      if (typeof host.RecipientReviewUI.install === 'function') host.RecipientReviewUI.install(host);
+      return true;
+    }
+    if (doc.querySelector && doc.querySelector('script[data-recipient-review-ui="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/recipient-review-ui.js?v=20260902-1';
+    script.async = true;
+    script.dataset.recipientReviewUi = '1';
+    script.onload = function() {
+      if (host.RecipientReviewUI && typeof host.RecipientReviewUI.install === 'function') host.RecipientReviewUI.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     host = host || root;
+    loadReviewUi(host);
     if (!host || host.__separateBarcodeReaderInstalled) return !!host;
     if (typeof host.detectarCodigoLivre !== 'function') return false;
     const legacyReader = host.detectarCodigoLivre;
@@ -233,7 +254,7 @@
     host.__separateBarcodeReaderInstalled = true;
     host.BarcodeReaderRuntime = {
       scan: imageData => scan(imageData, host, legacyReader),
-      version: '2026-09-02.2'
+      version: '2026-09-02.3'
     };
     return true;
   }
@@ -251,7 +272,8 @@
     nativeCandidates,
     zxingCandidates,
     scan,
+    loadReviewUi,
     install,
-    version: '2026-09-02.2'
+    version: '2026-09-02.3'
   };
 });
