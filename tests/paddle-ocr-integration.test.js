@@ -16,8 +16,26 @@ test('Paddle OCR image parser accepts camera JPEG and rejects arbitrary payloads
 test('Paddle OCR client reports missing VPS environment without starting Python', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'portariasync-paddle-test-'));
   const client = new PaddleOcrClient({ baseDir: dir });
-  assert.deepEqual(client.status(), { installed: false, running: false, ready: false, pending: 0 });
+  const status = client.status();
+  assert.equal(status.installed, false);
+  assert.equal(status.running, false);
+  assert.equal(status.ready, false);
+  assert.equal(status.pending, 0);
+  assert.equal(status.prewarm, true);
+  assert.equal(status.warming, false);
+  assert.equal(status.warmed, false);
+  assert.equal(status.warmupMs, null);
+  assert.equal(status.warmedAt, null);
+  assert.equal(status.lastError, null);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Paddle OCR client schedules prewarm before the first operator request', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'paddle-ocr-client.js'), 'utf8');
+  assert.match(source, /this\.prewarmEnabled && this\.installed\(\)/);
+  assert.match(source, /setImmediate\(\(\) => \{/);
+  assert.match(source, /this\.prewarm\(\)\.catch/);
+  assert.match(source, /PADDLE_OCR_STARTUP_TIMEOUT_MS/);
 });
 
 test('browser client sends the photo to authenticated PaddleOCR endpoint', async () => {
