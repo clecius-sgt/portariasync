@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { PaddleOcrClient } = require('./paddle-ocr-client');
 const { WhatsAppProvider } = require('./whatsapp-provider');
 const { StructuredDatabase } = require('./structured-database');
+const { ResidentPortalService } = require('./resident-portal-service');
 
 loadEnv();
 
@@ -28,6 +29,12 @@ const databaseStartup = database.initializeFromJsonMirror(APP_STATE_FILE);
 if (databaseStartup.migrated) {
   console.log('Banco estruturado inicializado a partir de data/app-state.json.');
 }
+
+const residentPortal = new ResidentPortalService({
+  readState: readAppState,
+  writeState: writeAppState,
+  sendText: (numero, mensagem) => whatsapp.sendText(numero, mensagem)
+});
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -126,6 +133,7 @@ async function handleApi(req, res) {
       whatsapp: whats.configured,
       whatsappProvider: whats,
       database: database.status(),
+      residentPortal: residentPortal.status(),
       paddleocr: paddleOcr.status()
     });
     return;
@@ -134,6 +142,42 @@ async function handleApi(req, res) {
   if (req.method === 'GET' && req.url === '/api/database/status') {
     requireRole(req, ['admin', 'supervisor']);
     sendJson(res, 200, { ok: true, database: database.status() });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/morador/auth/request') {
+    const { phone } = await readJson(req);
+    const result = await residentPortal.requestCode(phone, clientIp(req));
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/morador/auth/verify') {
+    const { challengeId, code } = await readJson(req);
+    const result = await residentPortal.verify(challengeId, code);
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/morador/me') {
+    sendJson(res, 200, await residentPortal.profile(residentToken(req)));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/morador/encomendas') {
+    sendJson(res, 200, await residentPortal.packages(residentToken(req)));
+    return;
+  }
+
+  const resendResidentPinMatch = req.url.match(/^\/api\/morador\/encomendas\/([^/]+)\/reenviar-pin$/);
+  if (req.method === 'POST' && resendResidentPinMatch) {
+    const id = decodeURIComponent(resendResidentPinMatch[1]);
+    sendJson(res, 200, await residentPortal.resendPin(residentToken(req), id));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/morador/logout') {
+    sendJson(res, 200, residentPortal.logout(residentToken(req)));
     return;
   }
 
@@ -506,6 +550,16 @@ function verifyPassword(password, stored) {
 function bearerToken(req) {
   const auth = req.headers.authorization || '';
   return auth.startsWith('Bearer ') ? auth.slice(7) : '';
+}
+
+function residentToken(req) {
+  const auth = req.headers.authorization || '';
+  return auth.startsWith('Resident ') ? auth.slice(9) : '';
+}
+
+function clientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.socket?.remoteAddress || '';
 }
 
 function requireRole(req, roles) {
