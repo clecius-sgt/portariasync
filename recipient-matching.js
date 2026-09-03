@@ -89,9 +89,6 @@
     return normalize(street).split(' ').filter(t => t && !/^(rua|r|avenida|av|alameda|travessa|trav|de|da|do|das|dos)$/.test(t));
   }
 
-  // Fallback for real labels where Tesseract reads e.g. "Rva Londres I60" or breaks
-  // the address across adjacent lines. It never matches by house number alone: street
-  // tokens and number must agree with the resident record.
   function addressEvidence(text, home) {
     if (!home) return null;
     const wanted = streetTokens(home.street);
@@ -123,6 +120,32 @@
       return { relation, text: window };
     }
     return null;
+  }
+
+  function recipientNameText(text, home) {
+    if (!home) return '';
+    const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i++) {
+      let found = false;
+      for (const span of [1, 2]) {
+        const window = lines.slice(i, i + span).join(' ');
+        const parsed = address(window);
+        const relation = parsed ? addressRelation(parsed, home) : 'missing';
+        if (relation === 'exact' || relation === 'incomplete' || addressEvidence(window, home)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) continue;
+      return lines.slice(Math.max(0, i - 3), i)
+        .filter(line => {
+          const norm = normalize(line);
+          return norm && !address(line) && !/\b\d{5,}\b/.test(norm) &&
+            !/^(cep|codigo|rastreamento|pedido|remessa|nota|order|tentativa|bairro|cidade|estado)\b/.test(norm);
+        })
+        .join(' ');
+    }
+    return '';
   }
 
   function probableName(line) {
@@ -215,32 +238,60 @@
       if (best) candidates.push(best);
     }
 
-    const nameEvidenceById = new Map(candidates.map(c => [String(c.morador.id), nameEvidenceScore(evidenceText, c.morador.nome)]));
+    function candidateNameEvidence(candidate) {
+      const home = address(candidate.morador.casa);
+      const nearby = recipientNameText(evidenceText, home);
+      const localScore = nearby ? nameEvidenceScore(nearby, candidate.morador.nome) : 0;
+      const blockScore = candidate.block?.name ? nameEvidenceScore(candidate.block.name, candidate.morador.nome) : 0;
+      return localScore * 8 + blockScore * 4 + nameEvidenceScore(evidenceText, candidate.morador.nome);
+    }
+
+    const initialBest = candidates.slice().sort((a, b) => b.score - a.score)[0] || null;
+    if (initialBest) {
+      const anchorHome = address(initialBest.morador.casa);
+      for (const resident of residents || []) {
+        if (!resident?.id || candidates.some(c => String(c.morador.id) === String(resident.id))) continue;
+        if (addressRelation(anchorHome, address(resident.casa)) !== 'exact') continue;
+        candidates.push({
+          morador: resident,
+          score: 10,
+          safe: false,
+          addressOwner: true,
+          exactName: false,
+          plausible: false,
+          relation: 'address-only',
+          evidenceText: initialBest.block?.address?.text || initialBest.evidenceText || '',
+          motivos: ['Outro morador cadastrado no mesmo endereço', 'Confirme o nome impresso na etiqueta']
+        });
+      }
+    }
+
     candidates.sort((a, b) => {
       const sameHome = addressRelation(address(a.morador.casa), address(b.morador.casa)) === 'exact';
       if (sameHome) {
-        const nameDifference = (nameEvidenceById.get(String(b.morador.id)) || 0) - (nameEvidenceById.get(String(a.morador.id)) || 0);
+        const nameDifference = candidateNameEvidence(b) - candidateNameEvidence(a);
         if (nameDifference !== 0) return nameDifference;
+        if (!!a.exactName !== !!b.exactName) return a.exactName ? -1 : 1;
+        if (!!a.plausible !== !!b.plausible) return a.plausible ? -1 : 1;
       }
       return b.score - a.score || String(a.morador.id).localeCompare(String(b.morador.id));
     });
+
     const safe = candidates.filter(c => c.safe);
     const best = candidates[0];
     const addressOwners = candidates.filter(c => c.addressOwner && ['exact', 'incomplete', 'address-only'].includes(c.relation));
     const uniqueAddressOwner = addressOwners.length === 1 ? addressOwners[0] : null;
     const competing = safe.length === 1 && candidates.some(c => c !== safe[0] && c.plausible && ['exact', 'incomplete'].includes(c.relation));
-    const sameHomeResidents = safe.length === 1
-      ? candidates.filter(c => c !== safe[0] && addressRelation(address(safe[0].morador.casa), address(c.morador.casa)) === 'exact')
+    const sameHomeResidents = best
+      ? candidates.filter(c => c !== best && addressRelation(address(best.morador.casa), address(c.morador.casa)) === 'exact')
       : [];
     const blockKeys = new Set(blocks.filter(b => b.address).map(b => normalize(b.name) + '|' + b.address.street + '|' + b.address.number));
     const multipleBlocks = blockKeys.size > 1;
     const confident = safe.length === 1 && !competing && !multipleBlocks && sameHomeResidents.length === 0;
-    const principal = confident ? safe[0] : (safe[0] || (uniqueAddressOwner && safe.length === 0 ? uniqueAddressOwner : best));
+    const principal = confident ? safe[0] : (best || safe[0] || uniqueAddressOwner);
     const chosenBlock = principal?.block || best?.block || blocks.find(b => b.address) || blocks.find(b => b.explicit) || blocks[0];
     const addressText = chosenBlock?.address?.text || uniqueAddressOwner?.block?.address?.text || uniqueAddressOwner?.evidenceText || addresses[0]?.text || best?.evidenceText || '';
-    const rankedCandidates = uniqueAddressOwner && safe.length === 0
-      ? [uniqueAddressOwner, ...candidates.filter(c => c !== uniqueAddressOwner)]
-      : candidates;
+    const rankedCandidates = candidates;
 
     let reason = 'Não foi possível cruzar nome completo e endereço. Confira a etiqueta.';
     if (!(residents || []).length) reason = 'O cadastro de moradores está vazio. Cadastre ou sincronize os moradores.';
@@ -266,7 +317,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-03.2' };
+  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.3' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
