@@ -87,3 +87,18 @@ test('nome junto do endereço vence palavra igual a outro morador longe do bloco
   assert.equal(result.candidatoPrincipal.id, '1006b');
   assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
 });
+
+test('OCR real da Lucimara sem prefixo Rua cruza nome e endereço e explica o segundo morador corretamente', () => {
+  const clecius = { id: '1006', nome: 'Clecius Eduardo Alves Salome', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const lucimara = { id: '1006b', nome: 'Lucimara Gonçalves Salomé', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const text = 'Lucimara Gonçalves Salomé\nBrasilia,\n311, ResidenciafD Italia, Bady Bassitt, São';
+  const result = matching.match(text, [clecius, lucimara]);
+
+  assert.equal(result.confiavel, false);
+  assert.equal(result.destinatarioNaoCadastrado, false);
+  assert.equal(result.candidatoPrincipal.id, '1006b');
+  assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
+  assert.deepEqual(result.candidatos[0].motivos, ['Nome completo coincide', 'Rua e número coincidem']);
+  assert.deepEqual(result.candidatos[1].motivos, ['Outro morador cadastrado no mesmo endereço', 'Nome lido na etiqueta indica o morador destacado acima']);
+  assert.equal(result.enderecoExtraido, 'Rua Brasilia, 311');
+});
