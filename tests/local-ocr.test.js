@@ -105,3 +105,103 @@ test('a worker that fails parameter initialization is terminated', async () => {
   await assert.rejects(context.LocalOCR.prepare(), /initialization failed/);
   assert.equal(terminated, 1);
 });
+
+test('fast mobile OCR performs one local pass without expensive detail passes', async () => {
+  let recognitions = 0;
+  const context = vm.createContext({ setTimeout, clearTimeout, Tesseract: {
+    async createWorker() {
+      return {
+        setParameters: async () => {},
+        recognize: async () => {
+          recognitions++;
+          return { data: { text: 'Lucimara\nRua Brasilia 311', confidence: 52 } };
+        }
+      };
+    }
+  } });
+  vm.runInContext(source, context);
+  const result = await context.LocalOCR.recognizeFast('photo');
+  assert.equal(recognitions, 1);
+  assert.equal(result.engine, 'tesseract-mobile');
+  assert.equal(result.mode, 'fast');
+});
+
+test('mobile OCR is the primary route when local reading is sufficient', async () => {
+  let serverCalls = 0;
+  let received;
+  const context = vm.createContext({ setTimeout, clearTimeout, console, Tesseract: {
+    async createWorker() {
+      return {
+        setParameters: async () => {},
+        recognize: async () => ({ data: { text: 'Lucimara Gonçalves Salomé\nRua Brasilia 311', confidence: 92 } })
+      };
+    }
+  } });
+  vm.runInContext(source, context);
+  const host = {
+    console,
+    LabelCapture: { recognizeWithPaddle: async () => { serverCalls++; throw new Error('server should not run'); } },
+    enviarParaOCR: async (...args) => { received = args; return 'ok'; }
+  };
+  assert.equal(context.LocalOCR.installMobileFirstFallback(host), true);
+  const value = await host.enviarParaOCR('data:image/jpeg;base64,ZmFrZQ==', { textContent: '' }, null, '', 11);
+  assert.equal(value, 'ok');
+  assert.equal(serverCalls, 0);
+  assert.equal(received[4], 11);
+  assert.equal(received[5].engine, 'tesseract-mobile');
+  assert.equal(received[5].route, 'mobile');
+});
+
+test('low-confidence mobile OCR automatically falls back to PaddleOCR server', async () => {
+  let serverCalls = 0;
+  let received;
+  const context = vm.createContext({ setTimeout, clearTimeout, console, Tesseract: {
+    async createWorker() {
+      return {
+        setParameters: async () => {},
+        recognize: async () => ({ data: { text: 'Lucimara\nRua Brasilia 311', confidence: 54 } })
+      };
+    }
+  } });
+  vm.runInContext(source, context);
+  const host = {
+    console,
+    LabelCapture: {
+      recognizeWithPaddle: async () => {
+        serverCalls++;
+        return { text: 'Lucimara Gonçalves Salomé\nRua Brasilia 311', confidence: 96, lines: [] };
+      }
+    },
+    enviarParaOCR: async (...args) => { received = args; return 'ok'; }
+  };
+  context.LocalOCR.installMobileFirstFallback(host);
+  await host.enviarParaOCR('data:image/jpeg;base64,ZmFrZQ==', { textContent: '' }, null, '', 12);
+  assert.equal(serverCalls, 1);
+  assert.equal(received[5].engine, 'paddleocr');
+  assert.equal(received[5].route, 'server-fallback');
+  assert.equal(received[5].fallbackUsed, true);
+  assert.equal(received[5].mobileConfidence, 54);
+});
+
+test('if server fallback fails, usable mobile text is retained for manual confirmation', async () => {
+  let received;
+  const context = vm.createContext({ setTimeout, clearTimeout, console, Tesseract: {
+    async createWorker() {
+      return {
+        setParameters: async () => {},
+        recognize: async () => ({ data: { text: 'Lucimara\nRua Brasilia 311', confidence: 54 } })
+      };
+    }
+  } });
+  vm.runInContext(source, context);
+  const host = {
+    console,
+    LabelCapture: { recognizeWithPaddle: async () => { throw new Error('offline'); } },
+    enviarParaOCR: async (...args) => { received = args; return 'ok'; }
+  };
+  context.LocalOCR.installMobileFirstFallback(host);
+  await host.enviarParaOCR('data:image/jpeg;base64,ZmFrZQ==', { textContent: '' }, null, '', 13);
+  assert.equal(received[5].engine, 'tesseract-mobile');
+  assert.equal(received[5].route, 'mobile-degraded');
+  assert.equal(received[5].confidence, 54);
+});
