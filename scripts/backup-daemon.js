@@ -4,21 +4,22 @@
 const fs = require('fs');
 const path = require('path');
 const { BackupManager } = require('../backup-manager');
-const { StructuredDatabase } = require('../structured-database');
+const { AssociationManager } = require('../association-manager');
 
 const ROOT = path.resolve(__dirname, '..');
 loadEnv(path.join(ROOT, '.env'));
 
 const DATA_DIR = path.join(ROOT, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
-const DATABASE_FILE = path.join(DATA_DIR, 'portariasync.sqlite');
 const BACKUP_DIR = path.resolve(ROOT, process.env.BACKUP_DIR || '../portariasync-backups');
 const enabled = !/^(?:0|false|no|off)$/i.test(String(process.env.BACKUP_ENABLED || 'true'));
 const intervalHours = Number(process.env.BACKUP_INTERVAL_HOURS || 24);
 const retentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 30);
 const maxFiles = Number(process.env.BACKUP_MAX_FILES || 30);
-let database = null;
+const associations = new AssociationManager({
+  dataDir: DATA_DIR,
+  defaultName: process.env.DEFAULT_ASSOCIATION_NAME || 'Associação de Moradores'
+});
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -42,16 +43,6 @@ function readJsonFile(file, fallback) {
   }
 }
 
-function structuredSnapshot() {
-  if (!fs.existsSync(DATABASE_FILE)) return null;
-  if (!database) database = new StructuredDatabase({ file: DATABASE_FILE });
-  const state = database.readState();
-  return {
-    status: database.status(),
-    state
-  };
-}
-
 const manager = new BackupManager({
   backupDir: BACKUP_DIR,
   enabled,
@@ -59,17 +50,14 @@ const manager = new BackupManager({
   retentionDays,
   maxFiles,
   startupDelayMs: 1500,
-  snapshotProvider: async () => {
-    const structured = structuredSnapshot();
-    return {
-      source: structured?.state?.exists ? 'sqlite-structured-primary' : 'vps-local-mirror',
-      database: structured,
-      files: {
-        'users.json': readJsonFile(USERS_FILE, []),
-        'app-state.json': readJsonFile(APP_STATE_FILE, { exists: false, version: 0, updatedAt: null })
-      }
-    };
-  }
+  snapshotProvider: async () => ({
+    source: 'sqlite-multi-association',
+    multiAssociation: associations.status(false),
+    associations: associations.snapshotAll(),
+    files: {
+      'users.json': readJsonFile(USERS_FILE, [])
+    }
+  })
 });
 
 manager.start();
@@ -79,6 +67,7 @@ console.log(
   'retenção de ' + manager.retentionDays + ' dias,',
   'máximo de ' + manager.maxFiles + ' arquivos.'
 );
+console.log('Multi-Associação incluída no backup:', associations.status(false).total, 'associação(ões).');
 console.log('Diretório protegido fora da aplicação:', BACKUP_DIR);
 
 const keepAlive = setInterval(() => {}, 60 * 60 * 1000);
@@ -86,9 +75,7 @@ const keepAlive = setInterval(() => {}, 60 * 60 * 1000);
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     manager.stop();
-    if (database) {
-      try { database.close(); } catch (_) {}
-    }
+    associations.closeAll();
     clearInterval(keepAlive);
     process.exit(0);
   });
