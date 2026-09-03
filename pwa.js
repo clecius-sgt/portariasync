@@ -5,9 +5,13 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.4';
+  const VERSION = '2026-09-03.5';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
   const SW_URL = '/sw.js?v=20260903-3';
+  const ASSOCIATION_STATE_KEYS = [
+    'moradores','encomendas','retirantesRelacionados','auditoria','memoriaRemetentes','config',
+    'detalhesRetirada','estadoServidorVersion','ultimaSincronizacaoOk','resetEncomendasAplicado'
+  ];
   let installPrompt = null;
 
   function ensureLink(doc, rel, href, extra = {}) {
@@ -51,6 +55,41 @@
 
   function isAndroid(host) {
     return /Android/i.test(String(host?.navigator?.userAgent || ''));
+  }
+
+  function applyAssociationScope(host, associationId) {
+    host = host || root;
+    const storage = host?.localStorage;
+    const id = String(associationId || '').trim();
+    if (!storage || !id) return false;
+    const current = String(storage.getItem('activeAssociationId') || '');
+    if (current === id) return false;
+    for (const key of ASSOCIATION_STATE_KEYS) storage.removeItem(key);
+    storage.setItem('activeAssociationId', id);
+    return true;
+  }
+
+  function installAssociationScope(host) {
+    host = host || root;
+    if (!host?.fetch || host.__portariaAssociationScopeInstalled) return false;
+    host.__portariaAssociationScopeInstalled = true;
+    const originalFetch = host.fetch.bind(host);
+    host.fetch = async function(input, options) {
+      const response = await originalFetch(input, options);
+      try {
+        const url = typeof input === 'string' ? input : String(input?.url || '');
+        if (response.ok && (/\/api\/auth\/login(?:\?|$)/.test(url) || /\/api\/auth\/me(?:\?|$)/.test(url))) {
+          const payload = await response.clone().json();
+          const changed = applyAssociationScope(host, payload?.user?.associacaoId);
+          if (changed && /\/api\/auth\/login(?:\?|$)/.test(url)) {
+            if (payload?.token) host.localStorage?.setItem('authToken', payload.token);
+            host.setTimeout?.(() => host.location?.reload?.(), 0);
+          }
+        }
+      } catch (_) {}
+      return response;
+    };
+    return true;
   }
 
   function removeInstallButton(doc) {
@@ -177,6 +216,7 @@
     if (!doc || host.__portariaPwaInstalled) return !!doc;
     host.__portariaPwaInstalled = true;
 
+    installAssociationScope(host);
     ensureLink(doc, 'manifest', MANIFEST_URL);
     ensureLink(doc, 'icon', '/icons/portariasync-192.svg', { type: 'image/svg+xml' });
     ensureLink(doc, 'apple-touch-icon', '/icons/portariasync-192.svg');
@@ -221,7 +261,8 @@
       showInstall: () => showInstallButton(host, currentInstallMode(host)),
       register: () => registerServiceWorker(host),
       whatsappClient: () => loadWhatsappClient(host),
-      withdrawalPin: () => loadWithdrawalPin(host)
+      withdrawalPin: () => loadWithdrawalPin(host),
+      associationScope: id => applyAssociationScope(host, id)
     };
     return true;
   }
@@ -230,11 +271,14 @@
     VERSION,
     MANIFEST_URL,
     SW_URL,
+    ASSOCIATION_STATE_KEYS,
     ensureLink,
     ensureMeta,
     isStandalone,
     isIos,
     isAndroid,
+    applyAssociationScope,
+    installAssociationScope,
     manualInstallMessage,
     currentInstallMode,
     showInstallButton,
