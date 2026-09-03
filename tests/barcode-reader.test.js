@@ -105,7 +105,7 @@ test('OCR local carrega o leitor separado depois que a aplicação está pronta'
   assert.match(source, /barcode-reader\.js\?v=20260902-1/);
   assert.match(source, /loadSeparateBarcodeReaderScript\(root\)/);
   assert.match(source, /separateBarcodeReaderLoader:\s*true/);
-  assert.match(source, /version:\s*'2026-09-02\.7'/);
+  assert.match(source, /version:\s*'2026-09-03\.1'/);
 });
 
 test('quando há vários códigos, rastreio ligado à transportadora vence código numérico maior', () => {
