@@ -100,7 +100,12 @@ function serveStatic(req, res) {
     res.end('Arquivo não encontrado');
     return;
   }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream' });
+  const ext = path.extname(abs).toLowerCase();
+  const appDinamico = (ext === '.html' || ext === '.js') && !partes.includes('vendor');
+  res.writeHead(200, {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': appDinamico ? 'no-store, max-age=0' : 'public, max-age=86400'
+  });
   fs.createReadStream(abs).pipe(res);
 }
 
