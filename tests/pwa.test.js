@@ -70,3 +70,16 @@ test('aplicação carrega suporte PWA após ficar pronta', () => {
   assert.match(source, /pwaLoader:\s*true/);
   assert.match(source, /version:\s*'2026-09-03\.1'/);
 });
+
+test('botão de instalação fica acima da tela de login e oferece caminho manual quando o prompt não existe', () => {
+  const pwaSource = fs.readFileSync(path.join(root, 'pwa.js'), 'utf8');
+  const indexSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const loginZ = Number(indexSource.match(/#loginScreen\s*\{[^}]*z-index:\s*(\d+)/s)?.[1] || 0);
+  const buttonZ = Number(pwaSource.match(/z-index:(\d+)/)?.[1] || 0);
+  assert.equal(pwa.VERSION, '2026-09-03.2');
+  assert.ok(loginZ >= 99999);
+  assert.ok(buttonZ > loginZ);
+  assert.match(pwaSource, /showFallbackInstall/);
+  assert.match(pwaSource, /Instalar app/);
+  assert.match(pwaSource, /Adicionar à tela inicial/);
+});
