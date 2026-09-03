@@ -393,11 +393,32 @@
     return true;
   }
 
+  function loadOcrMetricsScript(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.OcrMetrics) {
+      if (typeof host.OcrMetrics.install === 'function') host.OcrMetrics.install(host);
+      return true;
+    }
+    if (doc.querySelector && doc.querySelector('script[data-ocr-metrics="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/ocr-metrics.js?v=20260902-1';
+    script.async = true;
+    script.dataset.ocrMetrics = '1';
+    script.onload = function() {
+      if (host.OcrMetrics && typeof host.OcrMetrics.install === 'function') host.OcrMetrics.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   root.LocalOCR = {
     recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mobileRecipientSufficient,
     mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback, loadRecipientMemoryScript,
-    loadSeparateBarcodeReaderScript,
-    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, separateBarcodeReaderLoader: true, version: '2026-09-02.6'
+    loadSeparateBarcodeReaderScript, loadOcrMetricsScript,
+    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, separateBarcodeReaderLoader: true, ocrMetricsLoader: true,
+    version: '2026-09-02.7'
   };
 
   if (root.document && typeof root.document.addEventListener === 'function') {
@@ -405,6 +426,7 @@
       loadSeparateBarcodeReaderScript(root);
       loadRecipientMemoryScript(root);
       installMobileFirstFallback(root);
+      loadOcrMetricsScript(root);
     }, { once: true });
   }
 })(globalThis);
