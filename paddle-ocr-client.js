@@ -9,6 +9,11 @@ const readline = require('readline');
 
 const PREFIX = 'PORTARIASYNC_JSON:';
 
+function enabled(value, defaultValue = true) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  return !/^(0|false|off|no)$/i.test(String(value).trim());
+}
+
 function parseImageDataUrl(value, maxBytes = 10 * 1024 * 1024) {
   const text = String(value || '');
   const match = text.match(/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=\r\n]+)$/i);
@@ -38,11 +43,29 @@ class PaddleOcrClient {
     this.python = options.python || process.env.PADDLE_PYTHON || path.join(this.baseDir, '.venv-paddleocr', 'bin', 'python');
     this.worker = options.worker || path.join(this.baseDir, 'scripts', 'paddleocr_worker.py');
     this.timeoutMs = Number(options.timeoutMs || process.env.PADDLE_OCR_TIMEOUT_MS || 60000);
+    this.startupTimeoutMs = Number(options.startupTimeoutMs || process.env.PADDLE_OCR_STARTUP_TIMEOUT_MS || Math.max(this.timeoutMs, 120000));
+    this.prewarmEnabled = options.prewarm !== undefined ? !!options.prewarm : enabled(process.env.PADDLE_OCR_PREWARM, true);
     this.proc = null;
     this.ready = false;
     this.starting = null;
     this.pending = new Map();
     this.stderrTail = '';
+    this.warmupMs = null;
+    this.warmedAt = null;
+    this.lastError = '';
+
+    // Fase 1: tira o custo de carregar modelos e executar a primeira inferência
+    // do primeiro operador. O servidor continua subindo normalmente enquanto o
+    // worker aquece em segundo plano. Se uma leitura chegar antes, ela reutiliza
+    // exatamente a mesma Promise de inicialização em start().
+    if (this.prewarmEnabled && this.installed()) {
+      setImmediate(() => {
+        this.prewarm().catch(error => {
+          this.lastError = error.message;
+          console.warn('Pré-aquecimento do PaddleOCR não concluído:', error.message);
+        });
+      });
+    }
   }
 
   installed() {
@@ -54,8 +77,20 @@ class PaddleOcrClient {
       installed: this.installed(),
       running: !!(this.proc && !this.proc.killed),
       ready: this.ready,
-      pending: this.pending.size
+      pending: this.pending.size,
+      prewarm: this.prewarmEnabled,
+      warming: !!this.starting && !this.ready,
+      warmed: this.ready,
+      warmupMs: this.warmupMs,
+      warmedAt: this.warmedAt,
+      lastError: this.lastError || null
     };
+  }
+
+  async prewarm() {
+    if (!this.prewarmEnabled) return this.status();
+    await this.start();
+    return this.status();
   }
 
   async start() {
@@ -64,6 +99,7 @@ class PaddleOcrClient {
     if (!this.installed()) {
       const err = new Error('PaddleOCR ainda não foi instalado no VPS. Execute scripts/install-paddleocr.sh.');
       err.statusCode = 503;
+      this.lastError = err.message;
       throw err;
     }
 
@@ -80,17 +116,23 @@ class PaddleOcrClient {
       this.proc = proc;
       this.ready = false;
       this.stderrTail = '';
+      this.lastError = '';
 
       const startupTimer = setTimeout(() => {
-        reject(new Error('PaddleOCR demorou demais para iniciar.'));
+        const error = new Error('PaddleOCR demorou demais para iniciar e pré-aquecer.');
+        this.lastError = error.message;
+        reject(error);
         this._kill();
-      }, this.timeoutMs);
+      }, this.startupTimeoutMs);
 
       const rl = readline.createInterface({ input: proc.stdout });
       rl.on('line', line => this._handleLine(line, () => {
         clearTimeout(startupTimer);
         resolve();
-      }, reject));
+      }, error => {
+        clearTimeout(startupTimer);
+        reject(error);
+      }));
 
       proc.stderr.on('data', chunk => {
         this.stderrTail = (this.stderrTail + chunk.toString()).slice(-4000);
@@ -98,6 +140,7 @@ class PaddleOcrClient {
 
       proc.on('error', error => {
         clearTimeout(startupTimer);
+        this.lastError = error.message;
         this._failAll(error);
         reject(error);
       });
@@ -109,6 +152,7 @@ class PaddleOcrClient {
         this.ready = false;
         this.proc = null;
         this.starting = null;
+        this.lastError = error.message;
         this._failAll(error);
       });
     }).finally(() => {
@@ -129,12 +173,16 @@ class PaddleOcrClient {
 
     if (message.type === 'ready') {
       this.ready = true;
+      this.warmupMs = Number.isFinite(Number(message.warmupMs)) ? Number(message.warmupMs) : null;
+      this.warmedAt = new Date().toISOString();
+      this.lastError = '';
       onReady();
       return;
     }
     if (message.type === 'startup_error') {
       const error = new Error(message.error || 'Falha ao iniciar PaddleOCR.');
       error.statusCode = 503;
+      this.lastError = error.message;
       onStartupError(error);
       this._kill();
       return;
@@ -198,4 +246,4 @@ class PaddleOcrClient {
   }
 }
 
-module.exports = { PaddleOcrClient, parseImageDataUrl, PREFIX };
+module.exports = { PaddleOcrClient, parseImageDataUrl, PREFIX, enabled };
