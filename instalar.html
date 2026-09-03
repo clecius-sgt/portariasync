@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Instalar PortariaSync</title>
+<link rel="manifest" href="/manifest.json?v=20260903-1">
+<link rel="icon" href="/icons/portariasync-192.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/portariasync-192.svg">
+<meta name="theme-color" content="#1a1f3a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PortariaSync">
+<style>
+  :root{--navy:#1a1f3a;--navy2:#2d3561;--gold:#c9a84c;--bg:#f4f6f9;--card:#fff;--text:#1a1f3a;--muted:#667085;--ok:#137333;--border:#e2e8f0}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100dvh;background:linear-gradient(160deg,#0f1224,#1a1f3a 55%,#2d3561);font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--text);display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{width:min(100%,460px);background:var(--card);border-radius:20px;padding:24px;box-shadow:0 18px 60px rgba(0,0,0,.35);border:1px solid rgba(201,168,76,.35)}
+  .brand{text-align:center;font-size:28px;font-weight:900;color:var(--navy);margin:4px 0}.brand span{color:var(--gold)}
+  .sub{text-align:center;color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 20px}
+  .icon{width:76px;height:76px;border-radius:18px;margin:0 auto 12px;background:var(--navy);display:grid;place-items:center;color:var(--gold);font-size:31px;font-weight:900;border:2px solid var(--gold)}
+  .status{border-radius:12px;padding:14px;margin:14px 0;background:#f8fafc;border:1px solid var(--border);font-size:13px;line-height:1.55;color:var(--muted)}
+  .status strong{color:var(--navy)}
+  .ok{background:#e6f4ea;border-color:#c7e7cf;color:var(--ok)}
+  button,a.action{width:100%;min-height:50px;border-radius:11px;border:0;padding:13px 16px;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;text-decoration:none;cursor:pointer;margin-top:10px}
+  #installButton{background:var(--gold);color:var(--navy)}
+  #installButton[disabled]{opacity:.55;cursor:not-allowed}
+  .secondary{background:#eef2f7;color:var(--navy)}
+  .steps{font-size:13px;line-height:1.6;color:var(--muted);margin:14px 0 0;padding-left:20px}
+  .small{font-size:11px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5}
+</style>
+<script>
+  window.__portariaInstallPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(event){
+    event.preventDefault();
+    window.__portariaInstallPrompt = event;
+    window.dispatchEvent(new Event('portaria-install-ready'));
+  });
+</script>
+</head>
+<body>
+<main class="card">
+  <div class="icon">PS</div>
+  <div class="brand">Portaria<span>Sync</span></div>
+  <p class="sub">Instale o sistema da portaria como aplicativo neste aparelho.</p>
+
+  <div id="statusBox" class="status"><strong>Verificando este aparelho...</strong><br>Aguarde alguns segundos.</div>
+  <button id="installButton" type="button">Instalar PortariaSync</button>
+  <a class="action secondary" href="/">Abrir PortariaSync no navegador</a>
+  <ol id="manualSteps" class="steps" style="display:none"></ol>
+  <p class="small">Depois de instalado, o PortariaSync continuará solicitando usuário e senha. A instalação não remove a autenticação do sistema.</p>
+</main>
+<script>
+(function(){
+  'use strict';
+  const button = document.getElementById('installButton');
+  const status = document.getElementById('statusBox');
+  const steps = document.getElementById('manualSteps');
+  const ua = navigator.userAgent || '';
+  const ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+  const android = /Android/i.test(ua);
+  const standalone = () => !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || !!navigator.standalone;
+
+  function setStatus(title, text, ok){
+    status.className = 'status' + (ok ? ' ok' : '');
+    status.innerHTML = '<strong>' + title + '</strong><br>' + text;
+  }
+
+  function showManual(){
+    steps.style.display = 'block';
+    steps.innerHTML = '';
+    const items = ios
+      ? ['Abra esta página no Safari.', 'Toque em Compartilhar.', 'Escolha “Adicionar à Tela de Início”.', 'Confirme em “Adicionar”.']
+      : android
+        ? ['Toque no menu do navegador (⋮).', 'Escolha “Instalar app” ou “Adicionar à tela inicial”.', 'Confirme a instalação.', 'Abra o PortariaSync pelo novo ícone.']
+        : ['Abra o menu do navegador.', 'Escolha “Instalar aplicativo” ou “Adicionar à tela inicial”.', 'Confirme a instalação.'];
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.textContent = item;
+      steps.appendChild(li);
+    }
+  }
+
+  function refresh(){
+    if (standalone()) {
+      button.disabled = true;
+      button.textContent = 'PortariaSync já está instalado';
+      setStatus('Aplicativo instalado', 'Este aparelho já está executando o PortariaSync em modo aplicativo.', true);
+      steps.style.display = 'none';
+      return;
+    }
+    if (window.__portariaInstallPrompt) {
+      button.disabled = false;
+      button.textContent = 'Instalar PortariaSync agora';
+      setStatus('Pronto para instalar', 'Toque no botão abaixo para adicionar o PortariaSync aos aplicativos deste aparelho.', true);
+      steps.style.display = 'none';
+      return;
+    }
+    button.disabled = false;
+    button.textContent = ios ? 'Ver como instalar no iPhone/iPad' : 'Ver como instalar neste aparelho';
+    setStatus('Instalação manual disponível', 'Se o navegador não mostrar a instalação automática, use os passos abaixo.');
+    showManual();
+  }
+
+  button.addEventListener('click', async function(){
+    const prompt = window.__portariaInstallPrompt;
+    if (!prompt) {
+      showManual();
+      return;
+    }
+    button.disabled = true;
+    try {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      window.__portariaInstallPrompt = null;
+      if (choice && choice.outcome === 'accepted') {
+        setStatus('Instalação confirmada', 'Procure o ícone PortariaSync na tela inicial ou na lista de aplicativos.', true);
+        button.textContent = 'Instalação confirmada';
+        return;
+      }
+    } catch (_) {}
+    button.disabled = false;
+    refresh();
+  });
+
+  window.addEventListener('portaria-install-ready', refresh);
+  window.addEventListener('appinstalled', function(){
+    window.__portariaInstallPrompt = null;
+    setStatus('PortariaSync instalado', 'O aplicativo foi adicionado a este aparelho.', true);
+    button.disabled = true;
+    button.textContent = 'Instalado';
+  });
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('/sw.js?v=20260903-1', { scope:'/', updateViaCache:'none' }).then(function(reg){
+      return reg.update().catch(function(){});
+    }).catch(function(error){
+      console.warn('Não foi possível registrar o service worker:', error);
+    });
+  }
+
+  refresh();
+  setTimeout(refresh, 1500);
+})();
+</script>
+</body>
+</html>
