@@ -20,8 +20,14 @@ test('unknown recipient is not silently assigned but address owner is offered', 
   assert.match(result.motivo, /Destinatário não cadastrado/);
 });
 
-test('same label identifies Carlos only when his own matching record exists', () => {
-  assert.equal(matching.match(label, [...defaults, carlos]).morador.id, carlos.id);
+test('same label prioritizes Carlos but requires confirmation when another resident shares the address', () => {
+  const result = matching.match(label, [...defaults, carlos]);
+  assert.equal(result.confiavel, false);
+  assert.equal(result.morador, null);
+  assert.equal(result.candidatoPrincipal.id, carlos.id);
+  assert.equal(result.candidatos[0].morador.id, carlos.id);
+  assert.ok(result.candidatos.some(c => c.morador.id === '1087'));
+  assert.match(result.motivo, /mais de um morador cadastrado neste endereço/i);
 });
 
 test('real shipping label keeps hub address from overriding recipient address', () => {
@@ -63,7 +69,18 @@ test('compound streets, avenue abbreviations, and numeric streets', () => { asse
 for (const [suffix, confident] of [['', false], [' Apto 91', false], [' Apto 92', true], ['\nApartamento 92', true]]) test('apartment validation ' + JSON.stringify(suffix), () => assert.equal(matching.match(label + suffix, [{ ...carlos, casa: 'Rua Londres 160 Apto 92' }]).confiavel, confident));
 test('empty resident database fails closed', () => { const result = matching.match(label, []); assert.equal(result.morador, null); assert.match(result.motivo, /vazio/); });
 test('scripts compile and matcher is loaded before inline application', () => { for (const script of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]); assert.ok(html.indexOf('src="recipient-matching.js"') < html.indexOf('// ========== BACKEND')); });
-test('all repository residents match their own complete name and address, never another record', () => { for (const resident of defaults) { const result = matching.match(resident.nome + '\n' + resident.casa, defaults); assert.equal(result.morador?.id, resident.id); } });
+test('all repository residents match themselves or are prioritized when their address has more than one resident', () => {
+  for (const resident of defaults) {
+    const result = matching.match(resident.nome + '\n' + resident.casa, defaults);
+    if (result.confiavel) {
+      assert.equal(result.morador?.id, resident.id);
+    } else {
+      assert.equal(result.candidatoPrincipal?.id, resident.id);
+      assert.equal(result.candidatos[0]?.morador.id, resident.id);
+      assert.match(result.motivo, /(mais de um morador cadastrado neste endereço|mais de um cadastro compatível)/i);
+    }
+  }
+});
 
 function workflow() {
   const elements = new Map(); const element = id => { if (!elements.has(id)) elements.set(id, { value: '', style: {}, textContent: '', innerHTML: '', remove() {} }); return elements.get(id); };
