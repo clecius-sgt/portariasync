@@ -14,6 +14,11 @@
     }
     const raw = text(value);
     if (!raw) return null;
+    const isoDay = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoDay) {
+      const d = new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3]));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
     const br = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
     if (br) {
       const d = new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]), Number(br[4] || 0), Number(br[5] || 0), Number(br[6] || 0));
