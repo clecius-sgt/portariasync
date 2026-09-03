@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const memory = require('../recipient-memory');
+const matching = require('../recipient-matching');
 
 const clecius = { id: '1006', nome: 'Clecius Eduardo Alves Salome', casa: 'QD01LT11 - Rua Brasilia, 311' };
 const lucimara = { id: '1006b', nome: 'Lucimara Gonçalves Salomé', casa: 'QD01LT11 - Rua Brasilia, 311' };
@@ -148,4 +149,13 @@ test('explicações distinguem destinatário lido de outro morador do mesmo ende
   assert.deepEqual(result.candidatos[0].motivos, ['Nome completo coincide', 'Rua e número coincidem']);
   assert.deepEqual(result.candidatos[1].motivos, ['Outro morador cadastrado no mesmo endereço', 'Nome lido na etiqueta indica o morador destacado acima']);
   assert.equal(result.destinatarioNaoCadastrado, false);
+});
+
+test('normalização atua diretamente no RecipientMatching quando OCR entrega endereço antes do nome', () => {
+  const result = matching.match('Rua Brasilia 311\nTBR364591209\nLucimara Gonçalves Salomé', [clecius, lucimara]);
+
+  assert.equal(result.candidatoPrincipal.id, '1006b');
+  assert.equal(result.destinatarioNaoCadastrado, false);
+  assert.deepEqual(result.candidatos[0].motivos, ['Nome completo coincide', 'Rua e número coincidem']);
+  assert.deepEqual(result.candidatos[1].motivos, ['Outro morador cadastrado no mesmo endereço', 'Nome lido na etiqueta indica o morador destacado acima']);
 });
