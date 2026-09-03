@@ -109,9 +109,12 @@ test('nova confirmação do mesmo padrão aumenta contador e correção posterio
   assert.equal(learned.entry.confirmations, 1);
 });
 
-test('local OCR carrega o módulo de memória sem depender de cache antigo', () => {
+test('local OCR carrega memória somente depois de RecipientMatching estar disponível', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'local-ocr.js'), 'utf8');
-  assert.match(source, /recipient-memory\.js\?v=20260902-1/);
+  assert.match(source, /recipient-memory\.js\?v=20260902-3/);
+  assert.match(source, /!host\.RecipientMatching/);
+  assert.match(source, /DOMContentLoaded[\s\S]*loadRecipientMemoryScript\(root\)[\s\S]*installMobileFirstFallback\(root\)/);
+  assert.doesNotMatch(source, /if \(root\.document[^]*\{\s*loadRecipientMemoryScript\(root\);\s*root\.document\.addEventListener/);
   assert.match(source, /recipientMemoryLoader:\s*true/);
 });
 
