@@ -125,25 +125,39 @@
   function recipientNameText(text, home) {
     if (!home) return '';
     const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const wantedStreet = streetTokens(home.street);
+
+    function startsAddressAt(index) {
+      const line = lines[index];
+      if (!line) return false;
+      const parsed = address(line);
+      const relation = parsed ? addressRelation(parsed, home) : 'missing';
+      if (relation === 'exact' || relation === 'incomplete' || addressEvidence(line, home)) return true;
+      if (index + 1 >= lines.length) return false;
+
+      const words = normalize(line).split(' ').filter(Boolean);
+      const hasStreetEvidence = wantedStreet.some(token => words.some(word => word === token || similar(word, token)));
+      if (!hasStreetEvidence) return false;
+      return !!addressEvidence(line + '\n' + lines[index + 1], home);
+    }
+
+    function nameFragment(line) {
+      const norm = normalize(line);
+      if (!norm || address(line) || /\d/.test(norm)) return false;
+      if (/^(cep|codigo|rastreamento|pedido|remessa|nota|order|tentativa|bairro|cidade|estado|dados|transporte|transportadora|courier|service|servico|servicos|frete|entrega|volume|pacote)\b/.test(norm)) return false;
+      const tokens = nameTokens(norm);
+      return tokens.length >= 1 && tokens.length <= 5;
+    }
+
     for (let i = 0; i < lines.length; i++) {
-      let found = false;
-      for (const span of [1, 2]) {
-        const window = lines.slice(i, i + span).join(' ');
-        const parsed = address(window);
-        const relation = parsed ? addressRelation(parsed, home) : 'missing';
-        if (relation === 'exact' || relation === 'incomplete' || addressEvidence(window, home)) {
-          found = true;
-          break;
-        }
+      if (!startsAddressAt(i)) continue;
+      const parts = [];
+      for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+        if (!nameFragment(lines[j])) break;
+        parts.unshift(lines[j]);
+        if (parts.length >= 2) break;
       }
-      if (!found) continue;
-      return lines.slice(Math.max(0, i - 2), i)
-        .filter(line => {
-          const norm = normalize(line);
-          return norm && !address(line) && !/\b\d{5,}\b/.test(norm) &&
-            !/^(cep|codigo|rastreamento|pedido|remessa|nota|order|tentativa|bairro|cidade|estado|dados|transporte|transportadora|courier|service|servico|servicos)\b/.test(norm);
-        })
-        .join(' ');
+      return parts.join(' ');
     }
     return '';
   }
@@ -333,7 +347,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.4' };
+  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.5' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
