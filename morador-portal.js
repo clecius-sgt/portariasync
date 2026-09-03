@@ -1,9 +1,11 @@
 (function(){
 'use strict';
 
-const VERSION = '2026-09-03.1';
+const VERSION = '2026-09-03.2';
+const associationId = new URLSearchParams(location.search).get('associacao') || 'principal';
+const tokenKey = 'residentPortalToken:' + associationId;
 let challengeId = '';
-let token = localStorage.getItem('residentPortalToken') || '';
+let token = localStorage.getItem(tokenKey) || '';
 
 const $ = id => document.getElementById(id);
 
@@ -40,7 +42,7 @@ async function requestCode(){
   $('requestBtn').disabled = true;
   message('loginMsg','Solicitando código...','info');
   try{
-    const data = await api('/api/morador/auth/request',{method:'POST',body:JSON.stringify({phone})});
+    const data = await api('/api/morador/auth/request',{method:'POST',body:JSON.stringify({phone,associationId})});
     challengeId = data.challengeId || '';
     hide('loginCard'); show('codeCard');
     message('codeMsg','', 'info');
@@ -60,7 +62,7 @@ async function verifyCode(){
   try{
     const data = await api('/api/morador/auth/verify',{method:'POST',body:JSON.stringify({challengeId,code})});
     token = data.token || '';
-    localStorage.setItem('residentPortalToken', token);
+    localStorage.setItem(tokenKey, token);
     await loadPortal();
   }catch(error){
     message('codeMsg', error.message, 'error');
@@ -92,6 +94,8 @@ async function loadPortal(){
       api('/api/morador/encomendas')
     ]);
     hide('loginCard'); hide('codeCard'); show('portal');
+    const associationName = me.association?.nome || me.association?.name || '';
+    if($('associationName')) $('associationName').textContent = associationName || 'Associação de Moradores';
     $('maskedPhone').textContent = 'Acesso validado pelo WhatsApp ' + (me.phone || '');
     const first = me.residents?.[0];
     $('welcome').textContent = first ? 'Olá, ' + first.nome.split(' ')[0] : 'Portal do Morador';
@@ -107,7 +111,7 @@ async function loadPortal(){
     document.querySelectorAll('[data-pin]').forEach(btn => btn.addEventListener('click', () => resendPin(btn.dataset.pin, btn)));
   }catch(error){
     if(error.status === 401){
-      token=''; localStorage.removeItem('residentPortalToken');
+      token=''; localStorage.removeItem(tokenKey);
       hide('portal'); hide('codeCard'); show('loginCard');
       message('loginMsg','Sua sessão expirou. Solicite um novo código.','info');
       return;
@@ -133,7 +137,7 @@ async function resendPin(id, button){
 
 async function logout(){
   try{ if(token) await api('/api/morador/logout',{method:'POST',body:'{}'}); }catch(_){}
-  token=''; challengeId=''; localStorage.removeItem('residentPortalToken');
+  token=''; challengeId=''; localStorage.removeItem(tokenKey);
   hide('portal'); hide('codeCard'); show('loginCard');
   $('phone').value=''; $('otp').value='';
   message('loginMsg','Sessão encerrada.','ok');
@@ -148,6 +152,6 @@ $('otp').addEventListener('input', function(){ this.value = normalizeCode(this.v
 $('phone').addEventListener('keydown', e => { if(e.key === 'Enter') requestCode(); });
 $('otp').addEventListener('keydown', e => { if(e.key === 'Enter') verifyCode(); });
 
-window.PortariaSyncResidentPortal = { version: VERSION, reload: loadPortal };
+window.PortariaSyncResidentPortal = { version: VERSION, associationId, reload: loadPortal };
 loadPortal();
 })();
