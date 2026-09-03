@@ -11,7 +11,7 @@ loadEnv(path.join(ROOT, '.env'));
 const DATA_DIR = path.join(ROOT, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
-const BACKUP_DIR = path.resolve(ROOT, process.env.BACKUP_DIR || path.join('data', 'backups'));
+const BACKUP_DIR = path.resolve(ROOT, process.env.BACKUP_DIR || '../portariasync-backups');
 const enabled = !/^(?:0|false|no|off)$/i.test(String(process.env.BACKUP_ENABLED || 'true'));
 const intervalHours = Number(process.env.BACKUP_INTERVAL_HOURS || 24);
 const retentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 30);
@@ -62,7 +62,7 @@ console.log(
   'retenção de ' + manager.retentionDays + ' dias,',
   'máximo de ' + manager.maxFiles + ' arquivos.'
 );
-console.log('Diretório protegido:', BACKUP_DIR);
+console.log('Diretório protegido fora da aplicação:', BACKUP_DIR);
 
 // Mantém este daemon ativo no PM2. Os timers internos do BackupManager são unref
 // para não prender o processo principal quando o módulo for usado em testes.
