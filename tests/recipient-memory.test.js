@@ -114,3 +114,35 @@ test('local OCR carrega o módulo de memória sem depender de cache antigo', () 
   assert.match(source, /recipient-memory\.js\?v=20260902-1/);
   assert.match(source, /recipientMemoryLoader:\s*true/);
 });
+
+test('explicações distinguem destinatário lido de outro morador do mesmo endereço', () => {
+  const result = {
+    confiavel: false,
+    morador: null,
+    candidatoPrincipal: lucimara,
+    destinatarioNaoCadastrado: true,
+    nomeExtraido: 'Lucimara Gonçalves Salomé',
+    enderecoExtraido: 'Rua Brasilia 311',
+    candidatos: [
+      {
+        morador: lucimara,
+        exactName: true,
+        plausible: true,
+        relation: 'missing',
+        motivos: ['Nome completo coincide', 'Endereço ausente ou incompleto']
+      },
+      {
+        morador: clecius,
+        exactName: false,
+        plausible: false,
+        relation: 'address-only',
+        motivos: ['Destinatário não cadastrado', 'Rua e número reconhecidos apesar de erro de OCR: confirme o responsável']
+      }
+    ]
+  };
+
+  memory.clarifyCandidates(result);
+  assert.deepEqual(result.candidatos[0].motivos, ['Nome completo coincide', 'Rua e número coincidem']);
+  assert.deepEqual(result.candidatos[1].motivos, ['Outro morador cadastrado no mesmo endereço', 'Nome lido na etiqueta indica o morador destacado acima']);
+  assert.equal(result.destinatarioNaoCadastrado, false);
+});
