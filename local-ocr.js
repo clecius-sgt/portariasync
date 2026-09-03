@@ -104,11 +104,27 @@
     return confidence < 78 || !hasAddress(value) || !(hasRecipientLikeName(value) || hasTracking);
   }
 
+  function mobileResultSufficient(result) {
+    const text = String(result?.text || '').trim();
+    const confidence = Number(result?.confidence || 0);
+    if (!text || !Number.isFinite(confidence)) return false;
+    return !needsDetailPass(text, confidence);
+  }
+
   async function recognizePass(worker, image, pageSegMode, stage) {
     progressStage = stage || 'principal';
     await worker.setParameters({ tessedit_pageseg_mode: String(pageSegMode), preserve_interword_spaces: '1' });
     const result = await worker.recognize(image, { rotateAuto: true });
     return { text: String(result.data.text || '').trim(), confidence: Number(result.data.confidence) || 0 };
+  }
+
+  function recognizeFast(image, onProgress) {
+    return enqueue(async () => {
+      const worker = await getWorker();
+      phase = 'leitura mobile';
+      const result = await recognizePass(worker, image, 3, 'mobile');
+      return { ...result, engine: 'tesseract-mobile', mode: 'fast' };
+    }, onProgress);
   }
 
   function canCropImage(image) {
@@ -148,7 +164,6 @@
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
 
-    // Grayscale + contraste moderado para letras pequenas sem destruir sombras/dobras do papel.
     const pixels = ctx.getImageData(0, 0, targetWidth, targetHeight);
     for (let i = 0; i < pixels.data.length; i += 4) {
       const gray = pixels.data[i] * 0.299 + pixels.data[i + 1] * 0.587 + pixels.data[i + 2] * 0.114;
@@ -181,7 +196,6 @@
           confidence = Math.max(confidence, detail.confidence);
         }
       } else {
-        // Testes/ambientes sem canvas mantêm uma segunda leitura compatível.
         if (progress) progress({ status: 'recognizing text detail', progress: 0, ocrStage: 'superior' });
         const second = await recognizePass(worker, image, 6, 'superior');
         merged = mergeTexts(merged, second.text);
@@ -205,17 +219,119 @@
     };
     let label = labels[event?.status];
     if (!label && event?.status === 'recognizing text') {
-      label = stage === 'destinatario' ? 'Lendo nome e endereço'
-        : stage === 'superior' ? 'Lendo a parte superior da etiqueta'
-          : 'Lendo a etiqueta';
+      label = stage === 'mobile' ? 'Lendo a etiqueta no celular'
+        : stage === 'destinatario' ? 'Lendo nome e endereço'
+          : stage === 'superior' ? 'Lendo a parte superior da etiqueta'
+            : 'Lendo a etiqueta';
     }
-    if (!label) label = 'Preparando o leitor local';
+    if (!label) label = stage === 'mobile' ? 'Preparando OCR no celular' : 'Preparando o leitor local';
     const percent = Number.isFinite(event?.progress) ? ' (' + Math.round(event.progress * 100) + '%)' : '';
     return label + percent + '...';
   }
 
+  function installMobileFirstFallback(host) {
+    host = host || root;
+    if (!host || typeof host.enviarParaOCR !== 'function') return false;
+    const current = host.enviarParaOCR;
+    if (current.__mobileFirstWrapped) return true;
+    const core = current.__paddleWrapped && typeof current.__original === 'function' ? current.__original : current;
+
+    const wrapped = async function(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '', leituraId, ocrResult = null) {
+      if (ocrResult) return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, ocrResult);
+
+      let mobileResult = null;
+      let mobileError = null;
+      const startedAt = Date.now();
+      try {
+        if (statusEl) statusEl.textContent = 'Lendo a etiqueta no celular...';
+        mobileResult = await recognizeFast(imgBase64, event => {
+          if (statusEl) statusEl.textContent = progressText(event);
+        });
+        mobileResult = {
+          ...mobileResult,
+          engine: 'tesseract-mobile',
+          route: 'mobile',
+          elapsedMs: Date.now() - startedAt
+        };
+        if (mobileResultSufficient(mobileResult)) {
+          if (statusEl) statusEl.textContent = 'Leitura concluída no celular. Conferindo destinatário...';
+          return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, mobileResult);
+        }
+      } catch (error) {
+        mobileError = error;
+        if (host.console && typeof host.console.warn === 'function') host.console.warn('OCR mobile indisponível; acionando PaddleOCR:', error);
+      }
+
+      const serverReader = host.LabelCapture && typeof host.LabelCapture.recognizeWithPaddle === 'function'
+        ? host.LabelCapture.recognizeWithPaddle
+        : null;
+      if (serverReader) {
+        try {
+          if (statusEl) statusEl.textContent = mobileResult
+            ? 'Leitura mobile incompleta. Refinando no servidor...'
+            : 'OCR mobile indisponível. Lendo no servidor...';
+          const serverStartedAt = Date.now();
+          const serverResult = await serverReader(imgBase64, statusEl, host);
+          const enriched = {
+            ...serverResult,
+            engine: 'paddleocr',
+            route: 'server-fallback',
+            fallbackUsed: true,
+            mobileConfidence: mobileResult ? Number(mobileResult.confidence || 0) : null,
+            mobileElapsedMs: mobileResult ? Number(mobileResult.elapsedMs || 0) : null,
+            serverElapsedMs: Date.now() - serverStartedAt
+          };
+          if (statusEl) statusEl.textContent = 'PaddleOCR refinou a leitura. Conferindo destinatário...';
+          return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, enriched);
+        } catch (serverError) {
+          if (host.console && typeof host.console.warn === 'function') host.console.warn('Fallback PaddleOCR indisponível:', serverError);
+          if (mobileResult && String(mobileResult.text || '').trim()) {
+            if (statusEl) statusEl.textContent = 'Servidor indisponível. Usando a melhor leitura feita no celular...';
+            return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, {
+              ...mobileResult,
+              route: 'mobile-degraded',
+              fallbackUsed: true,
+              serverError: String(serverError?.message || serverError || '').slice(0, 180)
+            });
+          }
+          const detail = serverError || mobileError || new Error('Nenhum leitor OCR disponível.');
+          if (host.console && typeof host.console.error === 'function') host.console.error('OCR mobile e servidor falharam:', detail);
+        }
+      }
+
+      if (mobileResult && String(mobileResult.text || '').trim()) {
+        return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, {
+          ...mobileResult,
+          route: 'mobile-degraded'
+        });
+      }
+
+      return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, {
+        text: '',
+        confidence: 0,
+        lines: [],
+        engine: 'unavailable',
+        route: 'failed',
+        error: String(mobileError?.message || mobileError || 'Nenhum leitor OCR disponível.').slice(0, 180)
+      });
+    };
+
+    wrapped.__mobileFirstWrapped = true;
+    wrapped.__original = core;
+    wrapped.__serverWrapper = current.__paddleWrapped ? current : null;
+    host.enviarParaOCR = wrapped;
+    return true;
+  }
+
   root.LocalOCR = {
-    recognize, prepare, formatError, progressText, needsDetailPass, mergeTexts,
-    detailRegions, canCropImage, createDetailCrop, version: '2026-09-01.6'
+    recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mergeTexts,
+    detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback,
+    mobileFirst: true, serverFallback: true, version: '2026-09-02.2'
   };
+
+  if (root.document && typeof root.document.addEventListener === 'function') {
+    root.document.addEventListener('DOMContentLoaded', function() {
+      installMobileFirstFallback(root);
+    }, { once: true });
+  }
 })(globalThis);
