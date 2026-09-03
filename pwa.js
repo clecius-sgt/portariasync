@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.1';
+  const VERSION = '2026-09-03.2';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
   const SW_URL = '/sw.js?v=20260903-1';
   let installPrompt = null;
@@ -49,9 +49,29 @@
     return /iPad|iPhone|iPod/i.test(ua) || (platform === 'MacIntel' && Number(host?.navigator?.maxTouchPoints || 0) > 1);
   }
 
+  function isAndroid(host) {
+    return /Android/i.test(String(host?.navigator?.userAgent || ''));
+  }
+
   function removeInstallButton(doc) {
     const button = doc?.getElementById?.('portariaPwaInstall');
     if (button?.remove) button.remove();
+  }
+
+  function manualInstallMessage(host) {
+    if (isIos(host)) {
+      return 'Para instalar o PortariaSync no iPhone/iPad: abra esta página no Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.';
+    }
+    if (isAndroid(host)) {
+      return 'Para instalar o PortariaSync no Android: toque no menu do navegador (⋮) e escolha “Instalar app” ou “Adicionar à tela inicial”.';
+    }
+    return 'Para instalar o PortariaSync, abra o menu do navegador e escolha “Instalar aplicativo” ou “Adicionar à tela inicial”.';
+  }
+
+  function currentInstallMode(host) {
+    if (installPrompt) return 'prompt';
+    if (isIos(host)) return 'ios';
+    return 'manual';
   }
 
   function showInstallButton(host, mode) {
@@ -64,25 +84,36 @@
       button.type = 'button';
       button.textContent = 'Instalar PortariaSync';
       button.setAttribute('aria-label', 'Instalar PortariaSync neste aparelho');
-      button.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:11000;border:0;border-radius:999px;padding:11px 16px;background:#1a1f3a;color:#fff;font:700 13px Inter,Segoe UI,Arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;';
+      // A tela de login usa z-index 99999. O botão precisa ficar acima dela para ser visível
+      // antes do login, que é justamente quando o operador costuma instalar o aplicativo.
+      button.style.cssText = 'position:fixed;right:14px;bottom:max(14px,env(safe-area-inset-bottom));z-index:100500;border:0;border-radius:999px;padding:12px 17px;background:#c9a84c;color:#1a1f3a;font:800 13px Inter,Segoe UI,Arial,sans-serif;box-shadow:0 5px 18px rgba(0,0,0,.32);cursor:pointer;';
       doc.body.appendChild(button);
     }
-    button.dataset.installMode = mode || 'prompt';
+    button.dataset.installMode = mode || currentInstallMode(host);
+    button.disabled = false;
     button.onclick = async function() {
-      if (button.dataset.installMode === 'ios') {
-        host.alert?.('No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.');
+      const activeMode = installPrompt ? 'prompt' : button.dataset.installMode;
+      if (activeMode !== 'prompt' || !installPrompt) {
+        host.alert?.(manualInstallMessage(host));
         return;
       }
+
       const prompt = installPrompt;
-      if (!prompt) return;
       button.disabled = true;
       try {
         await prompt.prompt();
-        await prompt.userChoice;
-      } catch (_) {
-      } finally {
+        const choice = await prompt.userChoice;
         installPrompt = null;
-        removeInstallButton(doc);
+        if (choice?.outcome === 'accepted') removeInstallButton(doc);
+        else {
+          button.dataset.installMode = currentInstallMode(host);
+          button.disabled = false;
+        }
+      } catch (_) {
+        installPrompt = null;
+        button.dataset.installMode = currentInstallMode(host);
+        button.disabled = false;
+        host.alert?.(manualInstallMessage(host));
       }
     };
     return true;
@@ -133,16 +164,21 @@
       removeInstallButton(doc);
     });
 
-    if (isIos(host) && !isStandalone(host)) {
-      const showIos = () => showInstallButton(host, 'ios');
-      if (doc.readyState === 'loading') doc.addEventListener?.('DOMContentLoaded', showIos, { once: true });
-      else showIos();
+    const showFallbackInstall = () => {
+      if (!isStandalone(host)) showInstallButton(host, currentInstallMode(host));
+    };
+    if (doc.readyState === 'loading') {
+      doc.addEventListener?.('DOMContentLoaded', showFallbackInstall, { once: true });
+    } else {
+      showFallbackInstall();
     }
 
     registerServiceWorker(host);
     host.PortariaSyncPwaRuntime = {
       version: VERSION,
       standalone: () => isStandalone(host),
+      installMode: () => currentInstallMode(host),
+      showInstall: () => showInstallButton(host, currentInstallMode(host)),
       register: () => registerServiceWorker(host)
     };
     return true;
@@ -156,6 +192,9 @@
     ensureMeta,
     isStandalone,
     isIos,
+    isAndroid,
+    manualInstallMessage,
+    currentInstallMode,
     showInstallButton,
     registerServiceWorker,
     install,
