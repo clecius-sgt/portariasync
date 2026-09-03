@@ -67,3 +67,23 @@ test('mesmo quando OCR lê apenas o primeiro nome, destinatário aparece antes d
   assert.equal(result.morador, null);
   assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
 });
+
+test('nome quebrado em duas linhas continua priorizando Lucimara no endereço compartilhado', () => {
+  const clecius = { id: '1006', nome: 'Clecius Eduardo Alves Salome', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const lucimara = { id: '1006b', nome: 'Lucimara Gonçalves Salomé', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const result = matching.match('Lucimara Gonçalves\nSalomé\nRua Brasilia 311\nTBR364591209', [clecius, lucimara]);
+
+  assert.equal(result.confiavel, false);
+  assert.equal(result.candidatoPrincipal.id, '1006b');
+  assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
+});
+
+test('nome junto do endereço vence palavra igual a outro morador longe do bloco do destinatário', () => {
+  const clecius = { id: '1006', nome: 'Clecius Eduardo Alves Salome', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const lucimara = { id: '1006b', nome: 'Lucimara Gonçalves Salomé', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const result = matching.match('Clecius\nDados de transporte\nLucimara\nRua Brasilia 311\nTBR364591209', [clecius, lucimara]);
+
+  assert.equal(result.confiavel, false);
+  assert.equal(result.candidatoPrincipal.id, '1006b');
+  assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
+});
