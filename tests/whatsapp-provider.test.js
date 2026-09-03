@@ -24,7 +24,7 @@ test('normaliza telefone brasileiro sem duplicar código do país', () => {
   assert.equal(normalizePhone('5511997868841'), '5511997868841');
 });
 
-test('status da Meta informa configuração sem expor token', () => {
+test('status da Meta informa configuração sem expor token quando Meta é escolhida explicitamente', () => {
   const provider = new WhatsAppProvider({ env: metaEnv(), fetchFn: async () => ({ ok: true, status: 200, json: async () => ({}) }) });
   const status = provider.status();
   assert.equal(status.provider, 'meta');
@@ -35,7 +35,24 @@ test('status da Meta informa configuração sem expor token', () => {
   assert.equal(JSON.stringify(status).includes('segredo-token'), false);
 });
 
-test('aviso de encomenda usa template oficial com dados estruturados', async () => {
+test('sem escolha explícita, Z-API é o provedor padrão mesmo se existirem credenciais Meta', () => {
+  const provider = new WhatsAppProvider({
+    env: {
+      ZAPI_URL: 'https://api.z-api.io/instances/teste/token/teste',
+      ZAPI_CLIENT: 'cliente',
+      META_WHATSAPP_ACCESS_TOKEN: 'token-meta-antigo',
+      META_WHATSAPP_PHONE_NUMBER_ID: '123',
+      META_GRAPH_API_VERSION: 'vXX.X'
+    },
+    fetchFn: async () => ({ ok: true, status: 200 })
+  });
+  const status = provider.status();
+  assert.equal(status.provider, 'zapi');
+  assert.equal(status.configured, true);
+  assert.equal(status.mode, 'zapi');
+});
+
+test('aviso de encomenda usa template oficial com dados estruturados quando Meta é escolhida explicitamente', async () => {
   let request = null;
   const provider = new WhatsAppProvider({
     env: metaEnv(),
@@ -63,7 +80,7 @@ test('aviso de encomenda usa template oficial com dados estruturados', async () 
   ]);
 });
 
-test('falha na Meta não dispara fallback automático para Z-API', async () => {
+test('falha na Meta não dispara fallback automático para Z-API quando Meta foi selecionada', async () => {
   let calls = 0;
   const provider = new WhatsAppProvider({
     env: metaEnv({
@@ -80,7 +97,7 @@ test('falha na Meta não dispara fallback automático para Z-API', async () => {
   assert.equal(calls, 1);
 });
 
-test('modo Z-API permanece disponível durante a transição', async () => {
+test('Z-API envia aviso como provedor principal', async () => {
   let request = null;
   const provider = new WhatsAppProvider({
     env: {
