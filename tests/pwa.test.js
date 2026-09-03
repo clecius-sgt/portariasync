@@ -78,7 +78,7 @@ test('botão de instalação fica acima da tela de login e oferece caminho manua
   const indexSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const loginZ = Number(indexSource.match(/#loginScreen\s*\{[^}]*z-index:\s*(\d+)/s)?.[1] || 0);
   const buttonZ = Number(pwaSource.match(/z-index:(\d+)/)?.[1] || 0);
-  assert.equal(pwa.VERSION, '2026-09-03.4');
+  assert.equal(pwa.VERSION, '2026-09-03.5');
   assert.ok(loginZ >= 99999);
   assert.ok(buttonZ > loginZ);
   assert.match(pwaSource, /showFallbackInstall/);
@@ -96,4 +96,26 @@ test('PWA carrega cliente estruturado do WhatsApp e módulo de PIN sem credencia
   assert.doesNotMatch(client, /META_WHATSAPP_ACCESS_TOKEN|ZAPI_CLIENT/);
   assert.match(client, /\/api\/whatsapp\/package/);
   assert.match(client, /\/api\/whatsapp\/reminder/);
+});
+
+test('troca de associação limpa somente o estado operacional local', () => {
+  const values = new Map([
+    ['activeAssociationId', 'principal'],
+    ['moradores', '[{"id":"m1"}]'],
+    ['encomendas', '[{"id":"e1"}]'],
+    ['authToken', 'token-seguro'],
+    ['apiBaseUrl', 'https://exemplo.test']
+  ]);
+  const storage = {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key)
+  };
+  const changed = pwa.applyAssociationScope({ localStorage: storage }, 'jardim-sul');
+  assert.equal(changed, true);
+  assert.equal(values.get('activeAssociationId'), 'jardim-sul');
+  assert.equal(values.has('moradores'), false);
+  assert.equal(values.has('encomendas'), false);
+  assert.equal(values.get('authToken'), 'token-seguro');
+  assert.equal(values.get('apiBaseUrl'), 'https://exemplo.test');
 });
