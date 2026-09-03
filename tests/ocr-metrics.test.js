@@ -133,7 +133,7 @@ test('aplicação carrega coletor e painel administrativo expõe métricas de 30
   const adminJs = fs.readFileSync(path.join(__dirname, '..', 'admin.js'), 'utf8');
   assert.match(localOcr, /ocr-metrics\.js\?v=20260902-1/);
   assert.match(localOcr, /ocrMetricsLoader:\s*true/);
-  assert.match(localOcr, /version:\s*'2026-09-02\.7'/);
+  assert.match(localOcr, /version:\s*'2026-09-03\.1'/);
   assert.match(adminHtml, /Métricas do OCR/);
   assert.match(adminHtml, /ocrMetricAddressRate/);
   assert.match(adminHtml, /sem foto da etiqueta, nome, endereço ou texto reconhecido/i);
