@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { BackupManager } = require('../backup-manager');
+const { StructuredDatabase } = require('../structured-database');
 
 const ROOT = path.resolve(__dirname, '..');
 loadEnv(path.join(ROOT, '.env'));
@@ -11,11 +12,13 @@ loadEnv(path.join(ROOT, '.env'));
 const DATA_DIR = path.join(ROOT, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
+const DATABASE_FILE = path.join(DATA_DIR, 'portariasync.sqlite');
 const BACKUP_DIR = path.resolve(ROOT, process.env.BACKUP_DIR || '../portariasync-backups');
 const enabled = !/^(?:0|false|no|off)$/i.test(String(process.env.BACKUP_ENABLED || 'true'));
 const intervalHours = Number(process.env.BACKUP_INTERVAL_HOURS || 24);
 const retentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 30);
 const maxFiles = Number(process.env.BACKUP_MAX_FILES || 30);
+let database = null;
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -39,6 +42,16 @@ function readJsonFile(file, fallback) {
   }
 }
 
+function structuredSnapshot() {
+  if (!fs.existsSync(DATABASE_FILE)) return null;
+  if (!database) database = new StructuredDatabase({ file: DATABASE_FILE });
+  const state = database.readState();
+  return {
+    status: database.status(),
+    state
+  };
+}
+
 const manager = new BackupManager({
   backupDir: BACKUP_DIR,
   enabled,
@@ -46,13 +59,17 @@ const manager = new BackupManager({
   retentionDays,
   maxFiles,
   startupDelayMs: 1500,
-  snapshotProvider: async () => ({
-    source: 'vps-local-mirror',
-    files: {
-      'users.json': readJsonFile(USERS_FILE, []),
-      'app-state.json': readJsonFile(APP_STATE_FILE, { exists: false, version: 0, updatedAt: null })
-    }
-  })
+  snapshotProvider: async () => {
+    const structured = structuredSnapshot();
+    return {
+      source: structured?.state?.exists ? 'sqlite-structured-primary' : 'vps-local-mirror',
+      database: structured,
+      files: {
+        'users.json': readJsonFile(USERS_FILE, []),
+        'app-state.json': readJsonFile(APP_STATE_FILE, { exists: false, version: 0, updatedAt: null })
+      }
+    };
+  }
 });
 
 manager.start();
@@ -64,13 +81,14 @@ console.log(
 );
 console.log('Diretório protegido fora da aplicação:', BACKUP_DIR);
 
-// Mantém este daemon ativo no PM2. Os timers internos do BackupManager são unref
-// para não prender o processo principal quando o módulo for usado em testes.
 const keepAlive = setInterval(() => {}, 60 * 60 * 1000);
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     manager.stop();
+    if (database) {
+      try { database.close(); } catch (_) {}
+    }
     clearInterval(keepAlive);
     process.exit(0);
   });
