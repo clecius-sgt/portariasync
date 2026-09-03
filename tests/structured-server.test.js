@@ -7,21 +7,21 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 
-test('servidor usa SQLite como armazenamento primário com espelho JSON', () => {
+test('servidor usa SQLite como armazenamento primário com isolamento por associação', () => {
   const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
-  assert.match(source, /StructuredDatabase/);
-  assert.match(source, /portariasync\.sqlite/);
-  assert.match(source, /database\.initializeFromJsonMirror\(APP_STATE_FILE\)/);
-  assert.match(source, /database\.writeState\(state\)/);
+  assert.match(source, /AssociationManager/);
+  assert.match(source, /associations\.database\(DEFAULT_ASSOCIATION_ID\)/);
+  assert.match(source, /associations\.readState\(scoped\)/);
+  assert.match(source, /associations\.database\(scoped\)\.writeState\(clean\)/);
   assert.match(source, /database:\s*database\.status\(\)/);
   assert.match(source, /storage:\s*'sqlite'/);
-  assert.match(source, /writeJsonMirror/);
+  assert.match(source, /associations\.writeMirror/);
 });
 
-test('backup automático prioriza snapshot do banco estruturado', () => {
+test('backup automático prioriza snapshots estruturados de todas as associações', () => {
   const source = fs.readFileSync(path.join(root, 'scripts', 'backup-daemon.js'), 'utf8');
-  assert.match(source, /StructuredDatabase/);
-  assert.match(source, /sqlite-structured-primary/);
-  assert.match(source, /database:\s*structured/);
-  assert.match(source, /app-state\.json/);
+  assert.match(source, /AssociationManager/);
+  assert.match(source, /sqlite-multi-association/);
+  assert.match(source, /associations:\s*associations\.snapshotAll\(\)/);
+  assert.match(source, /users\.json/);
 });
