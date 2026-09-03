@@ -159,6 +159,22 @@
     return memory;
   }
 
+  function decorateMemoryHint(host) {
+    const modal = host?.document?.getElementById('modalSugestaoMorador');
+    const result = modal?._resultado;
+    if (!modal || !result?.memoriaConfirmada) return false;
+    const container = modal.querySelector?.('#listaSugestoesModal');
+    const first = container?.firstElementChild;
+    if (!first || first.querySelector?.('[data-recipient-memory-hint="1"]')) return false;
+    const badge = host.document.createElement('div');
+    badge.dataset.recipientMemoryHint = '1';
+    badge.style.cssText = 'display:inline-block;margin:6px 0 8px;padding:5px 8px;border-radius:999px;background:#e6f4ea;color:#137333;font-size:12px;font-weight:700;';
+    const count = Math.max(1, Number(result.memoriaConfirmacoes || 1));
+    badge.textContent = '✓ Destinatário já confirmado ' + count + (count === 1 ? ' vez' : ' vezes') + ' neste nome e endereço';
+    first.insertBefore(badge, first.lastElementChild || null);
+    return true;
+  }
+
   function install(host) {
     host = host || root;
     if (!host || host.__recipientMemoryInstalled) return !!host;
@@ -210,6 +226,20 @@
       }
     }
 
+    if (typeof host.filtrarModalSugestao === 'function') {
+      const originalFilter = host.filtrarModalSugestao;
+      if (!originalFilter.__recipientMemoryWrapped) {
+        const wrappedFilter = function(q) {
+          const value = originalFilter.call(this, q);
+          if (!normalizeName(q)) decorateMemoryHint(host);
+          return value;
+        };
+        wrappedFilter.__recipientMemoryWrapped = true;
+        wrappedFilter.__original = originalFilter;
+        host.filtrarModalSugestao = wrappedFilter;
+      }
+    }
+
     if (typeof host.montarEstadoApp === 'function') {
       const originalBuildState = host.montarEstadoApp;
       if (!originalBuildState.__recipientMemoryWrapped) {
@@ -248,7 +278,7 @@
     host.RecipientMemoryRuntime = {
       get: () => normalizeMemory(memory),
       clear: () => { memory = save(host, emptyMemory()); return memory; },
-      version: '2026-09-02.1'
+      version: '2026-09-02.2'
     };
     return true;
   }
@@ -268,8 +298,9 @@
     merge,
     load,
     save,
+    decorateMemoryHint,
     install,
-    version: '2026-09-02.1'
+    version: '2026-09-02.2'
   };
 
   if (typeof document !== 'undefined') {
