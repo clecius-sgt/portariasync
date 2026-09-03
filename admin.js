@@ -42,6 +42,77 @@
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('pt-BR');
   }
 
+  function formatDuration(value) {
+    const ms = Number(value);
+    if (!Number.isFinite(ms) || ms < 0) return '-';
+    if (ms < 1000) return Math.round(ms) + ' ms';
+    if (ms < 60000) return (ms / 1000).toFixed(ms < 10000 ? 1 : 0).replace('.', ',') + ' s';
+    return (ms / 60000).toFixed(1).replace('.', ',') + ' min';
+  }
+
+  function summarizeOcrMetrics(value, days = 30, now = new Date()) {
+    const events = Array.isArray(value?.events) ? value.events : [];
+    const cutoff = now.getTime() - Math.max(1, Number(days) || 30) * 86400000;
+    const filtered = events
+      .filter(event => event && Number.isFinite(Date.parse(event.at)) && Date.parse(event.at) >= cutoff)
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const total = filtered.length;
+    const count = predicate => filtered.filter(predicate).length;
+    const mobile = count(event => event.route === 'mobile');
+    const serverFallback = count(event => event.route === 'server-fallback');
+    const degraded = count(event => event.route === 'mobile-degraded');
+    const failed = count(event => event.failed || event.route === 'failed');
+    const addressResolved = count(event => event.addressResolved);
+    const candidateFound = count(event => event.candidateFound);
+    const pct = amount => total ? Math.round(amount * 1000 / total) / 10 : 0;
+    const average = key => {
+      const values = filtered.map(event => Number(event[key])).filter(number => Number.isFinite(number) && number >= 0);
+      return values.length ? Math.round(values.reduce((sum, number) => sum + number, 0) / values.length) : null;
+    };
+    const serverTimes = filtered
+      .filter(event => event.fallbackUsed)
+      .map(event => Number(event.serverElapsedMs))
+      .filter(number => Number.isFinite(number) && number >= 0);
+    return {
+      total,
+      mobile,
+      serverFallback,
+      degraded,
+      failed,
+      addressRate: pct(addressResolved),
+      candidateRate: pct(candidateFound),
+      fallbackRate: pct(serverFallback),
+      failureRate: pct(failed),
+      avgElapsedMs: average('elapsedMs'),
+      avgServerElapsedMs: serverTimes.length ? Math.round(serverTimes.reduce((sum, number) => sum + number, 0) / serverTimes.length) : null,
+      lastAt: filtered[0]?.at || null
+    };
+  }
+
+  function renderOcrMetrics(state) {
+    const metrics = state?.configPublica?.metricasOcr || {};
+    const summary = summarizeOcrMetrics(metrics, 30);
+    $('ocrMetricTotal').textContent = summary.total;
+    $('ocrMetricAddressRate').textContent = summary.addressRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+    $('ocrMetricFallbackRate').textContent = summary.fallbackRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+    $('ocrMetricAvgTime').textContent = formatDuration(summary.avgElapsedMs);
+    $('ocrMetricMobile').textContent = summary.mobile;
+    $('ocrMetricServer').textContent = summary.serverFallback;
+    $('ocrMetricDegraded').textContent = summary.degraded;
+    $('ocrMetricFailed').textContent = summary.failed;
+    $('ocrMetricCandidateRate').textContent = summary.candidateRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+    $('ocrMetricServerTime').textContent = formatDuration(summary.avgServerElapsedMs);
+    $('ocrMetricLastAt').textContent = summary.lastAt ? formatDate(summary.lastAt) : 'Sem dados';
+
+    if (!summary.total) {
+      $('ocrMetricsNote').textContent = 'Ainda não há leituras contabilizadas. As métricas começam a ser acumuladas a partir desta atualização do PortalSync.';
+    } else {
+      $('ocrMetricsNote').textContent = 'Nos últimos 30 dias, ' + summary.addressRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) +
+        '% das leituras reconheceram um endereço do cadastro e ' + summary.fallbackRate.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) +
+        '% precisaram do PaddleOCR. Falhas: ' + summary.failed + '.';
+    }
+  }
+
   function showLogin(message) {
     $('authGate').style.display = 'flex';
     $('adminContent').style.display = 'none';
@@ -180,6 +251,7 @@
     $('countPending').textContent = summary.pending;
     $('countDone').textContent = summary.done;
     $('countTotal').textContent = summary.packages.length;
+    renderOcrMetrics(state);
 
     $('ocrInstalled').textContent = boolText(ocr.installed);
     $('ocrRunning').textContent = ocr.running ? 'Em execução' : 'Em espera';
