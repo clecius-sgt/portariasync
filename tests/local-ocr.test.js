@@ -140,6 +140,7 @@ test('mobile OCR is the primary route when local reading is sufficient', async (
   vm.runInContext(source, context);
   const host = {
     console,
+    identificarMoradorOCR: () => ({ enderecoExtraido: 'Rua Brasilia 311' }),
     LabelCapture: { recognizeWithPaddle: async () => { serverCalls++; throw new Error('server should not run'); } },
     enviarParaOCR: async (...args) => { received = args; return 'ok'; }
   };
@@ -204,4 +205,58 @@ test('if server fallback fails, usable mobile text is retained for manual confir
   assert.equal(received[5].engine, 'tesseract-mobile');
   assert.equal(received[5].route, 'mobile-degraded');
   assert.equal(received[5].confidence, 54);
+});
+
+test('mobile OCR with an unrelated address is not accepted when recipient address was not resolved', async () => {
+  let serverCalls = 0;
+  let received;
+  const context = vm.createContext({ setTimeout, clearTimeout, console, Tesseract: {
+    async createWorker() {
+      return {
+        setParameters: async () => {},
+        recognize: async () => ({ data: { text: 'Lucimara Gonçalves Salomé\nRua Hub 999\nTBR364591209', confidence: 94 } })
+      };
+    }
+  } });
+  vm.runInContext(source, context);
+  const host = {
+    console,
+    identificarMoradorOCR: () => ({ enderecoExtraido: '' }),
+    LabelCapture: {
+      recognizeWithPaddle: async () => {
+        serverCalls++;
+        return { text: 'Lucimara Gonçalves Salomé\nRua Brasilia 311', confidence: 96, lines: [] };
+      }
+    },
+    enviarParaOCR: async (...args) => { received = args; return 'ok'; }
+  };
+  context.LocalOCR.installMobileFirstFallback(host);
+  await host.enviarParaOCR('data:image/jpeg;base64,ZmFrZQ==', { textContent: '' }, null, '', 14);
+  assert.equal(serverCalls, 1);
+  assert.equal(received[5].route, 'server-fallback');
+  assert.match(received[5].text, /Rua Brasilia 311/);
+});
+
+test('server fallback merges complementary mobile and PaddleOCR text before matching', async () => {
+  let received;
+  const context = vm.createContext({ setTimeout, clearTimeout, console, Tesseract: {
+    async createWorker() {
+      return {
+        setParameters: async () => {},
+        recognize: async () => ({ data: { text: 'Lucimara Gonçalves Salomé', confidence: 88 } })
+      };
+    }
+  } });
+  vm.runInContext(source, context);
+  const host = {
+    console,
+    identificarMoradorOCR: () => ({ enderecoExtraido: '' }),
+    LabelCapture: { recognizeWithPaddle: async () => ({ text: 'Rua Brasilia 311\nTBR364591209', confidence: 91, lines: [] }) },
+    enviarParaOCR: async (...args) => { received = args; return 'ok'; }
+  };
+  context.LocalOCR.installMobileFirstFallback(host);
+  await host.enviarParaOCR('data:image/jpeg;base64,ZmFrZQ==', { textContent: '' }, null, '', 15);
+  assert.match(received[5].text, /Lucimara Gonçalves Salomé/);
+  assert.match(received[5].text, /Rua Brasilia 311/);
+  assert.equal(received[5].mergedMobileServer, true);
 });
