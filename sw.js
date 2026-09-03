@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'portariasync-shell-v1';
+const CACHE_NAME = 'portariasync-shell-v2';
 const SHELL = [
   '/index.html',
   '/manifest.json',
@@ -12,6 +12,7 @@ const SHELL = [
   '/barcode-reader.js',
   '/recipient-review-ui.js',
   '/ocr-metrics.js',
+  '/whatsapp-client.js',
   '/icons/portariasync-192.svg',
   '/icons/portariasync-512.svg'
 ];
