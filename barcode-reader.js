@@ -223,6 +223,8 @@
     if (typeof host.detectarCodigoLivre !== 'function') return false;
     const legacyReader = host.detectarCodigoLivre;
     const wrapped = function(imageData) {
+      const status = host.document?.getElementById?.('ocrStatus');
+      if (status) status.textContent = '⏳ Lendo barcode/QR no aparelho...';
       return scan(imageData, host, legacyReader);
     };
     wrapped.__separateBarcodeReader = true;
@@ -231,7 +233,7 @@
     host.__separateBarcodeReaderInstalled = true;
     host.BarcodeReaderRuntime = {
       scan: imageData => scan(imageData, host, legacyReader),
-      version: '2026-09-02.1'
+      version: '2026-09-02.2'
     };
     return true;
   }
@@ -250,6 +252,6 @@
     zxingCandidates,
     scan,
     install,
-    version: '2026-09-02.1'
+    version: '2026-09-02.2'
   };
 });
