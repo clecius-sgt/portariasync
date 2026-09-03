@@ -47,7 +47,10 @@
   .status.neutral{background:#eef2f7;color:#475569}
   .desc{font-size:12px;color:var(--muted);line-height:1.45}
   .number{font-size:30px;font-weight:800;line-height:1;margin:4px 0 8px}
+  .number.metric-ok{color:var(--ok)}
+  .number.metric-warn{color:var(--warn)}
   .section-title{font-size:16px;margin:0 0 12px}
+  .section-sub{font-size:12px;color:var(--muted);margin:-5px 0 12px;line-height:1.45}
   .two{display:grid;grid-template-columns:1.25fr .75fr;gap:16px;margin-bottom:16px}
   .rows{border-top:1px solid var(--border)}
   .row{display:grid;grid-template-columns:1fr auto;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);align-items:center}
@@ -135,6 +138,34 @@
     <div class="card"><div class="eyebrow">Total</div><div class="number" id="countTotal">0</div><div class="desc">encomendas registradas</div></div>
   </section>
 
+  <h2 class="section-title">Métricas do OCR</h2>
+  <p class="section-sub">Últimos 30 dias. São armazenadas somente métricas técnicas agregáveis, sem foto da etiqueta, nome, endereço ou texto reconhecido.</p>
+  <section class="grid" aria-label="Métricas do OCR dos últimos 30 dias">
+    <div class="card"><div class="eyebrow">Leituras OCR</div><div class="number" id="ocrMetricTotal">0</div><div class="desc">fotografias processadas</div></div>
+    <div class="card"><div class="eyebrow">Endereço reconhecido</div><div class="number metric-ok" id="ocrMetricAddressRate">0%</div><div class="desc">leituras com endereço associado ao cadastro</div></div>
+    <div class="card"><div class="eyebrow">Fallback PaddleOCR</div><div class="number metric-warn" id="ocrMetricFallbackRate">0%</div><div class="desc">leituras que precisaram do servidor</div></div>
+    <div class="card"><div class="eyebrow">Tempo médio</div><div class="number" id="ocrMetricAvgTime">-</div><div class="desc">tempo total por leitura</div></div>
+  </section>
+
+  <section class="two">
+    <div class="card">
+      <h2 class="section-title">Detalhamento do OCR</h2>
+      <div class="rows">
+        <div class="row"><div class="label">Resolvidas somente no celular</div><div class="value" id="ocrMetricMobile">0</div></div>
+        <div class="row"><div class="label">Refinadas pelo PaddleOCR</div><div class="value" id="ocrMetricServer">0</div></div>
+        <div class="row"><div class="label">Leituras degradadas</div><div class="value" id="ocrMetricDegraded">0</div></div>
+        <div class="row"><div class="label">Falhas de leitura</div><div class="value" id="ocrMetricFailed">0</div></div>
+        <div class="row"><div class="label">Candidato de destinatário localizado</div><div class="value" id="ocrMetricCandidateRate">0%</div></div>
+        <div class="row"><div class="label">Tempo médio no PaddleOCR</div><div class="value" id="ocrMetricServerTime">-</div></div>
+        <div class="row"><div class="label">Última leitura contabilizada</div><div class="value" id="ocrMetricLastAt">Sem dados</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 class="section-title">Como interpretar</h2>
+      <div class="note" id="ocrMetricsNote">As métricas começam a ser acumuladas após esta atualização. Quanto maior o percentual de endereço reconhecido e menor a taxa de fallback, melhor está o desempenho do leitor no celular.</div>
+    </div>
+  </section>
+
   <section class="two">
     <div class="card">
       <h2 class="section-title">Diagnóstico técnico</h2>
@@ -160,6 +191,6 @@
     </div>
   </section>
 </main>
-<script src="/admin.js?v=20260902-1"></script>
+<script src="/admin.js?v=20260902-2"></script>
 </body>
 </html>
