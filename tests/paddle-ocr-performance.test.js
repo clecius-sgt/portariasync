@@ -17,3 +17,11 @@ test('PaddleOCR mantém módulos geométricos desligados e limita imagem para CP
   assert.match(source, /PADDLE_OCR_MAX_SIDE["'],\s*["']960["']/);
   assert.match(source, /text_det_limit_type=["']max["']/);
 });
+
+test('PaddleOCR executa uma inferência sintética antes de informar que está pronto', () => {
+  assert.match(source, /def warmup_engine\(engine\):/);
+  assert.match(source, /cv2\.putText\(/);
+  assert.match(source, /for _ in predict\(engine, image\):/);
+  assert.match(source, /warmup_ms = warmup_engine\(engine\)/);
+  assert.match(source, /["']warmupMs["']:\s*warmup_ms/);
+});
