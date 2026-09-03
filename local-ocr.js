@@ -353,13 +353,27 @@
     return true;
   }
 
+  function loadRecipientMemoryScript(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || host.RecipientMemory || typeof doc.createElement !== 'function') return false;
+    if (doc.querySelector && doc.querySelector('script[data-recipient-memory="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/recipient-memory.js?v=20260902-1';
+    script.async = true;
+    script.dataset.recipientMemory = '1';
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   root.LocalOCR = {
     recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mobileRecipientSufficient,
-    mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback,
-    mobileFirst: true, serverFallback: true, version: '2026-09-02.3'
+    mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback, loadRecipientMemoryScript,
+    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, version: '2026-09-02.4'
   };
 
   if (root.document && typeof root.document.addEventListener === 'function') {
+    loadRecipientMemoryScript(root);
     root.document.addEventListener('DOMContentLoaded', function() {
       installMobileFirstFallback(root);
     }, { once: true });
