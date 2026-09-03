@@ -34,7 +34,7 @@ test('PWA registra service worker somente em contexto seguro', async () => {
   };
   const result = await pwa.registerServiceWorker(host);
   assert.ok(result);
-  assert.equal(registered.url, '/sw.js?v=20260903-1');
+  assert.equal(registered.url, '/sw.js?v=20260903-2');
   assert.equal(registered.options.scope, '/');
   assert.equal(registered.options.updateViaCache, 'none');
   assert.equal(updated, 1);
@@ -51,7 +51,8 @@ test('service worker nunca intercepta API nem diretório de dados', () => {
   assert.match(source, /url\.pathname\.startsWith\('\/api\/'\).*return false/);
   assert.match(source, /url\.pathname\.startsWith\('\/data\/'\).*return false/);
   assert.match(source, /request\.method !== 'GET'/);
-  assert.match(source, /portariasync-shell-v1/);
+  assert.match(source, /portariasync-shell-v2/);
+  assert.match(source, /whatsapp-client\.js/);
 });
 
 test('ícones PWA existem nos tamanhos declarados', () => {
@@ -76,10 +77,20 @@ test('botão de instalação fica acima da tela de login e oferece caminho manua
   const indexSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const loginZ = Number(indexSource.match(/#loginScreen\s*\{[^}]*z-index:\s*(\d+)/s)?.[1] || 0);
   const buttonZ = Number(pwaSource.match(/z-index:(\d+)/)?.[1] || 0);
-  assert.equal(pwa.VERSION, '2026-09-03.2');
+  assert.equal(pwa.VERSION, '2026-09-03.3');
   assert.ok(loginZ >= 99999);
   assert.ok(buttonZ > loginZ);
   assert.match(pwaSource, /showFallbackInstall/);
   assert.match(pwaSource, /Instalar app/);
   assert.match(pwaSource, /Adicionar à tela inicial/);
+});
+
+test('PWA carrega cliente estruturado do WhatsApp sem credenciais no navegador', () => {
+  const source = fs.readFileSync(path.join(root, 'pwa.js'), 'utf8');
+  const client = fs.readFileSync(path.join(root, 'whatsapp-client.js'), 'utf8');
+  assert.match(source, /whatsapp-client\.js\?v=20260903-1/);
+  assert.match(source, /loadWhatsappClient\(host\)/);
+  assert.doesNotMatch(client, /META_WHATSAPP_ACCESS_TOKEN|ZAPI_CLIENT/);
+  assert.match(client, /\/api\/whatsapp\/package/);
+  assert.match(client, /\/api\/whatsapp\/reminder/);
 });
