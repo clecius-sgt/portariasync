@@ -73,12 +73,10 @@
     if (!doc || typeof doc.getElementById !== 'function') return false;
     const page = doc.getElementById('page-config');
     if (!page) return false;
-
     const nav = doc.getElementById('navConfig');
     if (nav) nav.textContent = '🛠 Admin';
     if (doc.getElementById('adminPanelShortcut')) return true;
     if (typeof doc.createElement !== 'function') return false;
-
     const card = doc.createElement('div');
     card.id = 'adminPanelShortcut';
     card.className = 'card';
@@ -110,6 +108,28 @@
       status.style.color = '#5f6368';
       limpar.style.display = 'none';
     }
+  }
+
+  function exportarAssinaturaCompacta(canvas, host) {
+    host = host || root;
+    if (!canvas || typeof canvas.toDataURL !== 'function') return null;
+    const doc = canvas.ownerDocument || host.document || (typeof document !== 'undefined' ? document : null);
+    if (!doc || typeof doc.createElement !== 'function') return canvas.toDataURL('image/png');
+    const originalW = Math.max(1, Number(canvas.width || 1));
+    const originalH = Math.max(1, Number(canvas.height || 1));
+    const escala = Math.min(1, 900 / originalW, 360 / originalH);
+    const out = doc.createElement('canvas');
+    out.width = Math.max(1, Math.round(originalW * escala));
+    out.height = Math.max(1, Math.round(originalH * escala));
+    const outCtx = out.getContext('2d');
+    if (!outCtx) return canvas.toDataURL('image/png');
+    outCtx.fillStyle = '#ffffff';
+    outCtx.fillRect(0, 0, out.width, out.height);
+    outCtx.drawImage(canvas, 0, 0, out.width, out.height);
+    const png = out.toDataURL('image/png');
+    let jpeg = '';
+    try { jpeg = out.toDataURL('image/jpeg', 0.65); } catch (_) {}
+    return jpeg && jpeg.length < png.length ? jpeg : png;
   }
 
   function configurarCanvasAssinaturaTelaCheia(canvas, host, initialData) {
@@ -198,7 +218,7 @@
     function preservarERedimensionar() {
       if (resizeTimer) host.clearTimeout(resizeTimer);
       resizeTimer = host.setTimeout(function() {
-        const atual = temAssinatura ? canvas.toDataURL('image/png') : null;
+        const atual = temAssinatura ? exportarAssinaturaCompacta(canvas, host) : null;
         aplicarResolucao(atual);
       }, 120);
     }
@@ -214,7 +234,7 @@
         ctx.clearRect(0, 0, rect.width, rect.height);
         temAssinatura = false;
       },
-      obter: function() { return temAssinatura ? canvas.toDataURL('image/png') : null; },
+      obter: function() { return temAssinatura ? exportarAssinaturaCompacta(canvas, host) : null; },
       destruir: function() {
         if (resizeTimer) host.clearTimeout(resizeTimer);
         if (host.removeEventListener) {
@@ -231,21 +251,13 @@
     if (!doc) return;
     const overlay = doc.getElementById('modalAssinaturaTelaCheia');
     if (overlay && overlay._signatureController) overlay._signatureController.destruir();
-
+    if (overlay && overlay._bodyOverflowAnterior !== undefined && doc.body) doc.body.style.overflow = overlay._bodyOverflowAnterior;
     if (overlay) {
       overlay.style.display = 'none';
       overlay.remove();
     }
-
     try {
       if (host.screen && host.screen.orientation && typeof host.screen.orientation.unlock === 'function') host.screen.orientation.unlock();
-    } catch (_) {}
-
-    try {
-      if (doc.fullscreenElement && typeof doc.exitFullscreen === 'function') {
-        const saida = doc.exitFullscreen();
-        if (saida && typeof saida.catch === 'function') saida.catch(function() {});
-      }
     } catch (_) {}
   }
 
@@ -272,6 +284,10 @@
         '<button id="btnLimparFullscreen" type="button" style="flex:1;padding:13px;border-radius:9px;border:1px solid #64748b;background:#fff;color:#334155;font-weight:800;font-size:15px;">🗑️ Limpar</button>' +
         '<button id="btnConcluirFullscreen" type="button" style="flex:2;padding:13px;border-radius:9px;border:none;background:#34a853;color:white;font-weight:800;font-size:16px;">✅ Concluir assinatura</button>' +
       '</div>';
+    if (doc.body) {
+      overlay._bodyOverflowAnterior = doc.body.style.overflow || '';
+      doc.body.style.overflow = 'hidden';
+    }
     (doc.body || doc.documentElement).appendChild(overlay);
 
     const canvas = doc.getElementById('canvasAssinaturaTelaCheia');
@@ -279,9 +295,7 @@
     overlay._signatureController = controller;
 
     doc.getElementById('btnLimparFullscreen').addEventListener('click', function() { controller.limpar(); });
-    doc.getElementById('btnCancelarAssinaturaFullscreen').addEventListener('click', function() {
-      void fecharAssinaturaTelaCheia(doc, host);
-    });
+    doc.getElementById('btnCancelarAssinaturaFullscreen').addEventListener('click', function() { void fecharAssinaturaTelaCheia(doc, host); });
     doc.getElementById('btnConcluirFullscreen').addEventListener('click', function() {
       if (!controller.temAssinatura()) {
         if (typeof host.toast === 'function') host.toast('⚠️ A assinatura é obrigatória para confirmar a retirada.', 5000);
@@ -293,9 +307,6 @@
       void fecharAssinaturaTelaCheia(doc, host);
     });
 
-    try {
-      if (typeof overlay.requestFullscreen === 'function') await overlay.requestFullscreen({ navigationUI: 'hide' });
-    } catch (_) {}
     try {
       if (host.screen && host.screen.orientation && typeof host.screen.orientation.lock === 'function') {
         await host.screen.orientation.lock('landscape');
@@ -333,9 +344,7 @@
       '<button id="btnLimparAssinaturaTelaCheia" type="button" style="display:none;margin:8px auto 0;border:none;background:transparent;color:#c0392b;font-size:13px;font-weight:700;cursor:pointer;">🗑️ Apagar e refazer assinatura</button>';
     canvas.parentNode.insertBefore(controls, canvas);
 
-    doc.getElementById('btnAbrirAssinaturaTelaCheia').addEventListener('click', function() {
-      void abrirAssinaturaTelaCheia(doc, host);
-    });
+    doc.getElementById('btnAbrirAssinaturaTelaCheia').addEventListener('click', function() { void abrirAssinaturaTelaCheia(doc, host); });
     doc.getElementById('btnLimparAssinaturaTelaCheia').addEventListener('click', function() {
       host._assinaturaData = null;
       try { if (typeof host.limparAssinatura === 'function') host.limparAssinatura(); } catch (_) {}
@@ -350,7 +359,6 @@
     host = host || root;
     if (!doc || !host || typeof doc.getElementById !== 'function') return false;
     if (doc.__portariaSignatureObserver) return true;
-
     const enhance = function() { aprimorarAssinaturaRetirada(doc, host); };
     enhance();
     const Observer = host.MutationObserver;
@@ -358,6 +366,38 @@
     const observer = new Observer(enhance);
     observer.observe(doc.documentElement, { childList: true, subtree: true });
     doc.__portariaSignatureObserver = observer;
+    return true;
+  }
+
+  function isQuotaError(error) {
+    return !!error && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED' || error.code === 22 || error.code === 1014);
+  }
+
+  function installRetiradaConfirmationGuard(host) {
+    host = host || root;
+    if (!host || typeof host.confirmarRetirada !== 'function') return false;
+    const original = host.confirmarRetirada;
+    if (original.__portariaGuarded) return true;
+    const wrapped = function(id) {
+      try {
+        return original.call(this, id);
+      } catch (error) {
+        if (host.console && typeof host.console.error === 'function') host.console.error('Falha ao confirmar retirada:', error);
+        if (isQuotaError(error)) {
+          try { if (typeof host.agendarSyncEstadoServidor === 'function') host.agendarSyncEstadoServidor(); } catch (_) {}
+          try { if (typeof host.fecharModalRetirada === 'function') host.fecharModalRetirada(); } catch (_) {}
+          try { if (typeof host.renderEncomendas === 'function') host.renderEncomendas(); } catch (_) {}
+          try { if (typeof host.renderDashboard === 'function') host.renderDashboard(); } catch (_) {}
+          if (typeof host.toast === 'function') host.toast('✅ Retirada confirmada. Sincronizando com o servidor...', 5000);
+          return true;
+        }
+        if (typeof host.toast === 'function') host.toast('❌ Não foi possível concluir a retirada. Tente novamente.', 6000);
+        return false;
+      }
+    };
+    wrapped.__portariaGuarded = true;
+    wrapped.__original = original;
+    host.confirmarRetirada = wrapped;
     return true;
   }
 
@@ -378,11 +418,8 @@
     updateManualCaptureUi(doc);
     const input = doc.getElementById('inputFotoOCR');
     if (!input) return false;
-
     host.fotografarEtiqueta = function() {
-      try {
-        if (typeof host.fecharCameraUnificada === 'function') host.fecharCameraUnificada();
-      } catch (_) {}
+      try { if (typeof host.fecharCameraUnificada === 'function') host.fecharCameraUnificada(); } catch (_) {}
       return triggerNativePhotoInput(doc);
     };
     return true;
@@ -396,13 +433,9 @@
     const apiBase = storage && typeof storage.getItem === 'function' ? (storage.getItem('apiBaseUrl') || '') : '';
     if (!token) throw new Error('Sessão expirada. Entre novamente no sistema.');
     if (statusEl) statusEl.textContent = 'Lendo a fotografia com PaddleOCR no servidor...';
-
     const response = await host.fetch(apiBase + '/api/ocr-paddle', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
       body: JSON.stringify({ imagemBase64: imgBase64 })
     });
     let payload = {};
@@ -423,17 +456,14 @@
     if (!host || typeof host.enviarParaOCR !== 'function') return false;
     const original = host.enviarParaOCR;
     if (original.__paddleWrapped) return true;
-
     const wrapped = async function(imgBase64, statusEl, codigoJaLido = null, transpJaLida = '', leituraId, ocrResult = null) {
-      if (ocrResult) {
-        return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, ocrResult);
-      }
+      if (ocrResult) return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, ocrResult);
       try {
         const paddleResult = await recognizeWithPaddle(imgBase64, statusEl, host);
         if (statusEl) statusEl.textContent = 'PaddleOCR concluiu a leitura. Conferindo destinatário...';
         return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, paddleResult);
       } catch (error) {
-        console.warn('PaddleOCR indisponível, usando leitor local como contingência:', error);
+        if (host.console && typeof host.console.warn === 'function') host.console.warn('PaddleOCR indisponível, usando leitor local como contingência:', error);
         if (statusEl) statusEl.textContent = 'Leitor do servidor indisponível. Tentando leitor local...';
         return original.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, null);
       }
@@ -448,10 +478,7 @@
     let stopped = false;
     updateManualCaptureUi();
     onStatus('Use Fotografar etiqueta, enquadre toda a etiqueta e confirme uma única foto.');
-    return {
-      stop() { stopped = true; },
-      get stopped() { return stopped; }
-    };
+    return { stop() { stopped = true; }, get stopped() { return stopped; } };
   }
 
   if (typeof document !== 'undefined') {
@@ -460,10 +487,10 @@
       installPaddleOcrMode(root);
       installAdminShortcut(document);
       installFullscreenSignatureMode(document, root);
+      installRetiradaConfirmationGuard(root);
     };
-    if (document.readyState === 'loading' && document.addEventListener) {
-      document.addEventListener('DOMContentLoaded', install, { once: true });
-    } else install();
+    if (document.readyState === 'loading' && document.addEventListener) document.addEventListener('DOMContentLoaded', install, { once: true });
+    else install();
   }
 
   const api = {
@@ -477,16 +504,20 @@
     recognizeWithPaddle,
     installPaddleOcrMode,
     atualizarPreviewAssinaturaTelaCheia,
+    exportarAssinaturaCompacta,
     configurarCanvasAssinaturaTelaCheia,
     abrirAssinaturaTelaCheia,
     fecharAssinaturaTelaCheia,
     aprimorarAssinaturaRetirada,
     installFullscreenSignatureMode,
+    isQuotaError,
+    installRetiradaConfirmationGuard,
     automaticCapture: false,
     nativePhotoCapture: true,
     paddleOCRServer: true,
     fullscreenLandscapeSignature: true,
-    version: '2026-09-02.7'
+    nativeFullscreenApi: false,
+    version: '2026-09-02.8'
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LabelCapture = api;
