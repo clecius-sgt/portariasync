@@ -356,12 +356,19 @@
   function loadRecipientMemoryScript(host) {
     host = host || root;
     const doc = host?.document;
-    if (!doc || host.RecipientMemory || typeof doc.createElement !== 'function') return false;
+    if (!doc || !host.RecipientMatching || typeof doc.createElement !== 'function') return false;
+    if (host.RecipientMemory) {
+      if (typeof host.RecipientMemory.install === 'function') host.RecipientMemory.install(host);
+      return true;
+    }
     if (doc.querySelector && doc.querySelector('script[data-recipient-memory="1"]')) return true;
     const script = doc.createElement('script');
-    script.src = '/recipient-memory.js?v=20260902-1';
+    script.src = '/recipient-memory.js?v=20260902-3';
     script.async = true;
     script.dataset.recipientMemory = '1';
+    script.onload = function() {
+      if (host.RecipientMemory && typeof host.RecipientMemory.install === 'function') host.RecipientMemory.install(host);
+    };
     (doc.head || doc.documentElement).appendChild(script);
     return true;
   }
@@ -369,12 +376,12 @@
   root.LocalOCR = {
     recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mobileRecipientSufficient,
     mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback, loadRecipientMemoryScript,
-    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, version: '2026-09-02.4'
+    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, version: '2026-09-02.5'
   };
 
   if (root.document && typeof root.document.addEventListener === 'function') {
-    loadRecipientMemoryScript(root);
     root.document.addEventListener('DOMContentLoaded', function() {
+      loadRecipientMemoryScript(root);
       installMobileFirstFallback(root);
     }, { once: true });
   }
