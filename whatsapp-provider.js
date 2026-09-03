@@ -20,9 +20,10 @@ class WhatsAppProvider {
 
   resolveProvider() {
     const explicit = String(this.env.WHATSAPP_PROVIDER || '').trim().toLowerCase();
-    if (explicit) return explicit;
-    if (this.env.META_WHATSAPP_ACCESS_TOKEN && this.env.META_WHATSAPP_PHONE_NUMBER_ID) return 'meta';
+    if (explicit === 'zapi' || explicit === 'meta') return explicit;
+    // PortariaSync usa Z-API como provedor padrão. Meta só é ativada de forma explícita.
     if (this.env.ZAPI_URL && this.env.ZAPI_CLIENT) return 'zapi';
+    if (explicit === 'none') return 'none';
     return 'none';
   }
 
@@ -61,7 +62,7 @@ class WhatsAppProvider {
     const result = {
       provider: this.provider,
       configured: this.configured(),
-      mode: this.provider === 'meta' ? 'official-cloud-api' : this.provider === 'zapi' ? 'legacy-zapi' : 'disabled'
+      mode: this.provider === 'meta' ? 'official-cloud-api' : this.provider === 'zapi' ? 'zapi' : 'disabled'
     };
     if (this.provider === 'meta') {
       const cfg = this.metaConfig();
