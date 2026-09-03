@@ -5,6 +5,7 @@ const path = require('node:path');
 const reader = require('../barcode-reader');
 
 const TRACKING = 'TBR364591209';
+const LUCIMARA_TRACKING = 'BR260699888470G';
 
 test('QR estruturado extrai tracking sem depender de OCR', () => {
   assert.equal(reader.extractPayload(JSON.stringify({ tracking: TRACKING }), 'qr_code'), TRACKING);
@@ -21,6 +22,25 @@ test('código de barras linear permanece separado do texto OCR', () => {
   assert.equal(item.codigo, 'AB123456789BR');
   assert.equal(item.tipo, 'barcode');
   assert.equal(item.leitorSeparado, true);
+});
+
+test('código BR da etiqueta preserva a letra final mesmo se normalizador legado a cortar', () => {
+  const host = {
+    normalizarCodigoBarras: value => String(value).match(/^BR\d+/i)?.[0] || String(value)
+  };
+  assert.equal(reader.normalizeCode(LUCIMARA_TRACKING, 'code_128', host), LUCIMARA_TRACKING);
+  assert.equal(reader.strongTrackingPattern(LUCIMARA_TRACKING), true);
+});
+
+test('correção instalada preserva letra final no campo manual e na extração OCR', () => {
+  const host = {
+    normalizarCodigoBarras: value => String(value).match(/^BR\d+/i)?.[0] || String(value),
+    extrairCodigoEtiquetaOCR: () => 'BR260699888470',
+    detectarCodigoLivre: async () => null
+  };
+  reader.install(host);
+  assert.equal(host.normalizarCodigoBarras(LUCIMARA_TRACKING), LUCIMARA_TRACKING);
+  assert.equal(host.extrairCodigoEtiquetaOCR('Código: ' + LUCIMARA_TRACKING), LUCIMARA_TRACKING);
 });
 
 test('leitor nativo de QR vence sem chamar leitor legado', async () => {
