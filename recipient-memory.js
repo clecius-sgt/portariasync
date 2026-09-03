@@ -89,6 +89,57 @@
     return memory;
   }
 
+  function clarifyCandidates(result) {
+    if (!result || typeof result !== 'object' || !Array.isArray(result.candidatos) || !result.candidatos.length) return result;
+    if (!Matching || typeof Matching.addressRelation !== 'function') return result;
+    const extractedAddress = canonicalAddress(result.enderecoExtraido || '');
+    if (!extractedAddress) return result;
+
+    const primaryId = String(result.candidatoPrincipal?.id || result.candidatos[0]?.morador?.id || '');
+    const primary = result.candidatos.find(c => String(c?.morador?.id || '') === primaryId) || result.candidatos[0];
+    const primaryHome = canonicalAddress(primary?.morador?.casa || '');
+    const labelName = String(result.nomeExtraido || '');
+    let primaryNameMatches = false;
+
+    result.candidatos = result.candidatos.map(candidate => {
+      const resident = candidate?.morador;
+      const home = canonicalAddress(resident?.casa || '');
+      if (!resident || !home) return candidate;
+      const labelRelation = Matching.addressRelation(home.parsed, extractedAddress.parsed);
+      const sameLabelAddress = labelRelation === 'exact' || labelRelation === 'incomplete';
+      const samePrimaryHome = primaryHome && Matching.addressRelation(home.parsed, primaryHome.parsed) === 'exact';
+      const exactName = !!candidate.exactName || (labelName && normalizeName(labelName) === normalizeName(resident.nome));
+      const nameScore = typeof Matching.nameEvidenceScore === 'function' ? Matching.nameEvidenceScore(labelName, resident.nome) : 0;
+      const plausibleName = !!candidate.plausible || exactName || nameScore >= 65;
+      const isPrimary = String(resident.id) === primaryId;
+
+      if (isPrimary && plausibleName && sameLabelAddress) {
+        primaryNameMatches = true;
+        return {
+          ...candidate,
+          motivos: [
+            exactName ? 'Nome completo coincide' : 'Nome lido corresponde a este morador',
+            labelRelation === 'exact' ? 'Rua e número coincidem' : 'Rua e número coincidem; complemento precisa de conferência'
+          ]
+        };
+      }
+
+      if (!isPrimary && primaryHome && samePrimaryHome && sameLabelAddress) {
+        return {
+          ...candidate,
+          motivos: [
+            'Outro morador cadastrado no mesmo endereço',
+            plausibleName ? 'Cadastro também tem nome compatível; confirme qual pessoa consta na etiqueta' : 'Nome lido na etiqueta indica o morador destacado acima'
+          ]
+        };
+      }
+      return candidate;
+    });
+
+    if (primaryNameMatches) result.destinatarioNaoCadastrado = false;
+    return result;
+  }
+
   function findEntry(memory, result) {
     memory = normalizeMemory(memory);
     const fp = fingerprint(result?.nomeExtraido || '', result?.enderecoExtraido || '');
@@ -98,6 +149,7 @@
 
   function apply(memory, result) {
     if (!result || typeof result !== 'object') return result;
+    clarifyCandidates(result);
     const entry = findEntry(memory, result);
     if (!entry) return result;
     const candidates = Array.isArray(result.candidatos) ? [...result.candidatos] : [];
@@ -119,6 +171,7 @@
     result.memoriaConfirmada = true;
     result.memoriaConfirmacoes = Number(entry.confirmations || 1);
     result.memoriaUltimaConfirmacao = entry.lastConfirmedAt || null;
+    clarifyCandidates(result);
     return result;
   }
 
@@ -278,7 +331,7 @@
     host.RecipientMemoryRuntime = {
       get: () => normalizeMemory(memory),
       clear: () => { memory = save(host, emptyMemory()); return memory; },
-      version: '2026-09-02.2'
+      version: '2026-09-02.3'
     };
     return true;
   }
@@ -293,6 +346,7 @@
     emptyMemory,
     normalizeMemory,
     record,
+    clarifyCandidates,
     findEntry,
     apply,
     merge,
@@ -300,7 +354,7 @@
     save,
     decorateMemoryHint,
     install,
-    version: '2026-09-02.2'
+    version: '2026-09-02.3'
   };
 
   if (typeof document !== 'undefined') {
