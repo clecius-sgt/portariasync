@@ -137,11 +137,11 @@
         }
       }
       if (!found) continue;
-      return lines.slice(Math.max(0, i - 3), i)
+      return lines.slice(Math.max(0, i - 2), i)
         .filter(line => {
           const norm = normalize(line);
           return norm && !address(line) && !/\b\d{5,}\b/.test(norm) &&
-            !/^(cep|codigo|rastreamento|pedido|remessa|nota|order|tentativa|bairro|cidade|estado)\b/.test(norm);
+            !/^(cep|codigo|rastreamento|pedido|remessa|nota|order|tentativa|bairro|cidade|estado|dados|transporte|transportadora|courier|service|servico|servicos)\b/.test(norm);
         })
         .join(' ');
     }
@@ -238,6 +238,17 @@
       if (best) candidates.push(best);
     }
 
+    function candidateAddressRank(candidate) {
+      if (!candidate) return -1;
+      if (candidate.safe) return 6;
+      if (candidate.relation === 'exact') return 5;
+      if (candidate.relation === 'incomplete') return 4;
+      if (candidate.relation === 'address-only') return 3;
+      if (candidate.relation === 'missing') return 1;
+      if (candidate.relation === 'conflict') return 0;
+      return 1;
+    }
+
     function candidateNameEvidence(candidate) {
       const home = address(candidate.morador.casa);
       const nearby = recipientNameText(evidenceText, home);
@@ -246,9 +257,11 @@
       return localScore * 8 + blockScore * 4 + nameEvidenceScore(evidenceText, candidate.morador.nome);
     }
 
-    const initialBest = candidates.slice().sort((a, b) => b.score - a.score)[0] || null;
-    if (initialBest) {
-      const anchorHome = address(initialBest.morador.casa);
+    const addressAnchor = candidates.slice().sort((a, b) =>
+      candidateAddressRank(b) - candidateAddressRank(a) || b.score - a.score
+    )[0] || null;
+    if (addressAnchor && candidateAddressRank(addressAnchor) >= 3) {
+      const anchorHome = address(addressAnchor.morador.casa);
       for (const resident of residents || []) {
         if (!resident?.id || candidates.some(c => String(c.morador.id) === String(resident.id))) continue;
         if (addressRelation(anchorHome, address(resident.casa)) !== 'exact') continue;
@@ -260,7 +273,7 @@
           exactName: false,
           plausible: false,
           relation: 'address-only',
-          evidenceText: initialBest.block?.address?.text || initialBest.evidenceText || '',
+          evidenceText: addressAnchor.block?.address?.text || addressAnchor.evidenceText || '',
           motivos: ['Outro morador cadastrado no mesmo endereço', 'Confirme o nome impresso na etiqueta']
         });
       }
@@ -273,6 +286,9 @@
         if (nameDifference !== 0) return nameDifference;
         if (!!a.exactName !== !!b.exactName) return a.exactName ? -1 : 1;
         if (!!a.plausible !== !!b.plausible) return a.plausible ? -1 : 1;
+      } else {
+        const addressDifference = candidateAddressRank(b) - candidateAddressRank(a);
+        if (addressDifference !== 0) return addressDifference;
       }
       return b.score - a.score || String(a.morador.id).localeCompare(String(b.morador.id));
     });
@@ -317,7 +333,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.3' };
+  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.4' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
