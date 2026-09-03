@@ -1,12 +1,21 @@
 (function(){
 'use strict';
 const API_BASE = localStorage.getItem('apiBaseUrl') || '';
+const ASSOCIATION_STATE_KEYS=['moradores','encomendas','retirantesRelacionados','auditoria','memoriaRemetentes','config','detalhesRetirada','estadoServidorVersion','ultimaSincronizacaoOk','resetEncomendasAplicado'];
 let token = localStorage.getItem('authToken') || '';
 let currentAssociationId = '';
 const $ = id => document.getElementById(id);
 
 function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function slug(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);}
+function applyAssociationScope(id){
+  const target=String(id||'').trim(); if(!target) return false;
+  const current=String(localStorage.getItem('activeAssociationId')||'');
+  if(current===target) return false;
+  ASSOCIATION_STATE_KEYS.forEach(key=>localStorage.removeItem(key));
+  localStorage.setItem('activeAssociationId',target);
+  return true;
+}
 async function api(path, options={}){
   const headers={...(options.headers||{})};
   if(options.body&&!headers['Content-Type']) headers['Content-Type']='application/json';
@@ -45,6 +54,7 @@ async function load(){
     const me=await api('/api/auth/me');
     if(!me.user?.plataforma){throw new Error('Acesso restrito ao administrador da plataforma.');}
     currentAssociationId=me.user.associacaoId||'principal';
+    applyAssociationScope(currentAssociationId);
     $('currentAssociation').textContent='Operando em: '+(me.user.associacaoNome||currentAssociationId);
     const data=await api('/api/associations');
     render(data.multiAssociation?.associations||[]);
@@ -70,6 +80,7 @@ async function switchAssociation(id,button){
   try{
     const data=await api('/api/auth/switch-association',{method:'POST',body:JSON.stringify({associacaoId:id})});
     currentAssociationId=data.user?.associacaoId||id;
+    applyAssociationScope(currentAssociationId);
     $('currentAssociation').textContent='Operando em: '+(data.user?.associacaoNome||id);
     $('message').textContent='Contexto alterado. O sistema e os relatórios agora usam somente esta associação.';
     await load();
