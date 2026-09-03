@@ -23,10 +23,10 @@ test('não usa apenas número da casa para criar associação', () => {
   assert.equal(result.candidatos.length, 0);
 });
 
-test('endereço quebrado em duas linhas ainda localiza o responsável e preserva o endereço exibido', () => {
+test('endereço quebrado em duas linhas localiza o responsável e normaliza o endereço exibido', () => {
   const result = matching.match('Carlos Augusto\nRua Londres\nI60\nBady Bassitt SP\nTBR364591209', [creusa]);
   assert.equal(result.responsaveisEndereco[0].id, '1087');
-  assert.match(result.enderecoExtraido, /Rua Londres I60/i);
+  assert.equal(result.enderecoExtraido, 'Rua Londres, 160');
 });
 
 test('responsável pelo endereço fica em primeiro mesmo quando outro cadastro combina apenas com o nome', () => {
@@ -36,7 +36,7 @@ test('responsável pelo endereço fica em primeiro mesmo quando outro cadastro c
   assert.equal(result.destinatarioNaoCadastrado, true);
   assert.equal(result.candidatoPrincipal.id, '1087');
   assert.equal(result.candidatos[0].morador.id, '1087');
-  assert.match(result.enderecoExtraido, /Rua Londres I60/i);
+  assert.equal(result.enderecoExtraido, 'Rua Londres, 160');
 });
 
 test('morador cadastrado com nome completo e endereço ruidoso pode ser identificado com segurança', () => {
