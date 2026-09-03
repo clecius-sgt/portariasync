@@ -5,9 +5,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.3';
+  const VERSION = '2026-09-03.4';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
-  const SW_URL = '/sw.js?v=20260903-2';
+  const SW_URL = '/sw.js?v=20260903-3';
   let installPrompt = null;
 
   function ensureLink(doc, rel, href, extra = {}) {
@@ -141,11 +141,31 @@
     }
     if (doc.querySelector?.('script[data-portaria-whatsapp="1"]')) return true;
     const script = doc.createElement('script');
-    script.src = '/whatsapp-client.js?v=20260903-1';
+    script.src = '/whatsapp-client.js?v=20260903-2';
     script.async = true;
     script.dataset.portariaWhatsapp = '1';
     script.onload = function() {
       if (host.PortariaSyncWhatsApp && typeof host.PortariaSyncWhatsApp.install === 'function') host.PortariaSyncWhatsApp.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
+  function loadWithdrawalPin(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.WithdrawalPin) {
+      if (typeof host.WithdrawalPin.install === 'function') host.WithdrawalPin.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-withdrawal-pin="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/withdrawal-pin.js?v=20260903-1';
+    script.async = true;
+    script.dataset.withdrawalPin = '1';
+    script.onload = function() {
+      if (host.WithdrawalPin && typeof host.WithdrawalPin.install === 'function') host.WithdrawalPin.install(host);
     };
     (doc.head || doc.documentElement).appendChild(script);
     return true;
@@ -193,13 +213,15 @@
 
     registerServiceWorker(host);
     loadWhatsappClient(host);
+    loadWithdrawalPin(host);
     host.PortariaSyncPwaRuntime = {
       version: VERSION,
       standalone: () => isStandalone(host),
       installMode: () => currentInstallMode(host),
       showInstall: () => showInstallButton(host, currentInstallMode(host)),
       register: () => registerServiceWorker(host),
-      whatsappClient: () => loadWhatsappClient(host)
+      whatsappClient: () => loadWhatsappClient(host),
+      withdrawalPin: () => loadWithdrawalPin(host)
     };
     return true;
   }
@@ -218,6 +240,7 @@
     showInstallButton,
     registerServiceWorker,
     loadWhatsappClient,
+    loadWithdrawalPin,
     install,
     version: VERSION
   };
