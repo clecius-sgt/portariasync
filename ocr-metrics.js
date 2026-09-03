@@ -12,6 +12,7 @@
   const ROUTES = new Set(['mobile', 'server-fallback', 'mobile-degraded', 'failed']);
 
   function numberOrNull(value) {
+    if (value === null || value === undefined || value === '') return null;
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? number : null;
   }
@@ -105,6 +106,7 @@
     const total = events.length;
     const mobile = events.filter(event => event.route === 'mobile').length;
     const serverFallback = events.filter(event => event.route === 'server-fallback').length;
+    const fallbackAttempts = events.filter(event => event.fallbackUsed).length;
     const degraded = events.filter(event => event.route === 'mobile-degraded').length;
     const failed = events.filter(event => event.failed).length;
     const addressResolved = events.filter(event => event.addressResolved).length;
@@ -116,6 +118,7 @@
       total,
       mobile,
       serverFallback,
+      fallbackAttempts,
       degraded,
       failed,
       addressResolved,
@@ -123,7 +126,7 @@
       confident,
       addressRate: pct(addressResolved),
       candidateRate: pct(candidateFound),
-      fallbackRate: pct(serverFallback),
+      fallbackRate: pct(fallbackAttempts),
       failureRate: pct(failed),
       avgElapsedMs: average(events, 'elapsedMs'),
       avgServerElapsedMs: average(events.filter(event => event.fallbackUsed), 'serverElapsedMs'),
@@ -152,6 +155,33 @@
     } catch (_) {}
   }
 
+  function mergeRemoteState(host, state, appState, syncWhenChanged = true) {
+    const remote = appState?.configPublica?.[STATE_KEY];
+    if (!remote || typeof remote !== 'object') return false;
+    const before = JSON.stringify(state.store);
+    state.store = save(host, merge(state.store, remote));
+    const changed = JSON.stringify(state.store) !== before;
+    if (changed && syncWhenChanged) scheduleSync(host);
+    return changed;
+  }
+
+  async function refreshRemote(host, state) {
+    try {
+      if (!host?.fetch || !host?.localStorage) return false;
+      const token = host.localStorage.getItem('authToken') || '';
+      if (!token) return false;
+      const base = host.localStorage.getItem('apiBaseUrl') || '';
+      const response = await host.fetch(base + '/api/app-state', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!response.ok) return false;
+      const appState = await response.json();
+      return mergeRemoteState(host, state, appState, true);
+    } catch (_) {
+      return false;
+    }
+  }
+
   function installStateSync(host, state) {
     if (typeof host.montarEstadoApp === 'function' && !host.montarEstadoApp.__ocrMetricsWrapped) {
       const original = host.montarEstadoApp;
@@ -169,12 +199,7 @@
       const original = host.aplicarEstadoApp;
       const wrapped = function(appState) {
         const result = original.call(this, appState);
-        const remote = appState?.configPublica?.[STATE_KEY];
-        if (remote && typeof remote === 'object') {
-          const before = JSON.stringify(state.store);
-          state.store = save(host, merge(state.store, remote));
-          if (JSON.stringify(state.store) !== before) scheduleSync(host);
-        }
+        mergeRemoteState(host, state, appState, true);
         return result;
       };
       wrapped.__ocrMetricsWrapped = true;
@@ -256,7 +281,8 @@
         throw error;
       } finally {
         if (state.active === active) state.active = null;
-        const failed = !!thrown;
+        const noUsableResult = !active.addressResolved && !active.candidateFound;
+        const failed = !!thrown || (active.serverUsed && active.serverFailed && noUsableResult);
         let route = 'mobile';
         if (failed) route = 'failed';
         else if (active.serverUsed && active.serverFailed) route = 'mobile-degraded';
@@ -298,7 +324,7 @@
       get() { return normalizeStore(state.store); },
       summarize(days = 30) { return summarize(state.store, days); },
       clear() { state.store = save(host, emptyStore()); scheduleSync(host); return state.store; },
-      version: '2026-09-02.1'
+      version: '2026-09-02.2'
     };
     host.OcrMetricsRuntime = runtime;
     installStateSync(host, state);
@@ -309,6 +335,7 @@
       installOcrProbe(host, state, runtime);
     };
     attachProbes();
+    refreshRemote(host, state);
     if (typeof host.setTimeout === 'function') {
       host.setTimeout(attachProbes, 0);
       host.setTimeout(attachProbes, 250);
@@ -330,7 +357,9 @@
     summarize,
     load,
     save,
+    mergeRemoteState,
+    refreshRemote,
     install,
-    version: '2026-09-02.1'
+    version: '2026-09-02.2'
   };
 });
