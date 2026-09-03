@@ -413,12 +413,32 @@
     return true;
   }
 
+  function loadPwaScript(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.PortariaSyncPWA) {
+      if (typeof host.PortariaSyncPWA.install === 'function') host.PortariaSyncPWA.install(host);
+      return true;
+    }
+    if (doc.querySelector && doc.querySelector('script[data-portaria-pwa="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/pwa.js?v=20260903-1';
+    script.async = true;
+    script.dataset.portariaPwa = '1';
+    script.onload = function() {
+      if (host.PortariaSyncPWA && typeof host.PortariaSyncPWA.install === 'function') host.PortariaSyncPWA.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   root.LocalOCR = {
     recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mobileRecipientSufficient,
     mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback, loadRecipientMemoryScript,
-    loadSeparateBarcodeReaderScript, loadOcrMetricsScript,
+    loadSeparateBarcodeReaderScript, loadOcrMetricsScript, loadPwaScript,
     mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, separateBarcodeReaderLoader: true, ocrMetricsLoader: true,
-    version: '2026-09-02.7'
+    pwaLoader: true, version: '2026-09-03.1'
   };
 
   if (root.document && typeof root.document.addEventListener === 'function') {
@@ -427,6 +447,7 @@
       loadRecipientMemoryScript(root);
       installMobileFirstFallback(root);
       loadOcrMetricsScript(root);
+      loadPwaScript(root);
     }, { once: true });
   }
 })(globalThis);
