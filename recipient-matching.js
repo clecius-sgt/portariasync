@@ -89,6 +89,18 @@
     return normalize(street).split(' ').filter(t => t && !/^(rua|r|avenida|av|alameda|travessa|trav|de|da|do|das|dos)$/.test(t));
   }
 
+  function canonicalEvidenceText(home) {
+    if (!home?.street || !home?.number) return '';
+    const parts = String(home.street).split(' ').filter(Boolean);
+    const kind = parts.shift() || '';
+    const kindLabel = kind === 'rua' ? 'Rua' : kind === 'avenida' ? 'Avenida' : kind === 'travessa' ? 'Travessa' : kind === 'alameda' ? 'Alameda' : kind;
+    const streetLabel = parts.map(word => word ? word[0].toUpperCase() + word.slice(1) : word).join(' ');
+    let text = (kindLabel + ' ' + streetLabel).trim() + ', ' + home.number;
+    const unitLabels = { apto: 'Apto', bloco: 'Bloco', sala: 'Sala', casa: 'Casa' };
+    for (const key of Object.keys(home.unit || {}).sort()) text += ' ' + (unitLabels[key] || key) + ' ' + home.unit[key];
+    return text.trim();
+  }
+
   function addressEvidence(text, home) {
     if (!home) return null;
     const wanted = streetTokens(home.street);
@@ -117,7 +129,7 @@
           }
         } else relation = 'incomplete';
       }
-      return { relation, text: window };
+      return { relation, text: window, canonicalText: canonicalEvidenceText(home) };
     }
     return null;
   }
@@ -230,6 +242,23 @@
         if (!best || score > best.score) best = { morador: resident, score, safe, addressOwner, exactName, plausible, relation, block, motivos: reasons };
       }
 
+      const evidence = addressEvidence(evidenceText, home);
+      if (best && evidence && best.relation === 'missing' && (best.exactName || best.plausible)) {
+        const exactNameAnywhere = normalize(resident.nome) && normalizedText.includes(' ' + normalize(resident.nome) + ' ');
+        const exactMatched = best.exactName || exactNameAnywhere;
+        const safe = exactMatched && evidence.relation === 'exact';
+        best = {
+          ...best,
+          score: Math.max(best.score, safe ? 95 : best.plausible ? 48 : best.score),
+          safe,
+          addressOwner: false,
+          exactName: exactMatched,
+          relation: evidence.relation === 'exact' ? 'address-only' : 'incomplete',
+          evidenceText: evidence.canonicalText || evidence.text,
+          motivos: [exactMatched ? 'Nome completo coincide' : 'Nome parcial ou com erro de leitura', evidence.relation === 'exact' ? 'Rua e número coincidem' : 'Endereço reconhecido; complemento precisa de conferência']
+        };
+      }
+
       if (!best) {
         const direct = addresses.find(a => ['exact', 'incomplete'].includes(addressRelation(a, home)));
         if (direct) {
@@ -238,16 +267,13 @@
         }
       }
 
-      if (!best) {
-        const evidence = addressEvidence(evidenceText, home);
-        if (evidence) {
-          const residentName = normalize(resident.nome);
-          const exactNameAnywhere = residentName && normalizedText.includes(' ' + residentName + ' ');
-          const safe = exactNameAnywhere && evidence.relation === 'exact';
-          best = { morador: resident, score: safe ? 95 : 18, safe, addressOwner: !exactNameAnywhere,
-            exactName: exactNameAnywhere, plausible: false, relation: evidence.relation === 'exact' ? 'address-only' : 'incomplete', evidenceText: evidence.text,
-            motivos: exactNameAnywhere ? ['Nome completo coincide', 'Endereço confirmado mesmo com ruído de OCR'] : ['Destinatário não cadastrado', 'Rua e número reconhecidos apesar de erro de OCR: confirme o responsável'] };
-        }
+      if (!best && evidence) {
+        const residentName = normalize(resident.nome);
+        const exactNameAnywhere = residentName && normalizedText.includes(' ' + residentName + ' ');
+        const safe = exactNameAnywhere && evidence.relation === 'exact';
+        best = { morador: resident, score: safe ? 95 : 18, safe, addressOwner: !exactNameAnywhere,
+          exactName: exactNameAnywhere, plausible: false, relation: evidence.relation === 'exact' ? 'address-only' : 'incomplete', evidenceText: evidence.canonicalText || evidence.text,
+          motivos: exactNameAnywhere ? ['Nome completo coincide', 'Rua e número coincidem'] : ['Destinatário não cadastrado', 'Rua e número reconhecidos apesar de erro de OCR: confirme o responsável'] };
       }
       if (best) candidates.push(best);
     }
@@ -315,12 +341,24 @@
     const sameHomeResidents = best
       ? candidates.filter(c => c !== best && addressRelation(address(best.morador.casa), address(c.morador.casa)) === 'exact')
       : [];
+
+    if (best && sameHomeResidents.length > 0) {
+      const bestHome = address(best.morador.casa);
+      const bestAddressEvidence = addressEvidence(evidenceText, bestHome);
+      if (bestAddressEvidence && candidateNameEvidence(best) > 0) {
+        best.motivos = [best.exactName ? 'Nome completo coincide' : 'Nome lido corresponde a este morador', 'Rua e número coincidem'];
+        for (const candidate of sameHomeResidents) {
+          candidate.motivos = ['Outro morador cadastrado no mesmo endereço', 'Nome lido na etiqueta indica o morador destacado acima'];
+        }
+      }
+    }
+
     const blockKeys = new Set(blocks.filter(b => b.address).map(b => normalize(b.name) + '|' + b.address.street + '|' + b.address.number));
     const multipleBlocks = blockKeys.size > 1;
     const confident = safe.length === 1 && !competing && !multipleBlocks && sameHomeResidents.length === 0;
     const principal = confident ? safe[0] : (best || safe[0] || uniqueAddressOwner);
     const chosenBlock = principal?.block || best?.block || blocks.find(b => b.address) || blocks.find(b => b.explicit) || blocks[0];
-    const addressText = chosenBlock?.address?.text || uniqueAddressOwner?.block?.address?.text || uniqueAddressOwner?.evidenceText || addresses[0]?.text || best?.evidenceText || '';
+    const addressText = chosenBlock?.address?.text || principal?.evidenceText || best?.evidenceText || uniqueAddressOwner?.block?.address?.text || uniqueAddressOwner?.evidenceText || addresses[0]?.text || '';
     const rankedCandidates = candidates;
 
     let reason = 'Não foi possível cruzar nome completo e endereço. Confira a etiqueta.';
@@ -347,7 +385,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.5' };
+  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, recipientNameText, extract, match, version: '2026-09-03.6' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
