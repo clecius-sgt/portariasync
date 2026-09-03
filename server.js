@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { PaddleOcrClient } = require('./paddle-ocr-client');
+const { WhatsAppProvider } = require('./whatsapp-provider');
 
 loadEnv();
 
@@ -11,14 +12,13 @@ const PUBLIC_DIR = __dirname;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
-const ZAPI_URL = process.env.ZAPI_URL || '';
-const ZAPI_CLIENT = process.env.ZAPI_CLIENT || '';
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000);
 const sessions = new Map();
 const paddleOcr = new PaddleOcrClient({ baseDir: __dirname });
+const whatsapp = new WhatsAppProvider();
 
 ensureUsersFile();
 
@@ -111,10 +111,12 @@ function serveStatic(req, res) {
 
 async function handleApi(req, res) {
   if (req.method === 'GET' && req.url === '/api/health') {
+    const whats = whatsapp.status();
     sendJson(res, 200, {
       ok: true,
       supabase: !!(SUPABASE_URL && SUPABASE_SERVICE_KEY),
-      whatsapp: !!(ZAPI_URL && ZAPI_CLIENT),
+      whatsapp: whats.configured,
+      whatsappProvider: whats,
       paddleocr: paddleOcr.status()
     });
     return;
@@ -275,32 +277,49 @@ async function handleApi(req, res) {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/api/whatsapp/status') {
+    requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    sendJson(res, 200, { ok: true, whatsapp: whatsapp.status() });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/whatsapp/package') {
+    requireRole(req, ['admin', 'porteiro']);
+    const body = await readJson(req);
+    const result = await whatsapp.sendPackage(body);
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/whatsapp/reminder') {
+    requireRole(req, ['admin', 'porteiro']);
+    const body = await readJson(req);
+    const result = await whatsapp.sendReminder(body);
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/whatsapp/test') {
+    requireRole(req, ['admin']);
+    const { numero } = await readJson(req);
+    const result = await whatsapp.sendTest(numero);
+    sendJson(res, 200, result);
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/whatsapp/text') {
     requireRole(req, ['admin', 'porteiro']);
-    requireWhatsapp();
     const { numero, mensagem } = await readJson(req);
-    const destino = normalizarTelefone(numero);
-    const resp = await fetch(`${ZAPI_URL}/send-text`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Client-Token': ZAPI_CLIENT },
-      body: JSON.stringify({ phone: destino, message: mensagem })
-    });
-    sendJson(res, resp.ok ? 200 : 502, { ok: resp.ok, status: resp.status });
+    const result = await whatsapp.sendText(numero, mensagem);
+    sendJson(res, 200, result);
     return;
   }
 
   if (req.method === 'POST' && req.url === '/api/whatsapp/image') {
     requireRole(req, ['admin', 'porteiro']);
-    requireWhatsapp();
     const { numero, imagemBase64, caption } = await readJson(req, 10 * 1024 * 1024);
-    const destino = normalizarTelefone(numero);
-    const base64 = String(imagemBase64 || '').replace(/^data:image\/\w+;base64,/, '');
-    const resp = await fetch(`${ZAPI_URL}/send-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Client-Token': ZAPI_CLIENT },
-      body: JSON.stringify({ phone: destino, image: 'data:image/jpeg;base64,' + base64, caption })
-    });
-    sendJson(res, resp.ok ? 200 : 502, { ok: resp.ok, status: resp.status });
+    const result = await whatsapp.sendImage(numero, imagemBase64, caption);
+    sendJson(res, 200, result);
     return;
   }
 
@@ -310,14 +329,6 @@ async function handleApi(req, res) {
 function requireSupabase() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     const err = new Error('Supabase não configurado no .env');
-    err.statusCode = 503;
-    throw err;
-  }
-}
-
-function requireWhatsapp() {
-  if (!ZAPI_URL || !ZAPI_CLIENT) {
-    const err = new Error('WhatsApp/Z-API não configurado no .env');
     err.statusCode = 503;
     throw err;
   }
@@ -484,11 +495,6 @@ async function supabaseRequest(endpoint, options = {}) {
   if (!resp.ok) throw new Error(`Supabase respondeu ${resp.status}`);
   const text = await resp.text();
   return text ? JSON.parse(text) : null;
-}
-
-function normalizarTelefone(numero) {
-  const num = String(numero || '').replace(/\D/g, '');
-  return num.startsWith('55') ? num : '55' + num;
 }
 
 function readJson(req, limit = 2 * 1024 * 1024) {
