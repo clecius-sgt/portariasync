@@ -29,6 +29,14 @@
     return /^[A-Z0-9][A-Z0-9._-]{5,63}$/i.test(text) && /\d/.test(text);
   }
 
+  function strongTrackingPattern(value) {
+    const text = String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+    return /^(?:TBR|TBA)\d{8,}$/.test(text)
+      || /^[A-Z]{2}\d{9}BR$/.test(text)
+      || /^BR\d{8,}$/.test(text)
+      || /^(?:SHP|RR|AA|RA|SB)[A-Z0-9]{6,}$/.test(text);
+  }
+
   function objectValue(value) {
     if (!value || typeof value !== 'object') return '';
     const entries = Object.entries(value);
@@ -94,38 +102,148 @@
     return value;
   }
 
-  function score(raw, format, origin, host) {
+  function carrierForCode(code, host) {
+    try {
+      if (host && typeof host.detectarTransportadora === 'function') {
+        return String(host.detectarTransportadora(code) || '').trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function structuredTrackingPayload(raw, format) {
+    const text = String(raw || '').trim();
+    if (!text || !['qr', '2d'].includes(typeForFormat(format))) return false;
+    if (/^https?:\/\//i.test(text)) return !!urlValue(text);
+    try { return !!objectValue(JSON.parse(text)); } catch (_) { return false; }
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, Number(value) || 0));
+  }
+
+  function score(raw, format, origin, host, meta = {}) {
+    const code = normalizeCode(raw, format, host);
+    if (!code) return -1;
     let value = 0;
     try {
       if (host && typeof host.pontuarCodigoBarras === 'function') {
         const external = Number(host.pontuarCodigoBarras(raw, canonicalFormat(format), origin));
-        if (Number.isFinite(external)) value = external;
+        if (Number.isFinite(external)) value += clamp(external, -30, 80);
       }
     } catch (_) {}
-    if (looksLikeTracking(extractPayload(raw, format))) value += 40;
+
+    const carrier = carrierForCode(code, host);
+    const strong = strongTrackingPattern(code);
+    const structured = structuredTrackingPayload(raw, format);
+    const numeric = /^\d+$/.test(code);
+    const formatKey = canonicalFormat(format);
+
+    if (carrier) value += 140;
+    if (strong) value += 90;
+    if (structured) value += 65;
+    if (looksLikeTracking(code)) value += 25;
     if (typeForFormat(format) === 'qr') value += 8;
-    if (/nativo/i.test(origin)) value += 4;
+    if (/nativo/i.test(origin)) value += 6;
+    value += clamp(meta.readability, 0, 35);
+
+    // DANFE, boletos e códigos de produto são úteis como fallback, mas não devem vencer
+    // um código de rastreio do remetente/transportadora apenas por serem mais longos.
+    if (!carrier && !strong && numeric && code.length >= 20) value -= 35;
+    if (!carrier && !strong && /danfe/i.test(origin)) value -= 45;
+    if (!carrier && !strong && /^(ean|upc)/.test(formatKey)) value -= 30;
     return value;
   }
 
-  function candidate(raw, format, origin, host) {
+  function candidate(raw, format, origin, host, meta = {}) {
     const codigo = normalizeCode(raw, format, host);
     if (!codigo) return null;
+    const transportadora = carrierForCode(codigo, host);
+    const rastreioForte = strongTrackingPattern(codigo);
     return {
       codigo,
       raw: String(raw || ''),
       formato: canonicalFormat(format) || 'unknown',
       tipo: typeForFormat(format),
       origem: origin,
-      score: score(raw, format, origin, host),
+      score: score(raw, format, origin, host, meta),
+      legibilidade: clamp(meta.readability, 0, 35),
+      transportadora,
+      vinculoRemetente: !!transportadora || rastreioForte || structuredTrackingPayload(raw, format),
+      rastreioForte,
       leitorSeparado: true
     };
   }
 
+  function aggregateCandidates(candidates) {
+    const groups = new Map();
+    for (const item of (candidates || []).filter(Boolean)) {
+      const key = String(item.codigo || '').toUpperCase();
+      if (!key) continue;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          ...item,
+          votosLeitura: 0,
+          origensLeitura: [],
+          formatosLidos: [],
+          melhorScoreIndividual: Number(item.score || 0),
+          legibilidade: Number(item.legibilidade || 0)
+        });
+      }
+      const group = groups.get(key);
+      group.votosLeitura += 1;
+      if (!group.origensLeitura.includes(item.origem)) group.origensLeitura.push(item.origem);
+      if (!group.formatosLidos.includes(item.formato)) group.formatosLidos.push(item.formato);
+      group.legibilidade = Math.max(group.legibilidade, Number(item.legibilidade || 0));
+      if (Number(item.score || 0) > group.melhorScoreIndividual) {
+        const keepVotes = group.votosLeitura;
+        const keepOrigins = group.origensLeitura;
+        const keepFormats = group.formatosLidos;
+        Object.assign(group, item);
+        group.votosLeitura = keepVotes;
+        group.origensLeitura = keepOrigins;
+        group.formatosLidos = keepFormats;
+        group.melhorScoreIndividual = Number(item.score || 0);
+      }
+      group.vinculoRemetente = group.vinculoRemetente || !!item.vinculoRemetente;
+      group.transportadora = group.transportadora || item.transportadora || '';
+      group.rastreioForte = group.rastreioForte || !!item.rastreioForte;
+    }
+
+    return [...groups.values()].map(group => {
+      const consensusBonus = Math.max(0, group.votosLeitura - 1) * 22;
+      const sourceBonus = Math.max(0, group.origensLeitura.length - 1) * 5;
+      const remitenteBonus = group.vinculoRemetente ? 35 : 0;
+      return {
+        ...group,
+        score: Number(group.melhorScoreIndividual || 0) + consensusBonus + sourceBonus + remitenteBonus
+      };
+    });
+  }
+
   function choose(candidates) {
-    return (candidates || []).filter(Boolean).sort((a, b) =>
-      Number(b.score || 0) - Number(a.score || 0) || String(b.codigo || '').length - String(a.codigo || '').length
-    )[0] || null;
+    const aggregated = aggregateCandidates(candidates).sort((a, b) =>
+      Number(!!b.vinculoRemetente) - Number(!!a.vinculoRemetente)
+      || Number(b.score || 0) - Number(a.score || 0)
+      || Number(b.votosLeitura || 0) - Number(a.votosLeitura || 0)
+      || Number(b.legibilidade || 0) - Number(a.legibilidade || 0)
+      || String(b.codigo || '').length - String(a.codigo || '').length
+    );
+    const best = aggregated[0] || null;
+    if (!best) return null;
+    best.criterioEscolha = best.transportadora
+      ? 'codigo-remetente-transportadora'
+      : best.vinculoRemetente
+        ? 'codigo-rastreio-remetente'
+        : 'codigo-mais-legivel';
+    best.alternativasDetectadas = aggregated.slice(1).map(item => ({
+      codigo: item.codigo,
+      formato: item.formato,
+      score: item.score,
+      votosLeitura: item.votosLeitura,
+      vinculoRemetente: !!item.vinculoRemetente
+    }));
+    return best;
   }
 
   function loadImage(dataUrl, host) {
@@ -136,6 +254,17 @@
       image.onerror = () => reject(new Error('Imagem inválida para barcode/QR'));
       image.src = dataUrl;
     });
+  }
+
+  function nativeReadability(item, image) {
+    const box = item?.boundingBox;
+    const imageArea = Number(image?.naturalWidth || image?.width || 0) * Number(image?.naturalHeight || image?.height || 0);
+    const boxArea = Number(box?.width || 0) * Number(box?.height || 0);
+    if (imageArea > 0 && boxArea > 0) {
+      const ratio = boxArea / imageArea;
+      return clamp(10 + ratio * 220, 10, 35);
+    }
+    return 18;
   }
 
   async function nativeCandidates(imageData, host) {
@@ -153,7 +282,18 @@
     const image = await loadImage(imageData, host);
     const detector = new host.BarcodeDetector({ formats });
     const detections = await detector.detect(image);
-    return (detections || []).map(item => candidate(item.rawValue, item.format, 'barcode/QR nativo', host)).filter(Boolean);
+    return (detections || []).map(item => candidate(item.rawValue, item.format, 'barcode/QR nativo', host, {
+      readability: nativeReadability(item, image)
+    })).filter(Boolean);
+  }
+
+  function zxingReadability(origin) {
+    const value = String(origin || '').toLowerCase();
+    if (/codigo-central|codigo-horizontal/.test(value)) return 28;
+    if (/topo|meio|inferior/.test(value)) return 23;
+    if (/etiqueta-inteira/.test(value)) return 15;
+    if (/danfe/.test(value)) return 14;
+    return 20;
   }
 
   async function zxingCandidates(imageData, host) {
@@ -180,7 +320,8 @@
           const raw = decoded.getText();
           const formatNumber = decoded.getBarcodeFormat();
           const format = canonicalFormat(host.ZXing.BarcodeFormat[formatNumber] || formatNumber);
-          const item = candidate(raw, format, 'barcode/QR ZXing ' + String(variant.origem || 'imagem'), host);
+          const origin = 'barcode/QR ZXing ' + String(variant.origem || 'imagem');
+          const item = candidate(raw, format, origin, host, { readability: zxingReadability(origin) });
           if (item) results.push(item);
         } catch (_) {
           // Uma região sem código decodificável é normal.
@@ -209,7 +350,8 @@
             tipo: legacy.tipo || 'barcode',
             origem: legacy.origem || 'barcode/QR compatibilidade',
             leitorSeparado: true,
-            legado: true
+            legado: true,
+            criterioEscolha: 'fallback-compatibilidade'
           };
         }
       } catch (_) {}
@@ -243,10 +385,16 @@
     if (!host || host.__separateBarcodeReaderInstalled) return !!host;
     if (typeof host.detectarCodigoLivre !== 'function') return false;
     const legacyReader = host.detectarCodigoLivre;
-    const wrapped = function(imageData) {
+    const wrapped = async function(imageData) {
       const status = host.document?.getElementById?.('ocrStatus');
-      if (status) status.textContent = '⏳ Lendo barcode/QR no aparelho...';
-      return scan(imageData, host, legacyReader);
+      if (status) status.textContent = '⏳ Lendo códigos da etiqueta e escolhendo o código da encomenda...';
+      const result = await scan(imageData, host, legacyReader);
+      if (status && result) {
+        status.textContent = result.criterioEscolha === 'codigo-mais-legivel'
+          ? '✅ Código da encomenda escolhido pela melhor legibilidade.'
+          : '✅ Código de rastreio do remetente/transportadora identificado.';
+      }
+      return result;
     };
     wrapped.__separateBarcodeReader = true;
     wrapped.__legacy = legacyReader;
@@ -254,7 +402,7 @@
     host.__separateBarcodeReaderInstalled = true;
     host.BarcodeReaderRuntime = {
       scan: imageData => scan(imageData, host, legacyReader),
-      version: '2026-09-02.3'
+      version: '2026-09-02.4'
     };
     return true;
   }
@@ -265,15 +413,20 @@
     canonicalFormat,
     typeForFormat,
     looksLikeTracking,
+    strongTrackingPattern,
     extractPayload,
     normalizeCode,
+    carrierForCode,
+    structuredTrackingPayload,
+    score,
     candidate,
+    aggregateCandidates,
     choose,
     nativeCandidates,
     zxingCandidates,
     scan,
     loadReviewUi,
     install,
-    version: '2026-09-02.3'
+    version: '2026-09-02.4'
   };
 });
