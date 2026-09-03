@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 import traceback
 
 PREFIX = "PORTARIASYNC_JSON:"
@@ -12,6 +13,13 @@ DEFAULT_REC_MODEL = "latin_PP-OCRv5_mobile_rec"
 def emit(payload):
     sys.stdout.write(PREFIX + json.dumps(payload, ensure_ascii=False) + "\n")
     sys.stdout.flush()
+
+
+def env_enabled(name, default=True):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() not in {"0", "false", "off", "no"}
 
 
 def find_ocr_payload(value):
@@ -52,6 +60,15 @@ def recognition_model():
     return os.environ.get("PADDLE_OCR_REC_MODEL", DEFAULT_REC_MODEL)
 
 
+def predict(engine, image):
+    return engine.predict(
+        image,
+        text_rec_score_thresh=float(os.environ.get("PADDLE_OCR_MIN_SCORE", "0.25")),
+        text_det_limit_side_len=int(os.environ.get("PADDLE_OCR_MAX_SIDE", "960")),
+        text_det_limit_type="max",
+    )
+
+
 def build_engine():
     from paddleocr import PaddleOCR
 
@@ -69,13 +86,36 @@ def build_engine():
     )
 
 
-def recognize(engine, image_path):
-    predictions = engine.predict(
-        image_path,
-        text_rec_score_thresh=float(os.environ.get("PADDLE_OCR_MIN_SCORE", "0.25")),
-        text_det_limit_side_len=int(os.environ.get("PADDLE_OCR_MAX_SIDE", "960")),
-        text_det_limit_type="max",
+def warmup_engine(engine):
+    """Executa uma inferência real e descartável para aquecer detector e reconhecedor."""
+    if not env_enabled("PADDLE_OCR_PREWARM", True):
+        return 0
+
+    import cv2
+    import numpy as np
+
+    image = np.full((180, 900, 3), 255, dtype=np.uint8)
+    cv2.putText(
+        image,
+        "PORTARIA 123",
+        (35, 115),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        2.2,
+        (0, 0, 0),
+        5,
+        cv2.LINE_AA,
     )
+
+    started = time.perf_counter()
+    # Percorrer toda a resposta força a primeira execução dos kernels de detecção
+    # e reconhecimento. A imagem fica somente em memória e nunca é persistida.
+    for _ in predict(engine, image):
+        pass
+    return int(round((time.perf_counter() - started) * 1000))
+
+
+def recognize(engine, image_path):
+    predictions = predict(engine, image_path)
     texts = []
     scores = []
     for prediction in predictions:
@@ -115,12 +155,15 @@ def recognize(engine, image_path):
 def main():
     try:
         engine = build_engine()
+        warmup_ms = warmup_engine(engine)
         emit({
             "type": "ready",
             "engine": "paddleocr",
             "version": os.environ.get("PADDLE_OCR_VERSION", "PP-OCRv5"),
             "detModel": detector_model(),
             "recModel": recognition_model(),
+            "warmupEnabled": env_enabled("PADDLE_OCR_PREWARM", True),
+            "warmupMs": warmup_ms,
         })
     except Exception as exc:
         emit({"type": "startup_error", "error": str(exc), "detail": traceback.format_exc(limit=4)})
