@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { PaddleOcrClient } = require('./paddle-ocr-client');
 const { WhatsAppProvider } = require('./whatsapp-provider');
+const { StructuredDatabase } = require('./structured-database');
 
 loadEnv();
 
@@ -15,12 +16,18 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const APP_STATE_FILE = path.join(DATA_DIR, 'app-state.json');
+const DATABASE_FILE = path.join(DATA_DIR, 'portariasync.sqlite');
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000);
 const sessions = new Map();
 const paddleOcr = new PaddleOcrClient({ baseDir: __dirname });
 const whatsapp = new WhatsAppProvider();
+const database = new StructuredDatabase({ file: DATABASE_FILE });
 
 ensureUsersFile();
+const databaseStartup = database.initializeFromJsonMirror(APP_STATE_FILE);
+if (databaseStartup.migrated) {
+  console.log('Banco estruturado inicializado a partir de data/app-state.json.');
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -58,6 +65,7 @@ server.listen(PORT, () => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     paddleOcr.stop();
+    try { database.close(); } catch (_) {}
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000).unref();
   });
@@ -117,8 +125,15 @@ async function handleApi(req, res) {
       supabase: !!(SUPABASE_URL && SUPABASE_SERVICE_KEY),
       whatsapp: whats.configured,
       whatsappProvider: whats,
+      database: database.status(),
       paddleocr: paddleOcr.status()
     });
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/database/status') {
+    requireRole(req, ['admin', 'supervisor']);
+    sendJson(res, 200, { ok: true, database: database.status() });
     return;
   }
 
@@ -212,7 +227,7 @@ async function handleApi(req, res) {
       resetEncomendasAt
     };
     await writeAppState(state);
-    sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt });
+    sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt, storage: 'sqlite' });
     return;
   }
 
@@ -352,18 +367,39 @@ function writeUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
+function writeJsonMirror(state, storage) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = APP_STATE_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ ...state, storage: storage || 'sqlite+json-mirror' }, null, 2));
+  fs.renameSync(tmp, APP_STATE_FILE);
+}
+
 async function readAppState() {
+  try {
+    const local = database.readState();
+    if (local.exists) return local;
+  } catch (e) {
+    console.warn('Banco SQLite indisponível para leitura, tentando espelhos:', e.message);
+  }
+
   if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
     try {
       const rows = await supabaseRequest('/rest/v1/app_state?id=eq.main&select=*');
       if (Array.isArray(rows) && rows.length > 0) {
-        return {
+        const remote = {
           exists: true,
           ...(rows[0].state || {}),
           version: Number(rows[0].version || rows[0].state?.version || 0),
-          updatedAt: rows[0].updated_at || rows[0].state?.updatedAt || null,
-          storage: 'supabase'
+          updatedAt: rows[0].updated_at || rows[0].state?.updatedAt || null
         };
+        try {
+          database.writeState(remote);
+          writeJsonMirror(remote, 'sqlite+supabase+json-mirror');
+          return database.readState();
+        } catch (mirrorError) {
+          console.warn('Não foi possível espelhar o estado remoto no SQLite:', mirrorError.message);
+        }
+        return { ...remote, storage: 'supabase' };
       }
     } catch (e) {
       console.warn('App state no Supabase indisponível, usando arquivo local:', e.message);
@@ -371,10 +407,19 @@ async function readAppState() {
   }
 
   if (!fs.existsSync(APP_STATE_FILE)) return { exists: false, version: 0, updatedAt: null, storage: 'local' };
-  return { exists: true, ...JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8')), storage: 'local' };
+  const state = JSON.parse(fs.readFileSync(APP_STATE_FILE, 'utf8'));
+  try {
+    database.writeState(state);
+    return database.readState();
+  } catch (e) {
+    console.warn('Não foi possível importar o espelho JSON no SQLite:', e.message);
+    return { exists: true, ...state, storage: 'local' };
+  }
 }
 
 async function writeAppState(state) {
+  database.writeState(state);
+
   let savedRemote = false;
   if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
     try {
@@ -390,14 +435,11 @@ async function writeAppState(state) {
       });
       savedRemote = true;
     } catch (e) {
-      console.warn('Não foi possível gravar app_state no Supabase, salvando local:', e.message);
+      console.warn('Não foi possível gravar app_state no Supabase; SQLite permanece como fonte principal:', e.message);
     }
   }
 
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  const tmp = APP_STATE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ ...state, storage: savedRemote ? 'supabase+local' : 'local' }, null, 2));
-  fs.renameSync(tmp, APP_STATE_FILE);
+  writeJsonMirror(state, savedRemote ? 'sqlite+supabase+json-mirror' : 'sqlite+json-mirror');
   return savedRemote;
 }
 
