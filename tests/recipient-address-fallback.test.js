@@ -57,3 +57,13 @@ test('quando dois moradores compartilham o mesmo endereço, mostra ambos para co
   assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
   assert.match(result.motivo, /mais de um morador cadastrado neste endereço/i);
 });
+
+test('mesmo quando OCR lê apenas o primeiro nome, destinatário aparece antes dos demais moradores do endereço', () => {
+  const clecius = { id: '1006', nome: 'Clecius Eduardo Alves Salome', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const lucimara = { id: '1006b', nome: 'Lucimara Gonçalves Salomé', casa: 'QD01LT11 - Rua Brasilia, 311' };
+  const result = matching.match('Lucimara\nRua Brasilia 311\nTBR364591209', [clecius, lucimara]);
+
+  assert.equal(result.confiavel, false);
+  assert.equal(result.morador, null);
+  assert.deepEqual(result.candidatos.slice(0, 2).map(c => c.morador.id), ['1006b', '1006']);
+});
