@@ -140,6 +140,19 @@
     return result;
   }
 
+  function installMatcherNormalizer() {
+    if (!Matching || typeof Matching.match !== 'function') return false;
+    const current = Matching.match;
+    if (current.__recipientMemoryNormalized) return true;
+    const wrapped = function(text, residents) {
+      return clarifyCandidates(current.call(this, text, residents));
+    };
+    wrapped.__recipientMemoryNormalized = true;
+    wrapped.__original = current;
+    Matching.match = wrapped;
+    return true;
+  }
+
   function findEntry(memory, result) {
     memory = normalizeMemory(memory);
     const fp = fingerprint(result?.nomeExtraido || '', result?.enderecoExtraido || '');
@@ -232,6 +245,7 @@
     host = host || root;
     if (!host || host.__recipientMemoryInstalled) return !!host;
     if (!Matching || typeof Matching.address !== 'function') return false;
+    installMatcherNormalizer();
     host.__recipientMemoryInstalled = true;
     let memory = load(host);
 
@@ -331,10 +345,12 @@
     host.RecipientMemoryRuntime = {
       get: () => normalizeMemory(memory),
       clear: () => { memory = save(host, emptyMemory()); return memory; },
-      version: '2026-09-02.3'
+      version: '2026-09-02.4'
     };
     return true;
   }
+
+  installMatcherNormalizer();
 
   const api = {
     STORAGE_KEY,
@@ -347,6 +363,7 @@
     normalizeMemory,
     record,
     clarifyCandidates,
+    installMatcherNormalizer,
     findEntry,
     apply,
     merge,
@@ -354,7 +371,7 @@
     save,
     decorateMemoryHint,
     install,
-    version: '2026-09-02.3'
+    version: '2026-09-02.4'
   };
 
   if (typeof document !== 'undefined') {
