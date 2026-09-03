@@ -5,9 +5,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.2';
+  const VERSION = '2026-09-03.3';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
-  const SW_URL = '/sw.js?v=20260903-1';
+  const SW_URL = '/sw.js?v=20260903-2';
   let installPrompt = null;
 
   function ensureLink(doc, rel, href, extra = {}) {
@@ -84,8 +84,6 @@
       button.type = 'button';
       button.textContent = 'Instalar PortariaSync';
       button.setAttribute('aria-label', 'Instalar PortariaSync neste aparelho');
-      // A tela de login usa z-index 99999. O botão precisa ficar acima dela para ser visível
-      // antes do login, que é justamente quando o operador costuma instalar o aplicativo.
       button.style.cssText = 'position:fixed;right:14px;bottom:max(14px,env(safe-area-inset-bottom));z-index:100500;border:0;border-radius:999px;padding:12px 17px;background:#c9a84c;color:#1a1f3a;font:800 13px Inter,Segoe UI,Arial,sans-serif;box-shadow:0 5px 18px rgba(0,0,0,.32);cursor:pointer;';
       doc.body.appendChild(button);
     }
@@ -133,6 +131,26 @@
     }
   }
 
+  function loadWhatsappClient(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.PortariaSyncWhatsApp) {
+      if (typeof host.PortariaSyncWhatsApp.install === 'function') host.PortariaSyncWhatsApp.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-portaria-whatsapp="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/whatsapp-client.js?v=20260903-1';
+    script.async = true;
+    script.dataset.portariaWhatsapp = '1';
+    script.onload = function() {
+      if (host.PortariaSyncWhatsApp && typeof host.PortariaSyncWhatsApp.install === 'function') host.PortariaSyncWhatsApp.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     host = host || root;
     const doc = host?.document;
@@ -174,12 +192,14 @@
     }
 
     registerServiceWorker(host);
+    loadWhatsappClient(host);
     host.PortariaSyncPwaRuntime = {
       version: VERSION,
       standalone: () => isStandalone(host),
       installMode: () => currentInstallMode(host),
       showInstall: () => showInstallButton(host, currentInstallMode(host)),
-      register: () => registerServiceWorker(host)
+      register: () => registerServiceWorker(host),
+      whatsappClient: () => loadWhatsappClient(host)
     };
     return true;
   }
@@ -197,6 +217,7 @@
     currentInstallMode,
     showInstallButton,
     registerServiceWorker,
+    loadWhatsappClient,
     install,
     version: VERSION
   };
