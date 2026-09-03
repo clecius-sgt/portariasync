@@ -111,6 +111,35 @@
     return !needsDetailPass(text, confidence);
   }
 
+  function mobileRecipientSufficient(result, host) {
+    if (!mobileResultSufficient(result)) return false;
+    host = host || root;
+    if (!host || typeof host.identificarMoradorOCR !== 'function') return true;
+    try {
+      const match = host.identificarMoradorOCR(String(result?.text || ''));
+      return !!String(match?.enderecoExtraido || '').trim();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function mergeOcrResults(mobileResult, serverResult) {
+    const mobileText = String(mobileResult?.text || '').trim();
+    const serverText = String(serverResult?.text || '').trim();
+    const text = mergeTexts(serverText, mobileText);
+    const lines = text ? text.split(/\r?\n/).map(line => line.trim()).filter(Boolean) : [];
+    const mobileConfidence = Number(mobileResult?.confidence || 0);
+    const serverConfidence = Number(serverResult?.confidence || 0);
+    return {
+      ...(serverResult || {}),
+      text,
+      lines,
+      confidence: Math.max(mobileConfidence, serverConfidence),
+      engine: 'paddleocr',
+      mergedMobileServer: !!(mobileText && serverText)
+    };
+  }
+
   async function recognizePass(worker, image, pageSegMode, stage) {
     progressStage = stage || 'principal';
     await worker.setParameters({ tessedit_pageseg_mode: String(pageSegMode), preserve_interword_spaces: '1' });
@@ -253,7 +282,7 @@
           route: 'mobile',
           elapsedMs: Date.now() - startedAt
         };
-        if (mobileResultSufficient(mobileResult)) {
+        if (mobileRecipientSufficient(mobileResult, host)) {
           if (statusEl) statusEl.textContent = 'Leitura concluída no celular. Conferindo destinatário...';
           return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, mobileResult);
         }
@@ -268,12 +297,13 @@
       if (serverReader) {
         try {
           if (statusEl) statusEl.textContent = mobileResult
-            ? 'Leitura mobile incompleta. Refinando no servidor...'
+            ? 'Leitura mobile sem endereço confirmado. Refinando no servidor...'
             : 'OCR mobile indisponível. Lendo no servidor...';
           const serverStartedAt = Date.now();
           const serverResult = await serverReader(imgBase64, statusEl, host);
+          const combined = mergeOcrResults(mobileResult, serverResult);
           const enriched = {
-            ...serverResult,
+            ...combined,
             engine: 'paddleocr',
             route: 'server-fallback',
             fallbackUsed: true,
@@ -281,7 +311,7 @@
             mobileElapsedMs: mobileResult ? Number(mobileResult.elapsedMs || 0) : null,
             serverElapsedMs: Date.now() - serverStartedAt
           };
-          if (statusEl) statusEl.textContent = 'PaddleOCR refinou a leitura. Conferindo destinatário...';
+          if (statusEl) statusEl.textContent = 'PaddleOCR refinou a leitura. Conferindo destinatário e endereço...';
           return core.call(this, imgBase64, statusEl, codigoJaLido, transpJaLida, leituraId, enriched);
         } catch (serverError) {
           if (host.console && typeof host.console.warn === 'function') host.console.warn('Fallback PaddleOCR indisponível:', serverError);
@@ -324,9 +354,9 @@
   }
 
   root.LocalOCR = {
-    recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mergeTexts,
-    detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback,
-    mobileFirst: true, serverFallback: true, version: '2026-09-02.2'
+    recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mobileRecipientSufficient,
+    mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback,
+    mobileFirst: true, serverFallback: true, version: '2026-09-02.3'
   };
 
   if (root.document && typeof root.document.addEventListener === 'function') {
