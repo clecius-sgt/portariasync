@@ -373,14 +373,36 @@
     return true;
   }
 
+  function loadSeparateBarcodeReaderScript(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.SeparateBarcodeReader) {
+      if (typeof host.SeparateBarcodeReader.install === 'function') host.SeparateBarcodeReader.install(host);
+      return true;
+    }
+    if (doc.querySelector && doc.querySelector('script[data-separate-barcode-reader="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/barcode-reader.js?v=20260902-1';
+    script.async = true;
+    script.dataset.separateBarcodeReader = '1';
+    script.onload = function() {
+      if (host.SeparateBarcodeReader && typeof host.SeparateBarcodeReader.install === 'function') host.SeparateBarcodeReader.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   root.LocalOCR = {
     recognize, recognizeFast, prepare, formatError, progressText, needsDetailPass, mobileResultSufficient, mobileRecipientSufficient,
     mergeTexts, mergeOcrResults, detailRegions, canCropImage, createDetailCrop, installMobileFirstFallback, loadRecipientMemoryScript,
-    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, version: '2026-09-02.5'
+    loadSeparateBarcodeReaderScript,
+    mobileFirst: true, serverFallback: true, recipientMemoryLoader: true, separateBarcodeReaderLoader: true, version: '2026-09-02.6'
   };
 
   if (root.document && typeof root.document.addEventListener === 'function') {
     root.document.addEventListener('DOMContentLoaded', function() {
+      loadSeparateBarcodeReaderScript(root);
       loadRecipientMemoryScript(root);
       installMobileFirstFallback(root);
     }, { once: true });
