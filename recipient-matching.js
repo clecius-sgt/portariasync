@@ -22,6 +22,27 @@
     return row[b.length] <= 1;
   }
 
+  function nameEvidenceScore(text, residentName) {
+    const words = normalize(text).split(' ').filter(Boolean);
+    const tokens = nameTokens(residentName);
+    if (!words.length || !tokens.length) return 0;
+    const available = [...words];
+    let hits = 0;
+    let firstNameHit = false;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      const index = available.findIndex(word => word === token || similar(word, token));
+      if (index >= 0) {
+        hits++;
+        if (i === 0) firstNameHit = true;
+        available.splice(index, 1);
+      }
+    }
+    const full = normalize(residentName);
+    const phraseHit = full && (' ' + normalize(text) + ' ').includes(' ' + full + ' ');
+    return hits * 20 + (firstNameHit ? 25 : 0) + (phraseHit ? 100 : 0);
+  }
+
   function normalizeHouseNumber(value) {
     const cleaned = String(value || '').toLowerCase().replace(/[^0-9a-z]/g, '');
     const suffixMatch = cleaned.match(/[a-hj-km-np-z]$/);
@@ -194,7 +215,15 @@
       if (best) candidates.push(best);
     }
 
-    candidates.sort((a, b) => b.score - a.score || String(a.morador.id).localeCompare(String(b.morador.id)));
+    const nameEvidenceById = new Map(candidates.map(c => [String(c.morador.id), nameEvidenceScore(evidenceText, c.morador.nome)]));
+    candidates.sort((a, b) => {
+      const sameHome = addressRelation(address(a.morador.casa), address(b.morador.casa)) === 'exact';
+      if (sameHome) {
+        const nameDifference = (nameEvidenceById.get(String(b.morador.id)) || 0) - (nameEvidenceById.get(String(a.morador.id)) || 0);
+        if (nameDifference !== 0) return nameDifference;
+      }
+      return b.score - a.score || String(a.morador.id).localeCompare(String(b.morador.id));
+    });
     const safe = candidates.filter(c => c.safe);
     const best = candidates[0];
     const addressOwners = candidates.filter(c => c.addressOwner && ['exact', 'incomplete', 'address-only'].includes(c.relation));
@@ -237,7 +266,7 @@
     };
   }
 
-  const api = { normalize, nameTokens, similar, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-03.1' };
+  const api = { normalize, nameTokens, similar, nameEvidenceScore, normalizeHouseNumber, address, addressRelation, addressEvidence, extract, match, version: '2026-09-03.2' };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.RecipientMatching = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
