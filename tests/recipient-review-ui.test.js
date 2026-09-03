@@ -66,5 +66,5 @@ test('leitor já carregado pela aplicação também carrega a tela de conferênc
   const source = fs.readFileSync(path.join(__dirname, '..', 'barcode-reader.js'), 'utf8');
   assert.match(source, /recipient-review-ui\.js\?v=20260902-1/);
   assert.match(source, /loadReviewUi\(host\)/);
-  assert.match(source, /version:\s*'2026-09-02\.4'/);
+  assert.match(source, /version:\s*'2026-09-02\.5'/);
 });
