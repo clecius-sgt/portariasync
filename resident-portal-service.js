@@ -59,6 +59,7 @@ class ResidentPortalService {
     this.readState = options.readState;
     this.writeState = options.writeState;
     this.sendText = options.sendText;
+    this.defaultAssociationId = String(options.defaultAssociationId || 'principal');
     this.now = options.now || (() => Date.now());
     this.randomBytes = options.randomBytes || (size => crypto.randomBytes(size));
     this.codeGenerator = options.codeGenerator || (() => String(100000 + (this.randomBytes(4).readUInt32BE(0) % 900000)));
@@ -90,23 +91,26 @@ class ResidentPortalService {
     this.cleanup();
     return {
       enabled: true,
+      multiAssociation: true,
       otpTtlMinutes: Math.round(this.otpTtlMs / 60000),
       sessionHours: Math.round(this.sessionTtlMs / 3600000),
       activeSessions: this.sessions.size
     };
   }
 
-  async requestCode(phone, ip = '') {
+  async requestCode(phone, ip = '', associationId = this.defaultAssociationId) {
     this.cleanup();
     const informed = digits(phone);
     if (informed.length < 10 || informed.length > 15) throw statusError('Informe um número de WhatsApp válido.', 400);
+    const scopedAssociationId = String(associationId || this.defaultAssociationId);
 
     const challengeId = this.token(16);
-    const state = await this.readState();
+    const state = await this.readState(scopedAssociationId);
     const residents = (state?.moradores || []).filter(item => phonesMatch(item?.whats, informed));
     const residentIds = residents.map(item => String(item.id));
     const challenge = {
       id: challengeId,
+      associationId: scopedAssociationId,
       phone: informed,
       residentIds,
       codeHash: null,
@@ -114,7 +118,7 @@ class ResidentPortalService {
       attempts: 0
     };
 
-    const cooldownKey = informed + '|' + String(ip || '');
+    const cooldownKey = scopedAssociationId + '|' + informed + '|' + String(ip || '');
     const blockedUntil = this.cooldowns.get(cooldownKey) || 0;
     if (blockedUntil > this.now()) throw statusError('Aguarde um minuto antes de solicitar outro código.', 429);
     this.cooldowns.set(cooldownKey, this.now() + this.cooldownMs);
@@ -133,7 +137,7 @@ class ResidentPortalService {
     return {
       ok: true,
       challengeId,
-      message: 'Se o número estiver cadastrado, enviaremos um código de acesso pelo WhatsApp.'
+      message: 'Se o número estiver cadastrado nesta associação, enviaremos um código de acesso pelo WhatsApp.'
     };
   }
 
@@ -152,6 +156,7 @@ class ResidentPortalService {
     const token = this.token(32);
     this.sessions.set(token, {
       token,
+      associationId: challenge.associationId || this.defaultAssociationId,
       residentIds: [...challenge.residentIds],
       phone: challenge.phone,
       createdAt: this.now(),
@@ -170,11 +175,12 @@ class ResidentPortalService {
 
   async profile(token) {
     const session = this.requireSession(token);
-    const state = await this.readState();
+    const state = await this.readState(session.associationId || this.defaultAssociationId);
     const residents = (state?.moradores || []).filter(item => session.residentIds.includes(String(item?.id || '')));
     const packages = (state?.encomendas || []).filter(item => session.residentIds.includes(String(item?.moradorId || '')));
     return {
       ok: true,
+      association: state?.associacao || { id: session.associationId || this.defaultAssociationId },
       phone: maskPhone(session.phone),
       residents: residents.map(item => ({ id: String(item.id), nome: item.nome || '', casa: item.casa || '' })),
       summary: {
@@ -187,16 +193,17 @@ class ResidentPortalService {
 
   async packages(token) {
     const session = this.requireSession(token);
-    const state = await this.readState();
+    const state = await this.readState(session.associationId || this.defaultAssociationId);
     const packages = (state?.encomendas || [])
       .filter(item => session.residentIds.includes(String(item?.moradorId || '')))
       .map(cleanPackage);
-    return { ok: true, packages };
+    return { ok: true, associationId: session.associationId || this.defaultAssociationId, packages };
   }
 
   async resendPin(token, packageId) {
     const session = this.requireSession(token);
-    const state = await this.readState();
+    const associationId = session.associationId || this.defaultAssociationId;
+    const state = await this.readState(associationId);
     const item = (state?.encomendas || []).find(pkg => String(pkg?.id || '') === String(packageId || ''));
     if (!item || !session.residentIds.includes(String(item.moradorId || ''))) throw statusError('Encomenda não encontrada.', 404);
     if (item.status !== 'pendente') throw statusError('Esta encomenda não está mais pendente.', 409);
@@ -222,7 +229,7 @@ class ResidentPortalService {
     delete item.pinRetiradaFalhaEnvioEm;
     state.version = Date.now();
     state.updatedAt = new Date(this.now()).toISOString();
-    await this.writeState(state);
+    await this.writeState(associationId, state);
     return { ok: true, message: 'PIN reenviado para o WhatsApp cadastrado.' };
   }
 
