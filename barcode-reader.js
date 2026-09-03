@@ -19,12 +19,25 @@
     return 'barcode';
   }
 
+  function exactTrackingToken(value) {
+    const text = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+    return /^[A-Z]{2}\d{9,20}[A-Z]{1,2}$/.test(text) ? text : '';
+  }
+
+  function restoreTrailingSuffix(text, normalized) {
+    const current = String(normalized || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!current) return current;
+    const candidates = String(text || '').toUpperCase().match(/\b[A-Z]{2}\d{9,20}[A-Z]{1,2}\b/g) || [];
+    const restored = candidates.find(code => code.startsWith(current) && code.length > current.length && code.length - current.length <= 2);
+    return restored || current;
+  }
+
   function looksLikeTracking(value) {
     const text = String(value || '').trim().replace(/\s+/g, '');
     if (!text || text.length < 6 || text.length > 64) return false;
     if (/^(?:TBR|TBA)\d{8,}$/i.test(text)) return true;
-    if (/^[A-Z]{2}\d{9}BR$/i.test(text)) return true;
-    if (/^BR\d{8,}$/i.test(text)) return true;
+    if (/^[A-Z]{2}\d{9,20}[A-Z]{1,2}$/i.test(text)) return true;
+    if (/^BR\d{8,20}[A-Z]{0,2}$/i.test(text)) return true;
     if (/^\d{8,40}$/.test(text)) return true;
     return /^[A-Z0-9][A-Z0-9._-]{5,63}$/i.test(text) && /\d/.test(text);
   }
@@ -32,8 +45,8 @@
   function strongTrackingPattern(value) {
     const text = String(value || '').trim().replace(/\s+/g, '').toUpperCase();
     return /^(?:TBR|TBA)\d{8,}$/.test(text)
-      || /^[A-Z]{2}\d{9}BR$/.test(text)
-      || /^BR\d{8,}$/.test(text)
+      || /^[A-Z]{2}\d{9,20}[A-Z]{1,2}$/.test(text)
+      || /^BR\d{8,20}[A-Z]{0,2}$/.test(text)
       || /^(?:SHP|RR|AA|RA|SB)[A-Z0-9]{6,}$/.test(text);
   }
 
@@ -93,10 +106,17 @@
   function normalizeCode(raw, format, host) {
     const payload = extractPayload(raw, format);
     if (!payload) return '';
+
+    // Etiquetas de transportadoras podem terminar em uma ou duas letras. O normalizador
+    // legado tinha uma regra BR + dígitos que cortava esse sufixo, como BR260699888470G.
+    const exact = exactTrackingToken(payload);
+    if (exact) return exact;
+
     let value = payload;
     try {
       if (host && typeof host.normalizarCodigoBarras === 'function') value = host.normalizarCodigoBarras(payload);
     } catch (_) {}
+    value = restoreTrailingSuffix(payload, value);
     value = String(value || '').trim().replace(/\s+/g, '');
     if (!looksLikeTracking(value)) return '';
     return value;
@@ -147,8 +167,6 @@
     if (/nativo/i.test(origin)) value += 6;
     value += clamp(meta.readability, 0, 35);
 
-    // DANFE, boletos e códigos de produto são úteis como fallback, mas não devem vencer
-    // um código de rastreio do remetente/transportadora apenas por serem mais longos.
     if (!carrier && !strong && numeric && code.length >= 20) value -= 35;
     if (!carrier && !strong && /danfe/i.test(origin)) value -= 45;
     if (!carrier && !strong && /^(ean|upc)/.test(formatKey)) value -= 30;
@@ -324,7 +342,6 @@
           const item = candidate(raw, format, origin, host, { readability: zxingReadability(origin) });
           if (item) results.push(item);
         } catch (_) {
-          // Uma região sem código decodificável é normal.
         } finally {
           try { if (typeof reader.reset === 'function') reader.reset(); } catch (_) {}
         }
@@ -359,6 +376,36 @@
     return null;
   }
 
+  function installNormalizationFix(host) {
+    host = host || root;
+    if (!host) return false;
+
+    if (typeof host.normalizarCodigoBarras === 'function' && !host.normalizarCodigoBarras.__preserveTrackingSuffix) {
+      const originalNormalize = host.normalizarCodigoBarras;
+      const wrappedNormalize = function(value) {
+        const exact = exactTrackingToken(value);
+        if (exact) return exact;
+        const normalized = originalNormalize.call(this, value);
+        return restoreTrailingSuffix(value, normalized);
+      };
+      wrappedNormalize.__preserveTrackingSuffix = true;
+      wrappedNormalize.__original = originalNormalize;
+      host.normalizarCodigoBarras = wrappedNormalize;
+    }
+
+    if (typeof host.extrairCodigoEtiquetaOCR === 'function' && !host.extrairCodigoEtiquetaOCR.__preserveTrackingSuffix) {
+      const originalExtract = host.extrairCodigoEtiquetaOCR;
+      const wrappedExtract = function(text) {
+        const normalized = originalExtract.call(this, text);
+        return restoreTrailingSuffix(text, normalized);
+      };
+      wrappedExtract.__preserveTrackingSuffix = true;
+      wrappedExtract.__original = originalExtract;
+      host.extrairCodigoEtiquetaOCR = wrappedExtract;
+    }
+    return true;
+  }
+
   function loadReviewUi(host) {
     host = host || root;
     const doc = host?.document;
@@ -382,6 +429,7 @@
   function install(host) {
     host = host || root;
     loadReviewUi(host);
+    installNormalizationFix(host);
     if (!host || host.__separateBarcodeReaderInstalled) return !!host;
     if (typeof host.detectarCodigoLivre !== 'function') return false;
     const legacyReader = host.detectarCodigoLivre;
@@ -402,7 +450,7 @@
     host.__separateBarcodeReaderInstalled = true;
     host.BarcodeReaderRuntime = {
       scan: imageData => scan(imageData, host, legacyReader),
-      version: '2026-09-02.4'
+      version: '2026-09-02.5'
     };
     return true;
   }
@@ -412,6 +460,8 @@
     STRUCTURED_KEYS,
     canonicalFormat,
     typeForFormat,
+    exactTrackingToken,
+    restoreTrailingSuffix,
     looksLikeTracking,
     strongTrackingPattern,
     extractPayload,
@@ -425,8 +475,9 @@
     nativeCandidates,
     zxingCandidates,
     scan,
+    installNormalizationFix,
     loadReviewUi,
     install,
-    version: '2026-09-02.4'
+    version: '2026-09-02.5'
   };
 });
