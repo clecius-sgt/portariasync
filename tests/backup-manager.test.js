@@ -84,11 +84,12 @@ test('status informa periodicidade, retenção e último backup sem expor conte�
   assert.equal(JSON.stringify(status).includes('segredo'), false);
 });
 
-test('daemon usa backup diário protegido e não inclui arquivo .env no snapshot', () => {
+test('daemon usa backup diário protegido fora da aplicação e não inclui .env no snapshot', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'backup-daemon.js'), 'utf8');
   assert.match(source, /BACKUP_INTERVAL_HOURS\s*\|\|\s*24/);
   assert.match(source, /BACKUP_RETENTION_DAYS\s*\|\|\s*30/);
   assert.match(source, /BACKUP_MAX_FILES\s*\|\|\s*30/);
+  assert.match(source, /\.\.\/portariasync-backups/);
   assert.match(source, /'users\.json'/);
   assert.match(source, /'app-state\.json'/);
   assert.doesNotMatch(source, /files:\s*\{[^}]*\.env/s);
