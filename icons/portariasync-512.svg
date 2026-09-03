@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="PortariaSync">
+  <rect width="512" height="512" rx="102" fill="#1a1f3a"/>
+  <rect x="101" y="125" width="310" height="262" rx="32" fill="#ffffff"/>
+  <path d="M133 168h246v42H133z" fill="#c9a84c"/>
+  <path d="M155 244h96v96h-96zM277 244h80v32h-80zM277 308h80v32h-80z" fill="#1a1f3a"/>
+  <path d="M190 276h28v32h-28z" fill="#ffffff"/>
+  <path d="M141 387h230" stroke="#c9a84c" stroke-width="22" stroke-linecap="round"/>
+</svg>
