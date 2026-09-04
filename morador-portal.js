@@ -10,6 +10,7 @@ let token = localStorage.getItem(tokenKey) || '';
 let packageCache = new Map();
 let occurrenceCache = new Map();
 let occurrenceByPackage = new Map();
+let occurrenceFeatureAvailable = true;
 
 const $ = id => document.getElementById(id);
 
@@ -44,6 +45,20 @@ async function api(path, options={}){
     throw err;
   }
   return data || {};
+}
+
+async function loadOccurrenceData(){
+  try{
+    const data = await api('/api/morador/ocorrencias');
+    occurrenceFeatureAvailable = true;
+    return data;
+  }catch(error){
+    if(error.status === 404){
+      occurrenceFeatureAvailable = false;
+      return {occurrences:[],summary:{total:0,abertas:0,concluidas:0},unavailable:true};
+    }
+    throw error;
+  }
 }
 
 async function requestCode(){
@@ -99,7 +114,7 @@ function authorizationHtml(item){
 }
 
 function occurrenceActionsHtml(item){
-  if(item.status === 'cancelado') return '';
+  if(!occurrenceFeatureAvailable || item.status === 'cancelado') return '';
   const latest = occurrenceByPackage.get(String(item.id));
   if(latest && ACTIVE_OCCURRENCE_STATUSES.has(latest.status)) {
     return `<div class="actions"><button class="warning" data-occurrence-detail="${esc(latest.id)}">Acompanhar ${esc(latest.occurrenceNumber)}</button></div>`;
@@ -135,6 +150,11 @@ function renderOccurrences(data){
     const key = String(item.packageId || '');
     if(key && !occurrenceByPackage.has(key)) occurrenceByPackage.set(key, item);
   }
+  if(data?.unavailable){
+    message('occurrenceSummary','', 'info');
+    $('occurrenceList').innerHTML = '<div class="empty">A Central de Ocorrências está sendo atualizada. As demais funções do portal continuam disponíveis.</div>';
+    return;
+  }
   const summary = data?.summary || {};
   if(summary.total){
     message('occurrenceSummary', `${summary.abertas || 0} em andamento · ${summary.concluidas || 0} concluída(s) · ${summary.total || 0} total`, 'info');
@@ -165,7 +185,7 @@ async function loadPortal(){
     const [me, data, occurrenceData] = await Promise.all([
       api('/api/morador/me'),
       api('/api/morador/encomendas'),
-      api('/api/morador/ocorrencias')
+      loadOccurrenceData()
     ]);
     hide('loginCard'); hide('codeCard'); show('portal');
     const associationName = me.association?.nome || me.association?.name || '';
@@ -308,6 +328,10 @@ function occurrenceTypeOptions(item){
 
 function openOccurrenceDialog(id){
   const item = packageCache.get(String(id));
+  if(!occurrenceFeatureAvailable){
+    alert('A Central de Ocorrências ainda está sendo atualizada. Tente novamente em alguns instantes.');
+    return;
+  }
   if(!item || item.status === 'cancelado') return;
   closeOccurrenceDialog();
   const modal = document.createElement('div');
@@ -412,6 +436,7 @@ async function logout(){
   try{ if(token) await api('/api/morador/logout',{method:'POST',body:'{}'}); }catch(_){}
   token=''; challengeId=''; localStorage.removeItem(tokenKey);
   packageCache = new Map(); occurrenceCache = new Map(); occurrenceByPackage = new Map();
+  occurrenceFeatureAvailable = true;
   hide('portal'); hide('codeCard'); show('loginCard');
   $('phone').value=''; $('otp').value='';
   message('loginMsg','Sessão encerrada.','ok');
