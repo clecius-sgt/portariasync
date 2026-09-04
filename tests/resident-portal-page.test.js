@@ -25,3 +25,12 @@ test('frontend usa endpoints isolados do portal do morador', () => {
   assert.match(js, /reenviar-pin/);
   assert.match(js, /Authorization = 'Resident '/);
 });
+
+test('portal permite criar e cancelar autorização digital para terceiro', () => {
+  assert.match(html, /autorizar digitalmente outra pessoa/i);
+  assert.match(js, /Autorizar outra pessoa a retirar/);
+  assert.match(js, /\/autorizacao/);
+  assert.match(js, /validadeHoras/);
+  assert.match(js, /Código de autorização/);
+  assert.match(js, /Cancelar autorização/);
+});
