@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.5';
+  const VERSION = '2026-09-03.6';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
   const SW_URL = '/sw.js?v=20260903-3';
   const ASSOCIATION_STATE_KEYS = [
@@ -210,6 +210,26 @@
     return true;
   }
 
+  function loadWithdrawalAuthorization(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.WithdrawalAuthorization) {
+      if (typeof host.WithdrawalAuthorization.install === 'function') host.WithdrawalAuthorization.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-withdrawal-authorization="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/withdrawal-authorization.js?v=20260903-1';
+    script.async = true;
+    script.dataset.withdrawalAuthorization = '1';
+    script.onload = function() {
+      if (host.WithdrawalAuthorization && typeof host.WithdrawalAuthorization.install === 'function') host.WithdrawalAuthorization.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     host = host || root;
     const doc = host?.document;
@@ -254,6 +274,7 @@
     registerServiceWorker(host);
     loadWhatsappClient(host);
     loadWithdrawalPin(host);
+    loadWithdrawalAuthorization(host);
     host.PortariaSyncPwaRuntime = {
       version: VERSION,
       standalone: () => isStandalone(host),
@@ -262,6 +283,7 @@
       register: () => registerServiceWorker(host),
       whatsappClient: () => loadWhatsappClient(host),
       withdrawalPin: () => loadWithdrawalPin(host),
+      withdrawalAuthorization: () => loadWithdrawalAuthorization(host),
       associationScope: id => applyAssociationScope(host, id)
     };
     return true;
@@ -285,6 +307,7 @@
     registerServiceWorker,
     loadWhatsappClient,
     loadWithdrawalPin,
+    loadWithdrawalAuthorization,
     install,
     version: VERSION
   };
