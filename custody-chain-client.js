@@ -6,11 +6,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(root) {
   'use strict';
 
-  const VERSION = '2026-09-03.1';
+  const VERSION = '2026-09-03.2';
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'
     }[c]));
   }
 
@@ -21,8 +21,19 @@
     return Array.isArray(root?.encomendas) ? root.encomendas : [];
   }
 
-  function findPackage(id) {
-    return packageList().find(item => String(item?.id || '') === String(id || '')) || null;
+  function findPackage(id, list = packageList()) {
+    return (list || []).find(item => String(item?.id || '') === String(id || '')) || null;
+  }
+
+  async function authoritativePackage(id) {
+    try {
+      if (typeof root?.apiFetch === 'function') {
+        const state = await root.apiFetch('/api/app-state');
+        const found = findPackage(id, state?.encomendas || []);
+        if (found) return found;
+      }
+    } catch (_) {}
+    return findPackage(id);
   }
 
   function formatDate(value) {
@@ -63,15 +74,25 @@
     if (modal) modal.remove();
   }
 
-  function open(id) {
-    const pkg = findPackage(id);
+  async function open(id) {
+    let pkg = findPackage(id);
+    close();
+    const doc = root?.document;
+    if (!doc?.body) return false;
+
+    const loading = doc.createElement('div');
+    loading.id = 'custodyChainModal';
+    loading.style.cssText = 'position:fixed;inset:0;background:rgba(15,18,36,.72);z-index:101000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    loading.innerHTML = '<div style="background:white;border-radius:14px;padding:22px 28px;color:#1a1f3a;font-weight:700;">Carregando histórico protegido...</div>';
+    doc.body.appendChild(loading);
+
+    pkg = await authoritativePackage(id) || pkg;
+    close();
     if (!pkg) {
       root?.toast?.('Encomenda não localizada.', 4000);
       return false;
     }
-    close();
-    const doc = root?.document;
-    if (!doc?.body) return false;
+
     const chain = Array.isArray(pkg.cadeiaCustodia) ? pkg.cadeiaCustodia : [];
     const meta = pkg.cadeiaCustodiaMeta || {};
     const modal = doc.createElement('div');
@@ -89,7 +110,7 @@
         </div>
       </div>
       <div style="padding:20px;">
-        ${chain.length ? chain.map(eventHtml).join('') : '<div style="padding:28px;text-align:center;color:#64748b;">A cadeia será criada automaticamente na próxima sincronização desta encomenda.</div>'}
+        ${chain.length ? chain.map(eventHtml).join('') : '<div style="padding:28px;text-align:center;color:#64748b;">A cadeia ainda não foi inicializada para este registro.</div>'}
       </div>
       <div style="padding:0 20px 20px;color:#64748b;font-size:11px;line-height:1.5;">Os eventos são acrescentados em sequência e vinculados por hash. Correções geram novos registros em vez de apagar o histórico anterior.</div>
     </div>`;
@@ -123,7 +144,7 @@
     return true;
   }
 
-  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, open, close, install, version: VERSION };
+  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, install, version: VERSION };
 
   if (typeof document !== 'undefined') {
     const start = () => install(root);
