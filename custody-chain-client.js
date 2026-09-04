@@ -6,7 +6,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(root) {
   'use strict';
 
-  const VERSION = '2026-09-04.2';
+  const VERSION = '2026-09-04.3';
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -164,6 +164,26 @@
     return true;
   }
 
+  function loadOccurrenceClient(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.OccurrenceUI) {
+      if (typeof host.OccurrenceUI.install === 'function') host.OccurrenceUI.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-occurrence-ui="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/occurrence-client.js?v=20260904-1';
+    script.async = true;
+    script.dataset.occurrenceUi = '1';
+    script.onload = function() {
+      if (host.OccurrenceUI && typeof host.OccurrenceUI.install === 'function') host.OccurrenceUI.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     root = host || root;
     if (!root || root.__custodyChainUiInstalled) return !!root;
@@ -183,10 +203,11 @@
     try { root.renderEncomendas?.(); } catch (_) {}
     loadPackageAlerts(root);
     loadWithdrawalReceipt(root);
+    loadOccurrenceClient(root);
     return true;
   }
 
-  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, loadPackageAlerts, loadWithdrawalReceipt, install, version: VERSION };
+  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, loadPackageAlerts, loadWithdrawalReceipt, loadOccurrenceClient, install, version: VERSION };
 
   if (typeof document !== 'undefined') {
     const start = () => install(root);
