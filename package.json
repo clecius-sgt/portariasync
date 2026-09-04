@@ -10,6 +10,7 @@
     "db:migrate": "node scripts/migrate-structured-db.js --apply",
     "receipts:init": "node scripts/initialize-withdrawal-receipts.js",
     "receipts:daemon": "node scripts/withdrawal-receipt-daemon.js",
+    "occurrences:init": "node scripts/initialize-occurrences.js",
     "postinstall": "node scripts/prepare-vision.js",
     "prepare:vision": "node scripts/prepare-vision.js",
     "prestart": "node scripts/prepare-vision.js"
