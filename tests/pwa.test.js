@@ -78,7 +78,7 @@ test('botão de instalação fica acima da tela de login e oferece caminho manua
   const indexSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const loginZ = Number(indexSource.match(/#loginScreen\s*\{[^}]*z-index:\s*(\d+)/s)?.[1] || 0);
   const buttonZ = Number(pwaSource.match(/z-index:(\d+)/)?.[1] || 0);
-  assert.equal(pwa.VERSION, '2026-09-03.6');
+  assert.equal(pwa.VERSION, '2026-09-03.7');
   assert.ok(loginZ >= 99999);
   assert.ok(buttonZ > loginZ);
   assert.match(pwaSource, /showFallbackInstall/);
@@ -86,7 +86,7 @@ test('botão de instalação fica acima da tela de login e oferece caminho manua
   assert.match(pwaSource, /Adicionar à tela inicial/);
 });
 
-test('PWA carrega cliente do WhatsApp, PIN e autorização digital sem credenciais no navegador', () => {
+test('PWA carrega WhatsApp, PIN, autorização e cadeia de custódia sem credenciais no navegador', () => {
   const source = fs.readFileSync(path.join(root, 'pwa.js'), 'utf8');
   const client = fs.readFileSync(path.join(root, 'whatsapp-client.js'), 'utf8');
   assert.match(source, /whatsapp-client\.js\?v=20260903-2/);
@@ -95,6 +95,8 @@ test('PWA carrega cliente do WhatsApp, PIN e autorização digital sem credencia
   assert.match(source, /loadWithdrawalPin\(host\)/);
   assert.match(source, /withdrawal-authorization\.js\?v=20260903-1/);
   assert.match(source, /loadWithdrawalAuthorization\(host\)/);
+  assert.match(source, /custody-chain-client\.js\?v=20260903-1/);
+  assert.match(source, /loadCustodyChain\(host\)/);
   assert.doesNotMatch(client, /META_WHATSAPP_ACCESS_TOKEN|ZAPI_CLIENT/);
   assert.match(client, /\/api\/whatsapp\/package/);
   assert.match(client, /\/api\/whatsapp\/reminder/);
