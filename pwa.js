@@ -7,7 +7,7 @@
 
   const VERSION = '2026-09-03.7';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
-  const SW_URL = '/sw.js?v=20260903-3';
+  const SW_URL = '/sw.js?v=20260903-4';
   const ASSOCIATION_STATE_KEYS = [
     'moradores','encomendas','retirantesRelacionados','auditoria','memoriaRemetentes','config',
     'detalhesRetirada','estadoServidorVersion','ultimaSincronizacaoOk','resetEncomendasAplicado'
