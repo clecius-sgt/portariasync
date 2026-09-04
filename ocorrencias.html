@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>PortariaSync | Central de Ocorrências</title>
+<style>
+:root{--navy:#1a1f3a;--navy2:#2d3561;--gold:#c9a84c;--bg:#f4f6f9;--card:#fff;--text:#1a1f3a;--muted:#64748b;--border:#e2e8f0;--ok:#137333;--warn:#856404;--bad:#b42318;--blue:#1d4ed8}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-bottom:2px solid var(--gold);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:30}.brand{font-size:20px;font-weight:900}.brand span{color:var(--gold)}.sub{font-size:11px;opacity:.72;text-transform:uppercase;letter-spacing:1px;margin-top:3px}.head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.user{font-size:12px;color:var(--gold)}button,.btn{border:0;border-radius:8px;padding:10px 13px;font:700 13px Inter,Segoe UI,Arial,sans-serif;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}.btn-light{background:#fff;color:var(--navy)}.btn-gold{background:var(--gold);color:var(--navy)}.btn-navy{background:var(--navy);color:#fff}.btn-soft{background:#eef2f7;color:#334155}.btn-warn{background:#fff3cd;color:#856404}.btn-bad{background:#fce8e6;color:#b42318}.btn-blue{background:#e8f0fe;color:#1d4ed8}main{max-width:1280px;margin:0 auto;padding:18px}.intro{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:14px}.intro h1{font-size:24px;margin:0 0 4px}.intro p{margin:0;color:var(--muted);font-size:13px}.grid-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.04)}.eyebrow{text-transform:uppercase;letter-spacing:.7px;font-size:10px;color:var(--muted);font-weight:800}.metric{font-size:27px;font-weight:900;margin-top:5px}.toolbar{display:grid;grid-template-columns:1.5fr repeat(3,minmax(130px,.6fr)) auto;gap:8px;margin-bottom:14px}.toolbar input,.toolbar select,input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#fff;color:var(--text);font:13px Inter,Segoe UI,Arial,sans-serif}textarea{resize:vertical;min-height:92px}.layout{display:grid;grid-template-columns:minmax(330px,.85fr) minmax(420px,1.45fr);gap:14px;align-items:start}.list-card{padding:0;overflow:hidden}.list-head{padding:14px;border-bottom:1px solid var(--border);font-weight:800}.occ-item{padding:13px 14px;border-bottom:1px solid var(--border);cursor:pointer}.occ-item:hover{background:#f8fafc}.occ-item.active{background:#fff8e1;border-left:4px solid var(--gold);padding-left:10px}.occ-top{display:flex;justify-content:space-between;gap:8px}.occ-number{font-weight:900;font-size:13px}.occ-title{font-size:13px;font-weight:700;margin-top:5px}.occ-meta{font-size:11px;color:var(--muted);line-height:1.5;margin-top:4px}.badge{display:inline-flex;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:900;letter-spacing:.4px}.b-open{background:#e8f0fe;color:#1d4ed8}.b-progress{background:#fff3cd;color:#856404}.b-wait{background:#fff8e1;color:#9a6700}.b-done{background:#e6f4ea;color:#137333}.b-cancel{background:#eef2f7;color:#64748b}.p-critica{background:#fce8e6;color:#b42318}.p-alta{background:#fff3cd;color:#856404}.p-normal{background:#e8f0fe;color:#1d4ed8}.p-baixa{background:#eef2f7;color:#64748b}.empty{padding:38px 20px;text-align:center;color:var(--muted);font-size:13px}.detail{min-height:420px}.detail h2{margin:0 0 5px;font-size:19px}.detail-sub{color:var(--muted);font-size:12px;margin-bottom:12px}.summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kv{border:1px solid var(--border);border-radius:9px;padding:10px}.kv .k{font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.5px}.kv .v{font-size:13px;font-weight:750;margin-top:4px;word-break:break-word}.section{margin-top:15px;padding-top:14px;border-top:1px solid var(--border)}.section h3{font-size:14px;margin:0 0 9px}.timeline{border-left:2px solid #e2e8f0;margin-left:8px}.event{position:relative;margin-left:17px;padding:0 0 14px}.event:before{content:"";position:absolute;width:9px;height:9px;border-radius:50%;background:var(--gold);left:-22px;top:4px}.event-title{font-size:12px;font-weight:800}.event-desc{font-size:12px;color:#475569;line-height:1.45;margin-top:3px}.event-meta{font-size:10px;color:#94a3b8;margin-top:4px}.integrity{padding:8px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-bottom:10px}.integrity.ok{background:#e6f4ea;color:#137333}.integrity.bad{background:#fce8e6;color:#b42318}.actions-row{display:flex;gap:7px;flex-wrap:wrap}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.form-grid .full{grid-column:1/-1}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin-bottom:4px}.new-panel{display:none;margin-bottom:14px}.new-panel.open{display:block}.new-panel h2{font-size:17px;margin:0 0 11px}.attachment{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px;border:1px solid var(--border);border-radius:8px;margin-top:6px}.attachment-name{font-size:12px;font-weight:700}.attachment-meta{font-size:10px;color:var(--muted);margin-top:2px}.notice{display:none;padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:12px}.notice.show{display:block}.notice.bad{background:#fce8e6;color:#b42318}.notice.ok{background:#e6f4ea;color:#137333}.small{font-size:11px;color:var(--muted);line-height:1.5}.hash{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;font-size:10px}.hidden{display:none!important}@media(max-width:980px){.grid-metrics{grid-template-columns:repeat(3,1fr)}.toolbar{grid-template-columns:1fr 1fr}.layout{grid-template-columns:1fr}.detail{min-height:0}}@media(max-width:600px){main{padding:12px}.grid-metrics{grid-template-columns:1fr 1fr}.toolbar{grid-template-columns:1fr}.summary-grid,.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.intro{align-items:flex-start;flex-direction:column}header{align-items:flex-start}.head-actions{max-width:58%}}
+</style>
+</head>
+<body>
+<header>
+  <div><div class="brand">Portaria<span>Sync</span></div><div class="sub">Central de Ocorrências</div></div>
+  <div class="head-actions"><div class="user" id="currentUser"></div><a class="btn btn-light" href="/">Voltar ao sistema</a></div>
+</header>
+<main>
+  <div id="notice" class="notice"></div>
+  <div class="intro"><div><h1>Ocorrências e contestações</h1><p>Apuração rastreável de divergências relacionadas às encomendas da associação.</p></div><button id="newButton" class="btn btn-gold" type="button">Nova ocorrência</button></div>
+
+  <section class="grid-metrics">
+    <div class="card"><div class="eyebrow">Total</div><div class="metric" id="mTotal">0</div></div>
+    <div class="card"><div class="eyebrow">Abertas</div><div class="metric" id="mOpen">0</div></div>
+    <div class="card"><div class="eyebrow">Em apuração</div><div class="metric" id="mProgress">0</div></div>
+    <div class="card"><div class="eyebrow">Críticas</div><div class="metric" id="mCritical">0</div></div>
+    <div class="card"><div class="eyebrow">Concluídas</div><div class="metric" id="mDone">0</div></div>
+  </section>
+
+  <section id="newPanel" class="card new-panel">
+    <h2>Abrir ocorrência</h2>
+    <div class="form-grid">
+      <div class="field full"><label>Encomenda</label><select id="newPackage"></select></div>
+      <div class="field"><label>Tipo</label><select id="newType"></select></div>
+      <div class="field"><label>Prioridade</label><select id="newPriority"></select></div>
+      <div class="field full"><label>Título</label><input id="newTitle" maxlength="160" placeholder="Opcional. O tipo será usado como título padrão."></div>
+      <div class="field full"><label>Relato inicial</label><textarea id="newDescription" maxlength="4000" placeholder="Descreva objetivamente o problema ou a contestação."></textarea></div>
+      <div class="field full actions-row"><button id="createButton" class="btn btn-navy" type="button">Registrar ocorrência</button><button id="cancelNewButton" class="btn btn-soft" type="button">Cancelar</button></div>
+    </div>
+  </section>
+
+  <section class="toolbar">
+    <input id="filterQ" placeholder="Buscar ocorrência, encomenda ou morador">
+    <select id="filterStatus"><option value="">Todos os status</option></select>
+    <select id="filterPriority"><option value="">Todas as prioridades</option></select>
+    <select id="filterType"><option value="">Todos os tipos</option></select>
+    <button id="refreshButton" class="btn btn-soft" type="button">Atualizar</button>
+  </section>
+
+  <section class="layout">
+    <div class="card list-card"><div class="list-head">Ocorrências</div><div id="occurrenceList"><div class="empty">Carregando...</div></div></div>
+    <div id="detailPanel" class="card detail"><div class="empty">Selecione uma ocorrência para visualizar a apuração.</div></div>
+  </section>
+</main>
+<script src="/withdrawal-receipt-client.js?v=20260904-1"></script>
+<script src="/ocorrencias.js?v=20260904-1"></script>
+</body>
+</html>
