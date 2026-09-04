@@ -30,7 +30,7 @@ test('normaliza e valida PIN somente quando o aviso foi enviado', () => {
   assert.equal(pin.pinRequired({ ...enc, pinRetiradaEnviado: false }), false);
 });
 
-test('autorização digital ativa substitui o PIN apenas para o terceiro correto', () => {
+test('autorização digital ativa substitui o PIN apenas para o terceiro correto e com validador carregado', () => {
   const enc = {
     status: 'pendente',
     pinRetirada: '123456',
@@ -40,12 +40,14 @@ test('autorização digital ativa substitui o PIN apenas para o terceiro correto
       criadaEm: '2026-09-03T18:00:00Z', expiraEm: '2099-09-04T18:00:00Z'
     }]
   };
-  const correct = { _retiranteTipo: 'outro', _retiranteRg: 'RG 12.345.678-X' };
-  const wrong = { _retiranteTipo: 'outro', _retiranteRg: 'RG 99.999.999-9' };
-  const owner = { _retiranteTipo: 'proprio', _retiranteRg: '' };
+  const correct = { __withdrawalAuthorizationInstalled:true, _retiranteTipo: 'outro', _retiranteRg: 'RG 12.345.678-X' };
+  const wrong = { __withdrawalAuthorizationInstalled:true, _retiranteTipo: 'outro', _retiranteRg: 'RG 99.999.999-9' };
+  const owner = { __withdrawalAuthorizationInstalled:true, _retiranteTipo: 'proprio', _retiranteRg: '' };
+  const validatorMissing = { _retiranteTipo:'outro', _retiranteRg:'RG 12.345.678-X' };
   assert.equal(pin.digitalAuthorizationApplies(enc, correct), true);
   assert.equal(pin.digitalAuthorizationApplies(enc, wrong), false);
   assert.equal(pin.digitalAuthorizationApplies(enc, owner), false);
+  assert.equal(pin.digitalAuthorizationApplies(enc, validatorMissing), false);
   assert.equal(pin.pinRequired(enc), true);
 });
 
