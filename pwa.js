@@ -1,11 +1,11 @@
 (function(root, factory) {
   'use strict';
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory();
-  else root.PortariaSyncPWA = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function() {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(root);
+  else root.PortariaSyncPWA = factory(root);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(root) {
   'use strict';
 
-  const VERSION = '2026-09-03.7';
+  const VERSION = '2026-09-04.1';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
   const SW_URL = '/sw.js?v=20260903-4';
   const ASSOCIATION_STATE_KEYS = [
@@ -240,7 +240,7 @@
     }
     if (doc.querySelector?.('script[data-custody-chain="1"]')) return true;
     const script = doc.createElement('script');
-    script.src = '/custody-chain-client.js?v=20260903-1';
+    script.src = '/custody-chain-client.js?v=20260904-1';
     script.async = true;
     script.dataset.custodyChain = '1';
     script.onload = function() {
