@@ -5,11 +5,20 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.1';
+  const VERSION = '2026-09-03.2';
   const PIN_LENGTH = 6;
 
   function normalizePin(value) {
     return String(value || '').replace(/\D/g, '').slice(0, PIN_LENGTH);
+  }
+
+  function normalizeDocument(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 30);
   }
 
   function generatePin(host) {
@@ -54,6 +63,26 @@
     return informed.length === PIN_LENGTH && informed === expected;
   }
 
+  function activeDigitalAuthorization(enc, now = Date.now()) {
+    const list = Array.isArray(enc?.autorizacoesRetirada) ? enc.autorizacoesRetirada.filter(Boolean) : [];
+    if (!list.length && enc?.autorizacaoRetirada && typeof enc.autorizacaoRetirada === 'object') list.push(enc.autorizacaoRetirada);
+    return list
+      .filter(record => {
+        if (String(record?.status || 'ativa').toLowerCase() !== 'ativa') return false;
+        const expires = Date.parse(record?.expiraEm || '');
+        return !Number.isFinite(expires) || expires > Number(now);
+      })
+      .sort((a, b) => Date.parse(b.criadaEm || 0) - Date.parse(a.criadaEm || 0))[0] || null;
+  }
+
+  function digitalAuthorizationApplies(enc, host, now = Date.now()) {
+    if (!enc || host?._retiranteTipo !== 'outro') return false;
+    const authorization = activeDigitalAuthorization(enc, now);
+    if (!authorization) return false;
+    const document = normalizeDocument(host?._retiranteRg || '');
+    return !!document && document === normalizeDocument(authorization.documento);
+  }
+
   function appendPinMessage(message, pin) {
     const cleanPin = normalizePin(pin);
     const base = String(message || '').trim();
@@ -87,6 +116,7 @@
     if (!firstLabel || !firstLabel.parentNode || typeof doc.createElement !== 'function') return false;
 
     const required = pinRequired(enc);
+    const hasDigitalAuthorization = !!activeDigitalAuthorization(enc);
     const section = doc.createElement('div');
     section.id = 'areaPinRetirada';
     section.style.cssText = 'margin:0 0 16px;padding:13px;border:1px solid ' + (required ? '#b7c6d8' : '#dadce0') + ';border-radius:10px;background:' + (required ? '#f8fbff' : '#f8f9fa') + ';';
@@ -94,10 +124,14 @@
     if (required) {
       section.innerHTML =
         '<div style="font-size:14px;font-weight:800;color:#1a1f3a;margin-bottom:4px;">🔐 PIN de retirada</div>' +
-        '<div style="font-size:12px;color:#5f6368;line-height:1.45;margin-bottom:8px;">Solicite o PIN de 6 dígitos enviado ao WhatsApp do morador. O PIN é adicional à assinatura e não substitui RG/foto quando a retirada for feita por terceiro.</div>' +
+        '<div style="font-size:12px;color:#5f6368;line-height:1.45;margin-bottom:8px;">' +
+          (hasDigitalAuthorization
+            ? 'Para o próprio morador, solicite o PIN de 6 dígitos. Para o terceiro autorizado digitalmente, o código da autorização substitui este PIN; RG/foto e assinatura continuam obrigatórios.'
+            : 'Solicite o PIN de 6 dígitos enviado ao WhatsApp do morador. O PIN é adicional à assinatura e não substitui RG/foto quando a retirada for feita por terceiro.') +
+        '</div>' +
         '<input id="inputPinRetirada" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="PIN de retirada" ' +
           'style="width:100%;padding:12px;text-align:center;letter-spacing:7px;font-size:21px;font-weight:800;border:1px solid #b7c6d8;border-radius:8px;background:white;">' +
-        '<div id="statusPinRetirada" style="font-size:12px;color:#5f6368;margin-top:6px;">Obrigatório para concluir esta retirada.</div>';
+        '<div id="statusPinRetirada" style="font-size:12px;color:#5f6368;margin-top:6px;">Obrigatório para o próprio morador.</div>';
 
       const input = section.querySelector('#inputPinRetirada');
       if (input) {
@@ -105,7 +139,7 @@
           this.value = normalizePin(this.value);
           const status = section.querySelector('#statusPinRetirada');
           if (status) {
-            status.textContent = this.value.length === PIN_LENGTH ? 'PIN preenchido. Confirme a retirada para validar.' : 'Obrigatório para concluir esta retirada.';
+            status.textContent = this.value.length === PIN_LENGTH ? 'PIN preenchido. Confirme a retirada para validar.' : 'Obrigatório para o próprio morador.';
             status.style.color = '#5f6368';
           }
         });
@@ -167,8 +201,9 @@
       const modal = host.document?.getElementById?.('modalRetirada');
       const enc = modal?._pinEncomenda || null;
       const override = modal?._pinOverride || null;
+      const digitalAuthorization = digitalAuthorizationApplies(enc, host);
 
-      if (enc && pinRequired(enc) && !override) {
+      if (enc && pinRequired(enc) && !override && !digitalAuthorization) {
         const input = host.document?.getElementById?.('inputPinRetirada');
         const informed = normalizePin(input?.value || '');
         if (!validatePin(enc, informed)) {
@@ -197,20 +232,23 @@
 
       const result = originalConfirm.apply(this, arguments);
 
-      if (enc && enc.status === 'retirado' && (pinRequired({ ...enc, status: 'pendente' }) || override)) {
+      if (enc && enc.status === 'retirado' && (pinRequired({ ...enc, status: 'pendente' }) || override || digitalAuthorization)) {
         enc.pinRetiradaValidadoEm = new Date().toISOString();
-        enc.pinRetiradaMetodo = override ? 'liberacao-administrativa' : 'pin';
+        enc.pinRetiradaMetodo = digitalAuthorization ? 'autorizacao-digital' : (override ? 'liberacao-administrativa' : 'pin');
         enc.pinRetiradaOverrideMotivo = override?.reason || null;
-        enc.pinRetiradaUsado = !override;
+        enc.pinRetiradaUsado = !override && !digitalAuthorization;
         delete enc.pinRetirada;
         persist(host);
-        audit(host, override ? 'Retirada liberada sem PIN' : 'PIN de retirada validado', {
-          encomendaId: enc.id,
-          codigo: enc.codigo,
-          moradorId: enc.moradorId,
-          moradorNome: enc.moradorNome,
-          motivo: override?.reason || null
-        });
+        audit(host,
+          digitalAuthorization ? 'Retirada validada por autorização digital' : (override ? 'Retirada liberada sem PIN' : 'PIN de retirada validado'),
+          {
+            encomendaId: enc.id,
+            codigo: enc.codigo,
+            moradorId: enc.moradorId,
+            moradorNome: enc.moradorNome,
+            motivo: override?.reason || null
+          }
+        );
       }
       return result;
     };
@@ -219,7 +257,8 @@
       version: VERSION,
       ensure: enc => ensurePin(enc, host),
       required: pinRequired,
-      validate: validatePin
+      validate: validatePin,
+      digitalAuthorization: enc => activeDigitalAuthorization(enc)
     };
     return true;
   }
@@ -228,10 +267,13 @@
     VERSION,
     PIN_LENGTH,
     normalizePin,
+    normalizeDocument,
     generatePin,
     ensurePin,
     pinRequired,
     validatePin,
+    activeDigitalAuthorization,
+    digitalAuthorizationApplies,
     appendPinMessage,
     injectPinUi,
     install,
