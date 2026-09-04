@@ -3,9 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
-const { reconcileState } = require('./custody-chain');
+const { reconcileState, verifyChain } = require('./custody-chain');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function json(value, fallback = null) {
   try { return JSON.stringify(value ?? fallback); }
@@ -109,6 +109,20 @@ class StructuredDatabase {
         payload_json TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS custody_events (
+        id TEXT PRIMARY KEY,
+        package_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        occurred_at TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        actor TEXT,
+        previous_hash TEXT NOT NULL,
+        event_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        UNIQUE(package_id, sequence)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_residents_name ON residents(name);
       CREATE INDEX IF NOT EXISTS idx_residents_house ON residents(house);
       CREATE INDEX IF NOT EXISTS idx_packages_code ON packages(code);
@@ -117,6 +131,20 @@ class StructuredDatabase {
       CREATE INDEX IF NOT EXISTS idx_packages_entry ON packages(entry_at);
       CREATE INDEX IF NOT EXISTS idx_withdrawers_resident ON related_withdrawers(resident_id);
       CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+      CREATE INDEX IF NOT EXISTS idx_custody_package ON custody_events(package_id, sequence);
+      CREATE INDEX IF NOT EXISTS idx_custody_occurred ON custody_events(occurred_at);
+
+      CREATE TRIGGER IF NOT EXISTS custody_events_no_update
+      BEFORE UPDATE ON custody_events
+      BEGIN
+        SELECT RAISE(ABORT, 'custody_events is append-only');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS custody_events_no_delete
+      BEFORE DELETE ON custody_events
+      BEGIN
+        SELECT RAISE(ABORT, 'custody_events is append-only');
+      END;
     `);
     this.setMeta('schema_version', String(SCHEMA_VERSION));
   }
@@ -146,6 +174,49 @@ class StructuredDatabase {
     } catch (error) {
       try { this.db.exec('ROLLBACK;'); } catch (_) {}
       throw error;
+    }
+  }
+
+  readCustodyEvents(packageId = null) {
+    const rows = packageId
+      ? this.db.prepare('SELECT package_id, payload_json FROM custody_events WHERE package_id = ? ORDER BY sequence ASC').all(String(packageId))
+      : this.db.prepare('SELECT package_id, payload_json FROM custody_events ORDER BY package_id ASC, sequence ASC').all();
+    const grouped = new Map();
+    for (const row of rows) {
+      const event = parse(row.payload_json, null);
+      if (!event) continue;
+      const key = String(row.package_id || event.packageId || '');
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(event);
+    }
+    return grouped;
+  }
+
+  persistCustodyEvents(packages) {
+    const insert = this.db.prepare(`
+      INSERT OR IGNORE INTO custody_events(
+        id, package_id, sequence, occurred_at, recorded_at, event_type, actor,
+        previous_hash, event_hash, payload_json
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const item of packages || []) {
+      if (!item?.id || !Array.isArray(item.cadeiaCustodia)) continue;
+      const integrity = verifyChain(item);
+      if (!integrity.ok) throw new Error(`Integridade da cadeia de custódia comprometida na encomenda ${item.id}.`);
+      for (const event of item.cadeiaCustodia) {
+        insert.run(
+          String(event.id),
+          String(item.id),
+          Number(event.seq),
+          String(event.occurredAt || ''),
+          String(event.recordedAt || ''),
+          String(event.type || 'event'),
+          String(event.actor || ''),
+          String(event.previousHash || ''),
+          String(event.hash || ''),
+          json(event, {})
+        );
+      }
     }
   }
 
@@ -199,6 +270,8 @@ class StructuredDatabase {
           String(item.dataRetirada || ''), item.pinRetiradaEnviado === true ? 1 : 0, json(item, {})
         );
       });
+
+      this.persistCustodyEvents(packages);
 
       const insertWithdrawer = this.db.prepare(`
         INSERT INTO related_withdrawers(row_key, position, resident_id, name, document, payload_json)
@@ -259,6 +332,23 @@ class StructuredDatabase {
       .map(row => parse(row.payload_json, {}));
     const encomendas = this.db.prepare('SELECT payload_json FROM packages ORDER BY position ASC').all()
       .map(row => parse(row.payload_json, {}));
+    const custody = this.readCustodyEvents();
+    for (const item of encomendas) {
+      const chain = custody.get(String(item?.id || ''));
+      if (!chain?.length) continue;
+      item.cadeiaCustodia = chain;
+      const integrity = verifyChain(item);
+      item.cadeiaCustodiaMeta = {
+        version: Number(chain.at(-1)?.version || 1),
+        algorithm: 'sha256',
+        appendOnly: true,
+        storage: 'sqlite-append-only',
+        integrity: integrity.ok ? 'ok' : 'error',
+        eventCount: chain.length,
+        lastHash: integrity.lastHash || null,
+        verifiedAt: new Date().toISOString()
+      };
+    }
     const retirantesRelacionados = this.db.prepare('SELECT payload_json FROM related_withdrawers ORDER BY position ASC').all()
       .map(row => parse(row.payload_json, {}));
     const auditoria = this.db.prepare('SELECT payload_json FROM audit_log ORDER BY position ASC').all()
@@ -319,7 +409,8 @@ class StructuredDatabase {
       audit: count('audit_log'),
       withdrawalDetails: count('withdrawal_details'),
       senderMemory: count('sender_memory'),
-      publicConfig: count('public_config')
+      publicConfig: count('public_config'),
+      custodyEvents: count('custody_events')
     };
   }
 
@@ -331,6 +422,12 @@ class StructuredDatabase {
       file: this.file === ':memory:' ? ':memory:' : path.basename(this.file),
       exists: this.hasState(),
       integrity: this.integrity(),
+      custody: {
+        enabled: true,
+        appendOnly: true,
+        algorithm: 'sha256',
+        events: this.counts().custodyEvents
+      },
       counts: this.counts()
     };
   }
