@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { PaddleOcrClient } = require('./paddle-ocr-client');
 const { WhatsAppProvider } = require('./whatsapp-provider');
-const { ResidentPortalService } = require('./resident-portal-service');
+const { ResidentPortalService, finalizePackageAuthorizations } = require('./resident-portal-service');
 const { AssociationManager, DEFAULT_ASSOCIATION_ID } = require('./association-manager');
 
 loadEnv();
@@ -204,6 +204,19 @@ async function handleApi(req, res) {
     return;
   }
 
+  const residentAuthorizationMatch = req.url.match(/^\/api\/morador\/encomendas\/([^/]+)\/autorizacao$/);
+  if (req.method === 'POST' && residentAuthorizationMatch) {
+    const id = decodeURIComponent(residentAuthorizationMatch[1]);
+    const body = await readJson(req);
+    sendJson(res, 201, await residentPortal.authorizeThirdParty(residentToken(req), id, body));
+    return;
+  }
+  if (req.method === 'DELETE' && residentAuthorizationMatch) {
+    const id = decodeURIComponent(residentAuthorizationMatch[1]);
+    sendJson(res, 200, await residentPortal.cancelThirdPartyAuthorization(residentToken(req), id));
+    return;
+  }
+
   const resendResidentPinMatch = req.url.match(/^\/api\/morador\/encomendas\/([^/]+)\/reenviar-pin$/);
   if (req.method === 'POST' && resendResidentPinMatch) {
     const id = decodeURIComponent(resendResidentPinMatch[1]);
@@ -331,6 +344,19 @@ async function handleApi(req, res) {
     };
     await writeAppState(session.associacaoId, state);
     sendJson(res, 200, { ok: true, version: state.version, updatedAt: state.updatedAt, storage: 'sqlite', associacaoId: session.associacaoId });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/withdrawal-authorization/verify') {
+    const session = requireRole(req, ['admin', 'porteiro']);
+    const body = await readJson(req);
+    const result = await residentPortal.verifyThirdPartyAuthorization(
+      session.associacaoId,
+      body.packageId,
+      { codigo: body.codigo, documento: body.documento },
+      session
+    );
+    sendJson(res, 200, { ...result, validadaPor: session.nome || session.id });
     return;
   }
 
@@ -577,6 +603,7 @@ function scoreEncomenda(e) {
   if (e.retiradoPor) score += 1;
   if (e.assinatura) score += 2;
   if (e.fotoRetirante) score += 2;
+  if (Array.isArray(e.autorizacoesRetirada) && e.autorizacoesRetirada.length) score += 1;
   return score;
 }
 
@@ -589,7 +616,7 @@ function mergeEncomendas(base, recebidas) {
     const atual = mapa.get(id);
     if (!atual || scoreEncomenda(e) >= scoreEncomenda(atual)) mapa.set(id, { ...atual, ...e });
   }
-  return Array.from(mapa.values());
+  return Array.from(mapa.values()).map(item => finalizePackageAuthorizations(item));
 }
 
 function chaveRetirante(r) {
