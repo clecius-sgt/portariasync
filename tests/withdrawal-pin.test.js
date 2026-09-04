@@ -30,6 +30,25 @@ test('normaliza e valida PIN somente quando o aviso foi enviado', () => {
   assert.equal(pin.pinRequired({ ...enc, pinRetiradaEnviado: false }), false);
 });
 
+test('autorização digital ativa substitui o PIN apenas para o terceiro correto', () => {
+  const enc = {
+    status: 'pendente',
+    pinRetirada: '123456',
+    pinRetiradaEnviado: true,
+    autorizacoesRetirada: [{
+      id: 'a1', nome: 'Maria Souza', documento: 'RG12345678X', status: 'ativa',
+      criadaEm: '2026-09-03T18:00:00Z', expiraEm: '2099-09-04T18:00:00Z'
+    }]
+  };
+  const correct = { _retiranteTipo: 'outro', _retiranteRg: 'RG 12.345.678-X' };
+  const wrong = { _retiranteTipo: 'outro', _retiranteRg: 'RG 99.999.999-9' };
+  const owner = { _retiranteTipo: 'proprio', _retiranteRg: '' };
+  assert.equal(pin.digitalAuthorizationApplies(enc, correct), true);
+  assert.equal(pin.digitalAuthorizationApplies(enc, wrong), false);
+  assert.equal(pin.digitalAuthorizationApplies(enc, owner), false);
+  assert.equal(pin.pinRequired(enc), true);
+});
+
 test('mensagem adiciona PIN uma única vez sem expor controles internos', () => {
   const message = pin.appendPinMessage('Chegou uma encomenda.', '654321');
   assert.match(message, /PIN de retirada: 654321/);
@@ -83,6 +102,7 @@ test('falha no WhatsApp mantém PIN mas não torna sua validação obrigatória'
 test('PWA carrega módulo do PIN e mantém API e dados fora do cache', () => {
   const pwaSource = fs.readFileSync(path.join(root, 'pwa.js'), 'utf8');
   const swSource = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.equal(pin.VERSION, '2026-09-03.2');
   assert.match(pwaSource, /withdrawal-pin\.js\?v=20260903-1/);
   assert.match(pwaSource, /loadWithdrawalPin\(host\)/);
   assert.match(swSource, /withdrawal-pin\.js/);
