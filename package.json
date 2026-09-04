@@ -8,6 +8,8 @@
     "test": "node --test tests/*.test.js",
     "db:check": "node scripts/migrate-structured-db.js",
     "db:migrate": "node scripts/migrate-structured-db.js --apply",
+    "receipts:init": "node scripts/initialize-withdrawal-receipts.js",
+    "receipts:daemon": "node scripts/withdrawal-receipt-daemon.js",
     "postinstall": "node scripts/prepare-vision.js",
     "prepare:vision": "node scripts/prepare-vision.js",
     "prestart": "node scripts/prepare-vision.js"
