@@ -6,7 +6,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(root) {
   'use strict';
 
-  const VERSION = '2026-09-03.2';
+  const VERSION = '2026-09-04.1';
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -124,6 +124,26 @@
     return `<button class="btn btn-sm" style="background:#f1f5f9;color:#334155;" onclick="CustodyChainUI.open('${safeId}')">Histórico completo</button>`;
   }
 
+  function loadPackageAlerts(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.PackageAlertsUI) {
+      if (typeof host.PackageAlertsUI.install === 'function') host.PackageAlertsUI.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-package-alerts="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/package-alerts-client.js?v=20260904-1';
+    script.async = true;
+    script.dataset.packageAlerts = '1';
+    script.onload = function() {
+      if (host.PackageAlertsUI && typeof host.PackageAlertsUI.install === 'function') host.PackageAlertsUI.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     root = host || root;
     if (!root || root.__custodyChainUiInstalled) return !!root;
@@ -141,10 +161,11 @@
     root.abrirCadeiaCustodia = open;
     try { root.renderDashboard?.(); } catch (_) {}
     try { root.renderEncomendas?.(); } catch (_) {}
+    loadPackageAlerts(root);
     return true;
   }
 
-  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, install, version: VERSION };
+  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, loadPackageAlerts, install, version: VERSION };
 
   if (typeof document !== 'undefined') {
     const start = () => install(root);
