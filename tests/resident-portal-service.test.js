@@ -214,16 +214,16 @@ test('portaria valida código e documento da autorização sem atravessar associ
   writes = 0;
 
   await assert.rejects(
-    () => service.verifyThirdPartyAuthorization('outra', 'p1', { codigo:'975310', documento:'99887766' }, { nome:'Porteiro' }),
+    () => service.verifyThirdPartyAuthorization('outra', 'p1', { codigo:'975310', documento:'CNH 99887766' }, { nome:'Porteiro' }),
     /Encomenda pendente não encontrada/
   );
   await assert.rejects(
-    () => service.verifyThirdPartyAuthorization('principal', 'p1', { codigo:'000000', documento:'99887766' }, { nome:'Porteiro' }),
+    () => service.verifyThirdPartyAuthorization('principal', 'p1', { codigo:'000000', documento:'CNH 99887766' }, { nome:'Porteiro' }),
     /Código ou documento/
   );
 
   const result = await service.verifyThirdPartyAuthorization(
-    'principal', 'p1', { codigo:'975310', documento:'99887766' }, { nome:'Porteiro 01' }
+    'principal', 'p1', { codigo:'975310', documento:'CNH 99887766' }, { nome:'Porteiro 01' }
   );
   assert.equal(result.ok, true);
   assert.equal(result.nome, 'Carlos Pereira');
