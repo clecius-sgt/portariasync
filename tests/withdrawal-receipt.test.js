@@ -42,7 +42,7 @@ function withdrawnState(overrides = {}) {
 }
 
 test('documento é mascarado e comprovante não contém PIN, foto ou assinatura em bruto', () => {
-  assert.equal(maskDocument('12.345.678-9'), '***678-9'.replace('-', '').length ? '***78-9' : '');
+  assert.equal(maskDocument('12.345.678-9'), '***78-9');
   const pkg = withdrawnState().encomendas[0];
   pkg.cadeiaCustodia = [];
   const receipt = buildReceipt({
@@ -54,7 +54,7 @@ test('documento é mascarado e comprovante não contém PIN, foto ou assinatura 
   assert.equal(receipt.withdrawal.signaturePresent, true);
   assert.equal(receipt.withdrawal.photoEvidencePresent, true);
   const serialized = JSON.stringify(receipt);
-  assert.doesNotMatch(serialized, /ASSINATURA|FOTO|pinRetirada|123456/);
+  assert.doesNotMatch(serialized, /ASSINATURA|FOTO|pinRetirada|12\.345\.678-9|data:image/i);
   assert.equal(verifyReceipt(receipt).ok, true);
 });
 
