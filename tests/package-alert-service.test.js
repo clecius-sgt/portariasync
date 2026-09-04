@@ -156,3 +156,10 @@ test('daemon e painel dos alertas existem e não dependem de serviço pago adici
   assert.match(client, /PRIORIDADE/);
   assert.match(client, /CRÍTICO/);
 });
+
+test('daemon mantém um handle referenciado para não entrar em loop de restart no PM2', () => {
+  const root = path.join(__dirname, '..');
+  const daemon = fs.readFileSync(path.join(root, 'scripts', 'package-alert-daemon.js'), 'utf8');
+  assert.match(daemon, /const logTimer = setInterval/);
+  assert.doesNotMatch(daemon, /logTimer\.unref/);
+});
