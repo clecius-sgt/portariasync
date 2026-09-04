@@ -16,6 +16,8 @@ const SHELL = [
   '/withdrawal-pin.js',
   '/withdrawal-authorization.js',
   '/custody-chain-client.js',
+  '/package-alerts-client.js',
+  '/withdrawal-receipt-client.js',
   '/icons/portariasync-192.svg',
   '/icons/portariasync-512.svg'
 ];
