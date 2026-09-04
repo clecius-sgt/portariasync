@@ -16,3 +16,12 @@ test('servidor integra serviço e rotas do portal do morador', () => {
   assert.match(server, /reenviar-pin/);
   assert.match(server, /residentPortal: residentPortal\.status\(\)/);
 });
+
+test('servidor expõe criação, cancelamento e validação de autorização digital', () => {
+  assert.match(server, /residentAuthorizationMatch/);
+  assert.match(server, /authorizeThirdParty/);
+  assert.match(server, /cancelThirdPartyAuthorization/);
+  assert.match(server, /\/api\/withdrawal-authorization\/verify/);
+  assert.match(server, /verifyThirdPartyAuthorization/);
+  assert.match(server, /finalizePackageAuthorizations/);
+});
