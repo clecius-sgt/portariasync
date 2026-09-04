@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { reconcileState } = require('./custody-chain');
 
 const SCHEMA_VERSION = 1;
 
@@ -150,13 +151,15 @@ class StructuredDatabase {
 
   writeState(state) {
     if (!state || typeof state !== 'object') throw new Error('Estado do aplicativo inválido para o banco estruturado.');
-    const residents = Array.isArray(state.moradores) ? state.moradores : [];
-    const packages = Array.isArray(state.encomendas) ? state.encomendas : [];
-    const withdrawers = Array.isArray(state.retirantesRelacionados) ? state.retirantesRelacionados : [];
-    const audit = Array.isArray(state.auditoria) ? state.auditoria : [];
-    const details = state.detalhesRetirada && typeof state.detalhesRetirada === 'object' ? state.detalhesRetirada : {};
-    const senders = state.memoriaRemetentes && typeof state.memoriaRemetentes === 'object' ? state.memoriaRemetentes : {};
-    const config = state.configPublica && typeof state.configPublica === 'object' ? state.configPublica : {};
+    const previousState = this.hasState() ? this.readState() : { exists: false, encomendas: [] };
+    const effectiveState = reconcileState(previousState, state);
+    const residents = Array.isArray(effectiveState.moradores) ? effectiveState.moradores : [];
+    const packages = Array.isArray(effectiveState.encomendas) ? effectiveState.encomendas : [];
+    const withdrawers = Array.isArray(effectiveState.retirantesRelacionados) ? effectiveState.retirantesRelacionados : [];
+    const audit = Array.isArray(effectiveState.auditoria) ? effectiveState.auditoria : [];
+    const details = effectiveState.detalhesRetirada && typeof effectiveState.detalhesRetirada === 'object' ? effectiveState.detalhesRetirada : {};
+    const senders = effectiveState.memoriaRemetentes && typeof effectiveState.memoriaRemetentes === 'object' ? effectiveState.memoriaRemetentes : {};
+    const config = effectiveState.configPublica && typeof effectiveState.configPublica === 'object' ? effectiveState.configPublica : {};
 
     this.transaction(() => {
       this.db.exec(`
@@ -239,9 +242,9 @@ class StructuredDatabase {
       Object.entries(config).forEach(([key, value]) => insertConfig.run(String(key), json(value, null)));
 
       this.setMeta('state_exists', '1');
-      this.setMeta('state_version', String(Number(state.version || Date.now())));
-      this.setMeta('updated_at', String(state.updatedAt || new Date().toISOString()));
-      this.setMeta('reset_packages_at', state.resetEncomendasAt || '');
+      this.setMeta('state_version', String(Number(effectiveState.version || Date.now())));
+      this.setMeta('updated_at', String(effectiveState.updatedAt || new Date().toISOString()));
+      this.setMeta('reset_packages_at', effectiveState.resetEncomendasAt || '');
       this.setMeta('schema_version', String(SCHEMA_VERSION));
     });
     return this.status();
