@@ -6,6 +6,7 @@ const { PaddleOcrClient } = require('./paddle-ocr-client');
 const { WhatsAppProvider } = require('./whatsapp-provider');
 const { ResidentPortalService, finalizePackageAuthorizations } = require('./resident-portal-service');
 const { AssociationManager, DEFAULT_ASSOCIATION_ID } = require('./association-manager');
+const { OccurrenceService } = require('./occurrence-service');
 
 loadEnv();
 
@@ -25,6 +26,7 @@ const associations = new AssociationManager({
   defaultName: process.env.DEFAULT_ASSOCIATION_NAME || 'Associação de Moradores'
 });
 const database = associations.database(DEFAULT_ASSOCIATION_ID);
+const occurrences = new OccurrenceService({ associations });
 
 ensureUsersFile();
 
@@ -125,6 +127,9 @@ function serveStatic(req, res) {
 }
 
 async function handleApi(req, res) {
+  const requestUrl = new URL(req.url, 'http://localhost');
+  const pathname = requestUrl.pathname;
+
   if (req.method === 'GET' && req.url === '/api/health') {
     const whats = whatsapp.status();
     sendJson(res, 200, {
@@ -135,6 +140,7 @@ async function handleApi(req, res) {
       database: database.status(),
       multiAssociation: associations.status(false),
       residentPortal: residentPortal.status(),
+      occurrences: occurrences.status(DEFAULT_ASSOCIATION_ID),
       paddleocr: paddleOcr.status()
     });
     return;
@@ -309,6 +315,116 @@ async function handleApi(req, res) {
     }
     writeUsers(users.filter(u => u.id !== id));
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/occurrences') {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const result = occurrences.list(session.associacaoId, {
+      status: requestUrl.searchParams.get('status') || '',
+      priority: requestUrl.searchParams.get('priority') || '',
+      type: requestUrl.searchParams.get('type') || '',
+      packageId: requestUrl.searchParams.get('packageId') || '',
+      q: requestUrl.searchParams.get('q') || ''
+    });
+    sendJson(res, 200, { ok:true, association:associations.publicInfo(session.associacaoId), ...result });
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/occurrences') {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const body = await readJson(req, 1024 * 1024);
+    const result = occurrences.create(session.associacaoId, body, sessionActor(session, req));
+    sendJson(res, 201, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceAttachmentGet = pathname.match(/^\/api\/occurrences\/([^/]+)\/attachments\/([^/]+)$/);
+  if (req.method === 'GET' && occurrenceAttachmentGet) {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const occurrenceId = decodeURIComponent(occurrenceAttachmentGet[1]);
+    const attachmentId = decodeURIComponent(occurrenceAttachmentGet[2]);
+    const attachment = occurrences.getAttachment(session.associacaoId, occurrenceId, attachmentId);
+    sendAttachment(res, attachment);
+    return;
+  }
+
+  const occurrenceAttachmentPost = pathname.match(/^\/api\/occurrences\/([^/]+)\/attachments$/);
+  if (req.method === 'POST' && occurrenceAttachmentPost) {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const occurrenceId = decodeURIComponent(occurrenceAttachmentPost[1]);
+    const body = await readJson(req, 4 * 1024 * 1024);
+    const result = occurrences.addAttachment(session.associacaoId, occurrenceId, body, sessionActor(session, req));
+    sendJson(res, 201, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceNotesMatch = pathname.match(/^\/api\/occurrences\/([^/]+)\/notes$/);
+  if (req.method === 'POST' && occurrenceNotesMatch) {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const id = decodeURIComponent(occurrenceNotesMatch[1]);
+    const body = await readJson(req);
+    const result = occurrences.addNote(session.associacaoId, id, body, sessionActor(session, req));
+    sendJson(res, 200, { ok:true, ...result });
+    return;
+  }
+
+  const occurrencePriorityMatch = pathname.match(/^\/api\/occurrences\/([^/]+)\/priority$/);
+  if (req.method === 'POST' && occurrencePriorityMatch) {
+    const session = requireRole(req, ['admin', 'supervisor']);
+    const id = decodeURIComponent(occurrencePriorityMatch[1]);
+    const body = await readJson(req);
+    const result = occurrences.setPriority(session.associacaoId, id, body.priority, sessionActor(session, req));
+    sendJson(res, 200, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceStatusMatch = pathname.match(/^\/api\/occurrences\/([^/]+)\/status$/);
+  if (req.method === 'POST' && occurrenceStatusMatch) {
+    const session = requireRole(req, ['admin', 'supervisor']);
+    const id = decodeURIComponent(occurrenceStatusMatch[1]);
+    const body = await readJson(req);
+    const result = occurrences.setStatus(session.associacaoId, id, body.status, body.reason, sessionActor(session, req));
+    sendJson(res, 200, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceConcludeMatch = pathname.match(/^\/api\/occurrences\/([^/]+)\/conclude$/);
+  if (req.method === 'POST' && occurrenceConcludeMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(occurrenceConcludeMatch[1]);
+    const body = await readJson(req);
+    const result = occurrences.conclude(session.associacaoId, id, body, sessionActor(session, req));
+    sendJson(res, 200, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceReopenMatch = pathname.match(/^\/api\/occurrences\/([^/]+)\/reopen$/);
+  if (req.method === 'POST' && occurrenceReopenMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(occurrenceReopenMatch[1]);
+    const body = await readJson(req);
+    const result = occurrences.reopen(session.associacaoId, id, body.reason, sessionActor(session, req));
+    sendJson(res, 200, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceCancelMatch = pathname.match(/^\/api\/occurrences\/([^/]+)\/cancel$/);
+  if (req.method === 'POST' && occurrenceCancelMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(occurrenceCancelMatch[1]);
+    const body = await readJson(req);
+    const result = occurrences.cancel(session.associacaoId, id, body.reason, sessionActor(session, req));
+    sendJson(res, 200, { ok:true, ...result });
+    return;
+  }
+
+  const occurrenceDetailMatch = pathname.match(/^\/api\/occurrences\/([^/]+)$/);
+  if (req.method === 'GET' && occurrenceDetailMatch) {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const id = decodeURIComponent(occurrenceDetailMatch[1]);
+    const result = occurrences.get(session.associacaoId, id);
+    sendJson(res, 200, { ok:true, ...result });
     return;
   }
 
@@ -678,6 +794,15 @@ function clientIp(req) {
   return forwarded || req.socket?.remoteAddress || '';
 }
 
+function sessionActor(session, req) {
+  return {
+    id: session?.id || '',
+    name: session?.nome || 'PortalSync',
+    role: session?.perfil || 'sistema',
+    ip: clientIp(req)
+  };
+}
+
 function requireRole(req, roles) {
   const token = bearerToken(req);
   const session = token ? sessions.get(token) : null;
@@ -746,6 +871,19 @@ function readJson(req, limit = 2 * 1024 * 1024) {
     });
     req.on('error', reject);
   });
+}
+
+function sendAttachment(res, attachment) {
+  const safeName = String(attachment?.fileName || 'anexo').replace(/["\\\r\n]/g, '_');
+  res.writeHead(200, {
+    'Content-Type': attachment?.mimeType || 'application/octet-stream',
+    'Content-Length': attachment?.content?.length || 0,
+    'Content-Disposition': `attachment; filename="${safeName}"`,
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Content-SHA256': attachment?.sha256 || ''
+  });
+  res.end(attachment.content);
 }
 
 function sendJson(res, status, payload) {
