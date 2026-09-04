@@ -77,6 +77,7 @@
 
   function digitalAuthorizationApplies(enc, host, now = Date.now()) {
     if (!enc || host?._retiranteTipo !== 'outro') return false;
+    if (host?.__withdrawalAuthorizationInstalled !== true) return false;
     const authorization = activeDigitalAuthorization(enc, now);
     if (!authorization) return false;
     const document = normalizeDocument(host?._retiranteRg || '');
