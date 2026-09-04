@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
 
-  const VERSION = '2026-09-03.6';
+  const VERSION = '2026-09-03.7';
   const MANIFEST_URL = '/manifest.json?v=20260903-1';
   const SW_URL = '/sw.js?v=20260903-3';
   const ASSOCIATION_STATE_KEYS = [
@@ -230,6 +230,26 @@
     return true;
   }
 
+  function loadCustodyChain(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.CustodyChainUI) {
+      if (typeof host.CustodyChainUI.install === 'function') host.CustodyChainUI.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-custody-chain="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/custody-chain-client.js?v=20260903-1';
+    script.async = true;
+    script.dataset.custodyChain = '1';
+    script.onload = function() {
+      if (host.CustodyChainUI && typeof host.CustodyChainUI.install === 'function') host.CustodyChainUI.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     host = host || root;
     const doc = host?.document;
@@ -275,6 +295,7 @@
     loadWhatsappClient(host);
     loadWithdrawalPin(host);
     loadWithdrawalAuthorization(host);
+    loadCustodyChain(host);
     host.PortariaSyncPwaRuntime = {
       version: VERSION,
       standalone: () => isStandalone(host),
@@ -284,6 +305,7 @@
       whatsappClient: () => loadWhatsappClient(host),
       withdrawalPin: () => loadWithdrawalPin(host),
       withdrawalAuthorization: () => loadWithdrawalAuthorization(host),
+      custodyChain: () => loadCustodyChain(host),
       associationScope: id => applyAssociationScope(host, id)
     };
     return true;
@@ -308,6 +330,7 @@
     loadWhatsappClient,
     loadWithdrawalPin,
     loadWithdrawalAuthorization,
+    loadCustodyChain,
     install,
     version: VERSION
   };
