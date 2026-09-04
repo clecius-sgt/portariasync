@@ -146,7 +146,20 @@ class AssociationManager {
 
   writeMirror(id, state, storage = 'sqlite+json-mirror') {
     const files = this.paths(id);
-    atomicJson(files.mirror, { ...state, storage });
+    let authoritative = state;
+    try {
+      const fromDatabase = this.database(id).readState();
+      if (fromDatabase && fromDatabase.exists) {
+        authoritative = {
+          ...state,
+          ...fromDatabase,
+          version: fromDatabase.version || state?.version || Date.now(),
+          updatedAt: fromDatabase.updatedAt || state?.updatedAt || new Date().toISOString()
+        };
+      }
+    } catch (_) {}
+    delete authoritative.associacao;
+    atomicJson(files.mirror, { ...authoritative, storage });
   }
 
   writeState(id = DEFAULT_ASSOCIATION_ID, state) {
