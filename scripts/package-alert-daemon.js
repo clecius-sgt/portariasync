@@ -44,13 +44,14 @@ console.log('Verificação a cada ' + intervalMinutes + ' minuto(s).');
 console.log('Multi-Associação:', associations.status(false).total, 'associação(ões).');
 console.log('WhatsApp:', whatsapp.status().configured ? 'configurado' : 'não configurado');
 
+// Este timer permanece referenciado de propósito. Ele mantém o daemon residente
+// no PM2 mesmo quando os timers internos do serviço são unref para facilitar testes.
 const logTimer = setInterval(() => {
   const status = service.status();
   if (!status.lastRunAt) return;
   console.log('Alertas - última verificação:', status.lastRunAt, JSON.stringify(status.lastSummary || {}));
   if (status.lastError) console.warn('Alertas - última falha:', status.lastError);
 }, 60 * 60 * 1000);
-logTimer.unref?.();
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
