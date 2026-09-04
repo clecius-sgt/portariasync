@@ -6,7 +6,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(root) {
   'use strict';
 
-  const VERSION = '2026-09-04.1';
+  const VERSION = '2026-09-04.2';
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -144,6 +144,26 @@
     return true;
   }
 
+  function loadWithdrawalReceipt(host) {
+    host = host || root;
+    const doc = host?.document;
+    if (!doc || typeof doc.createElement !== 'function') return false;
+    if (host.WithdrawalReceiptUI) {
+      if (typeof host.WithdrawalReceiptUI.install === 'function') host.WithdrawalReceiptUI.install(host);
+      return true;
+    }
+    if (doc.querySelector?.('script[data-withdrawal-receipt="1"]')) return true;
+    const script = doc.createElement('script');
+    script.src = '/withdrawal-receipt-client.js?v=20260904-1';
+    script.async = true;
+    script.dataset.withdrawalReceipt = '1';
+    script.onload = function() {
+      if (host.WithdrawalReceiptUI && typeof host.WithdrawalReceiptUI.install === 'function') host.WithdrawalReceiptUI.install(host);
+    };
+    (doc.head || doc.documentElement).appendChild(script);
+    return true;
+  }
+
   function install(host) {
     root = host || root;
     if (!root || root.__custodyChainUiInstalled) return !!root;
@@ -162,10 +182,11 @@
     try { root.renderDashboard?.(); } catch (_) {}
     try { root.renderEncomendas?.(); } catch (_) {}
     loadPackageAlerts(root);
+    loadWithdrawalReceipt(root);
     return true;
   }
 
-  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, loadPackageAlerts, install, version: VERSION };
+  const api = { VERSION, esc, formatDate, integrityLabel, eventHtml, authoritativePackage, open, close, loadPackageAlerts, loadWithdrawalReceipt, install, version: VERSION };
 
   if (typeof document !== 'undefined') {
     const start = () => install(root);
