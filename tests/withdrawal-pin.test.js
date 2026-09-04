@@ -108,7 +108,7 @@ test('PWA carrega módulo do PIN e mantém API e dados fora do cache', () => {
   assert.match(pwaSource, /withdrawal-pin\.js\?v=20260903-1/);
   assert.match(pwaSource, /loadWithdrawalPin\(host\)/);
   assert.match(swSource, /withdrawal-pin\.js/);
-  assert.match(swSource, /portariasync-shell-v3/);
+  assert.match(swSource, /portariasync-shell-v4/);
   assert.match(swSource, /url\.pathname\.startsWith\('\/api\/'\).*return false/);
   assert.match(swSource, /url\.pathname\.startsWith\('\/data\/'\).*return false/);
 });
