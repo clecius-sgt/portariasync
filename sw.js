@@ -18,6 +18,9 @@ const SHELL = [
   '/custody-chain-client.js',
   '/package-alerts-client.js',
   '/withdrawal-receipt-client.js',
+  '/occurrence-client.js',
+  '/ocorrencias.html',
+  '/ocorrencias.js',
   '/icons/portariasync-192.svg',
   '/icons/portariasync-512.svg'
 ];
