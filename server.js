@@ -7,6 +7,7 @@ const { WhatsAppProvider } = require('./whatsapp-provider');
 const { ResidentPortalService, finalizePackageAuthorizations } = require('./resident-portal-service');
 const { AssociationManager, DEFAULT_ASSOCIATION_ID } = require('./association-manager');
 const { OccurrenceService } = require('./occurrence-service');
+const { ResidentOccurrenceService } = require('./resident-occurrence-service');
 
 loadEnv();
 
@@ -27,6 +28,7 @@ const associations = new AssociationManager({
 });
 const database = associations.database(DEFAULT_ASSOCIATION_ID);
 const occurrences = new OccurrenceService({ associations });
+const residentOccurrences = new ResidentOccurrenceService({ associations });
 
 ensureUsersFile();
 
@@ -141,6 +143,7 @@ async function handleApi(req, res) {
       multiAssociation: associations.status(false),
       residentPortal: residentPortal.status(),
       occurrences: occurrences.status(DEFAULT_ASSOCIATION_ID),
+      residentOccurrencePortal: residentOccurrences.status(),
       paddleocr: paddleOcr.status()
     });
     return;
@@ -207,6 +210,64 @@ async function handleApi(req, res) {
 
   if (req.method === 'GET' && req.url === '/api/morador/encomendas') {
     sendJson(res, 200, await residentPortal.packages(residentToken(req)));
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/morador/ocorrencias') {
+    const session = residentPortal.requireSession(residentToken(req));
+    const result = residentOccurrences.list(session.associationId, session.residentIds);
+    sendJson(res, 200, { ok: true, associationId: session.associationId, ...result });
+    return;
+  }
+
+  const residentOccurrenceCreateMatch = pathname.match(/^\/api\/morador\/encomendas\/([^/]+)\/ocorrencia$/);
+  if (req.method === 'POST' && residentOccurrenceCreateMatch) {
+    const session = residentPortal.requireSession(residentToken(req));
+    const packageId = decodeURIComponent(residentOccurrenceCreateMatch[1]);
+    const body = await readJson(req);
+    const result = residentOccurrences.create(
+      session.associationId,
+      session.residentIds,
+      packageId,
+      body,
+      residentSessionActor(session, req)
+    );
+    let whatsappConfirmado = false;
+    try {
+      const sent = await whatsapp.sendText(
+        session.phone,
+        'PortalSync - ocorrência ' + result.occurrence.occurrenceNumber + ' registrada.\n' +
+        'Encomenda: ' + (result.occurrence.packageCode || '-') + '\n' +
+        'Acompanhe o andamento pelo Portal do Morador.'
+      );
+      whatsappConfirmado = sent?.ok === true;
+    } catch (_) {}
+    sendJson(res, 201, { ok: true, ...result, whatsappConfirmado });
+    return;
+  }
+
+  const residentOccurrenceStatementMatch = pathname.match(/^\/api\/morador\/ocorrencias\/([^/]+)\/manifestacao$/);
+  if (req.method === 'POST' && residentOccurrenceStatementMatch) {
+    const session = residentPortal.requireSession(residentToken(req));
+    const id = decodeURIComponent(residentOccurrenceStatementMatch[1]);
+    const body = await readJson(req);
+    const result = residentOccurrences.addStatement(
+      session.associationId,
+      session.residentIds,
+      id,
+      body.text,
+      residentSessionActor(session, req)
+    );
+    sendJson(res, 200, { ok: true, ...result });
+    return;
+  }
+
+  const residentOccurrenceDetailMatch = pathname.match(/^\/api\/morador\/ocorrencias\/([^/]+)$/);
+  if (req.method === 'GET' && residentOccurrenceDetailMatch) {
+    const session = residentPortal.requireSession(residentToken(req));
+    const id = decodeURIComponent(residentOccurrenceDetailMatch[1]);
+    const result = residentOccurrences.get(session.associationId, session.residentIds, id);
+    sendJson(res, 200, { ok: true, ...result });
     return;
   }
 
@@ -799,6 +860,16 @@ function sessionActor(session, req) {
     id: session?.id || '',
     name: session?.nome || 'PortalSync',
     role: session?.perfil || 'sistema',
+    ip: clientIp(req)
+  };
+}
+
+function residentSessionActor(session, req) {
+  return {
+    id: 'portal-morador',
+    name: 'Morador pelo Portal',
+    role: 'morador',
+    associationId: session?.associationId || DEFAULT_ASSOCIATION_ID,
     ip: clientIp(req)
   };
 }
