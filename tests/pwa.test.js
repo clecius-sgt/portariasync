@@ -34,7 +34,7 @@ test('PWA registra service worker somente em contexto seguro', async () => {
   };
   const result = await pwa.registerServiceWorker(host);
   assert.ok(result);
-  assert.equal(registered.url, '/sw.js?v=20260903-3');
+  assert.equal(registered.url, '/sw.js?v=20260903-4');
   assert.equal(registered.options.scope, '/');
   assert.equal(registered.options.updateViaCache, 'none');
   assert.equal(updated, 1);
@@ -51,9 +51,11 @@ test('service worker nunca intercepta API nem diretório de dados', () => {
   assert.match(source, /url\.pathname\.startsWith\('\/api\/'\).*return false/);
   assert.match(source, /url\.pathname\.startsWith\('\/data\/'\).*return false/);
   assert.match(source, /request\.method !== 'GET'/);
-  assert.match(source, /portariasync-shell-v3/);
+  assert.match(source, /portariasync-shell-v4/);
   assert.match(source, /whatsapp-client\.js/);
   assert.match(source, /withdrawal-pin\.js/);
+  assert.match(source, /withdrawal-authorization\.js/);
+  assert.match(source, /custody-chain-client\.js/);
 });
 
 test('ícones PWA existem nos tamanhos declarados', () => {
