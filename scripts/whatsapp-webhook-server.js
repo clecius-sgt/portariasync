@@ -8,11 +8,12 @@ const crypto = require('crypto');
 const { WhatsAppDeliveryStore } = require('../whatsapp-delivery-store');
 
 const ROOT = path.resolve(__dirname, '..');
-loadEnv(path.join(ROOT, '.env'));
+const ENV_FILE = path.join(ROOT, '.env');
+loadEnv(ENV_FILE);
 
 const HOST = '127.0.0.1';
 const PORT = Math.max(1, Number(process.env.WHATSAPP_WEBHOOK_PORT || 3002));
-const SECRET = String(process.env.ZAPI_WEBHOOK_SECRET || '').trim();
+const SECRET = ensureSecret();
 const ZAPI_URL = String(process.env.ZAPI_URL || '').trim();
 const EXPECTED_INSTANCE_ID = instanceIdFromUrl(ZAPI_URL);
 const store = new WhatsAppDeliveryStore({
@@ -32,6 +33,18 @@ function loadEnv(file) {
   }
 }
 
+function ensureSecret() {
+  let secret = String(process.env.ZAPI_WEBHOOK_SECRET || '').trim();
+  if (secret) return secret;
+  secret = crypto.randomBytes(24).toString('hex');
+  const existing = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, 'utf8') : '';
+  const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+  fs.appendFileSync(ENV_FILE, `${prefix}ZAPI_WEBHOOK_SECRET=${secret}\n`, { mode: 0o600 });
+  try { fs.chmodSync(ENV_FILE, 0o600); } catch (_) {}
+  process.env.ZAPI_WEBHOOK_SECRET = secret;
+  return secret;
+}
+
 function instanceIdFromUrl(value) {
   const match = String(value || '').match(/\/instances\/([^/]+)\/token\//i);
   return match ? decodeURIComponent(match[1]) : '';
@@ -44,7 +57,6 @@ function safeEqual(a, b) {
 }
 
 function authorized(requestUrl) {
-  if (!SECRET) return false;
   return safeEqual(requestUrl.searchParams.get('key') || '', SECRET);
 }
 
@@ -87,7 +99,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && requestUrl.pathname === '/api/zapi/health') {
       sendJson(res, 200, {
         ok: true,
-        secretConfigured: !!SECRET,
+        secretConfigured: true,
         instanceConfigured: !!EXPECTED_INSTANCE_ID,
         tracking: store.summary()
       });
@@ -142,7 +154,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Webhook WhatsApp do PortariaSync ativo em http://${HOST}:${PORT}`);
-  console.log('Segredo do webhook:', SECRET ? 'configurado' : 'AUSENTE');
+  console.log('Segredo do webhook: configurado');
   console.log('Instância Z-API:', EXPECTED_INSTANCE_ID ? 'identificada' : 'não identificada');
 });
 
