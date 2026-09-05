@@ -115,6 +115,7 @@ test('interface e API da Gestão de Encomendas 2.0 estão protegidas e integrada
   assert.match(html, /Gestão de Encomendas 2\.0/);
   assert.match(html, /Corrigir encomenda pendente/);
   assert.match(client, /expectedVersion/);
+  assert.match(client, /value == null \|\| value === ''/);
   assert.match(client, /\/cancel/);
   assert.match(client, /\/reopen/);
   assert.match(admin, /encomendas-admin\.html/);
