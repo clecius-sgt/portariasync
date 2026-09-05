@@ -5,11 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const { BackupManager } = require('../backup-manager');
 const { AssociationManager } = require('../association-manager');
+const { AccessStore } = require('../access-store');
 
 const ROOT = path.resolve(__dirname, '..');
 loadEnv(path.join(ROOT, '.env'));
 
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = path.resolve(ROOT, process.env.PORTARIASYNC_DATA_DIR || 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const BACKUP_DIR = path.resolve(ROOT, process.env.BACKUP_DIR || '../portariasync-backups');
 const enabled = !/^(?:0|false|no|off)$/i.test(String(process.env.BACKUP_ENABLED || 'true'));
@@ -19,6 +20,16 @@ const maxFiles = Number(process.env.BACKUP_MAX_FILES || 30);
 const associations = new AssociationManager({
   dataDir: DATA_DIR,
   defaultName: process.env.DEFAULT_ASSOCIATION_NAME || 'Associação de Moradores'
+});
+const access = new AccessStore({
+  file: process.env.ACCESS_DB || path.join(DATA_DIR, 'access.sqlite'),
+  usersFile: USERS_FILE,
+  defaultAssociationId: 'principal',
+  normalizeAssociationId: value => associations.get(String(value || ''))?.id || 'principal',
+  adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
+  sessionMaxAgeMs: Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000),
+  maxLoginAttempts: Number(process.env.ACCESS_MAX_LOGIN_ATTEMPTS || 5),
+  lockDurationMs: Number(process.env.ACCESS_LOCK_MINUTES || 15) * 60 * 1000
 });
 
 function loadEnv(file) {
@@ -51,11 +62,12 @@ const manager = new BackupManager({
   maxFiles,
   startupDelayMs: 1500,
   snapshotProvider: async () => ({
-    source: 'sqlite-multi-association',
+    source: 'sqlite-multi-association-access',
     multiAssociation: associations.status(false),
     associations: associations.snapshotAll(),
     files: {
-      'users.json': readJsonFile(USERS_FILE, [])
+      'access-users.json': access.backupUsers(),
+      'users-legacy.json': readJsonFile(USERS_FILE, [])
     }
   })
 });
@@ -75,6 +87,7 @@ const keepAlive = setInterval(() => {}, 60 * 60 * 1000);
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     manager.stop();
+    access.close();
     associations.closeAll();
     clearInterval(keepAlive);
     process.exit(0);

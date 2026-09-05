@@ -21,7 +21,8 @@ test('servidor usa SQLite como armazenamento primário com isolamento por associ
 test('backup automático prioriza snapshots estruturados de todas as associações', () => {
   const source = fs.readFileSync(path.join(root, 'scripts', 'backup-daemon.js'), 'utf8');
   assert.match(source, /AssociationManager/);
-  assert.match(source, /sqlite-multi-association/);
+  assert.match(source, /sqlite-multi-association-access/);
   assert.match(source, /associations:\s*associations\.snapshotAll\(\)/);
-  assert.match(source, /users\.json/);
+  assert.match(source, /access\.backupUsers\(\)/);
+  assert.match(source, /users-legacy\.json/);
 });

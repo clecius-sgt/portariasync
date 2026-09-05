@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 51267)
+Total output lines: 4403
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -645,6 +648,7 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
 
   <div class="card" id="painelUsuarios" style="display:none;">
     <h2>👤 Usuários do sistema</h2>
+    <a href="/acessos.html" class="btn btn-full" style="display:block;background:#1a1f3a;color:white;text-align:center;text-decoration:none;margin-bottom:16px;">🔐 Abrir Gestão de Acessos e Sessões</a>
     <div id="listaUsuarios" style="margin-bottom:16px;"></div>
     <div style="border-top:1px solid var(--border);padding-top:16px;">
       <h2 style="font-size:15px;margin-bottom:12px;">➕ Novo usuário</h2>
@@ -657,7 +661,7 @@ Por favor, retire o mais breve possível. Obrigado!</textarea>
         <option value="admin">Administrador</option>
       </select>
       <label>Senha</label>
-      <input type="password" id="novoUsuarioSenha" placeholder="Mínimo 4 caracteres">
+      <input type="password" id="novoUsuarioSenha" placeholder="Mínimo 8 caracteres">
       <button class="btn btn-primary btn-full" style="margin-top:12px;" onclick="criarUsuario()">➕ Criar usuário</button>
     </div>
   </div>
@@ -744,7 +748,8 @@ async function apiFetch(path, options = {}) {
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) limparSessaoExpirada();
-    throw new Error('Servidor respondeu ' + resp.status);
+    const payload = await resp.json().catch(() => ({}));
+    throw new Error(payload.error || 'Servidor respondeu ' + resp.status);
   }
   return resp.json();
 }
@@ -1446,11 +1451,9 @@ function renderAuditoria() {
 }
 
 // ========== USUÁRIOS & LOGIN ==========
-let _usuarios_default = [
-  { id: 'u1', nome: 'Administrador', perfil: 'admin', senha: 'admin123' }
-];
-let usuarios = JSON.parse(localStorage.getItem('usuarios') || 'null') || _usuarios_default;
-if (!localStorage.getItem('usuarios')) localStorage.setItem('usuarios', JSON.stringify(usuarios));
+// Remove credenciais legadas que versões antigas guardavam no navegador.
+localStorage.removeItem('usuarios');
+let usuarios = [];
 
 let usuarioLogado = null;
 
@@ -1488,9 +1491,7 @@ async function carregarUsuariosBackend() {
     localStorage.setItem('usuariosPublicos', JSON.stringify(usuarios));
   } catch(e) {
     backendAuthDisponivel = false;
-    usuarios = JSON.parse(localStorage.getItem('usuarios') || 'null') ||
-      JSON.parse(localStorage.getItem('usuariosPublicos') || 'null') ||
-      _usuarios_default;
+    usuarios = JSON.parse(localStorage.getItem('usuariosPublicos') || 'null') || [];
   }
 }
 
@@ -1549,12 +1550,14 @@ async function fazerLogin() {
       localStorage.setItem('authToken', authToken);
       usuario = resp.user;
     } catch(e) {
+      erroEl.textContent = e.message || 'Usuário ou senha incorretos';
       erroEl.style.display = 'block';
       return;
     }
   } else {
-    usuario = usuarios.find(u => u.id === uid && u.senha === senha);
-    if (!usuario) { erroEl.style.display = 'block'; return; }
+    erroEl.textContent = 'Servidor indisponível. O acesso local sem validação foi desativado por segurança.';
+    erroEl.style.display = 'block';
+    return;
   }
 
   erroEl.style.display = 'none';
@@ -1606,7 +1609,7 @@ async function criarUsuario() {
   const perfil = document.getElementById('novoUsuarioPerfil').value;
   const senha = document.getElementById('novoUsuarioSenha').value;
   if (!nome) { toast('⚠️ Informe o nome'); return; }
-  if (senha.length < 4) { toast('⚠️ Senha mínima: 4 caracteres'); return; }
+  if (senha.length < 8) { toast('⚠️ Senha mínima: 8 caracteres'); return; }
 
   let novoUsuario = null;
   if (backendAuthDisponivel) {
@@ -1622,9 +1625,8 @@ async function criarUsuario() {
       return;
     }
   } else {
-    novoUsuario = { id: 'u' + Date.now(), nome, perfil, senha };
-    usuarios.push(novoUsuario);
-    localStorage.setItem('usuarios', JSON.stringify(usuarios));
+    toast('❌ Servidor indisponível. Não é possível criar usuário sem validação segura.', 6000);
+    return;
   }
 
   registrarAuditoria('Usuário criado', { usuarioAlvo: novoUsuario.nome, perfil: novoUsuario.perfil });
@@ -1662,8 +1664,8 @@ async function excluirUsuario(id) {
       return;
     }
   } else {
-    usuarios = usuarios.filter(u => u.id !== id);
-    localStorage.setItem('usuarios', JSON.stringify(usuarios));
+    toast('❌ Servidor indisponível. Não é possível alterar usuários sem validação segura.', 6000);
+    return;
   }
   if (usuario) registrarAuditoria('Usuário removido', { usuarioAlvo: usuario.nome, perfil: usuario.perfil });
   renderListaUsuarios();
@@ -2074,69 +2076,7 @@ function abrirModalRetirada(enc) {
 
   const relacionados = retirantesDoMorador(enc.moradorId);
   const htmlRelacionados = relacionados.length > 0
-    ? `<div style="margin-top:10px;">
-        <div style="font-size:12px;color:#5f6368;margin-bottom:6px;">Pessoas já relacionadas a este morador:</div>
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          ${relacionados.map(r => `
-            <button type="button" onclick="preencherRetiranteRelacionado('${r.id}')"
-              style="text-align:left;padding:9px 10px;border-radius:8px;border:1px solid #dadce0;background:#fff;cursor:pointer;font-size:13px;color:#1a1f3a;">
-              👥 ${r.nome} <span style="color:#5f6368;">· RG ${r.rg}</span>
-            </button>
-          `).join('')}
-        </div>
-      </div>`
-    : '';
-
-  const modal = document.createElement('div');
-  modal.id = 'modalRetirada';
-  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9990;display:flex;align-items:center;justify-content:center;padding:20px;';
-  modal.innerHTML = `
-    <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:92vh;overflow-y:auto;">
-      <div style="font-size:18px;font-weight:700;margin-bottom:4px;">✅ Confirmar retirada</div>
-      <div style="font-size:14px;color:#5f6368;margin-bottom:20px;">Encomenda de <strong>${enc.moradorNome}</strong></div>
-
-      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Quem está retirando?</label>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <button id="btnProprioMorador" onclick="selecionarRetirante('proprio', '${enc.moradorNome}')"
-          style="flex:1;padding:10px;border-radius:8px;border:2px solid #1a73e8;background:#e8f0fe;color:#1a73e8;font-weight:600;cursor:pointer;font-size:14px;">
-          👤 O próprio morador
-        </button>
-        <button id="btnOutraPessoa" onclick="selecionarRetirante('outro', '')"
-          style="flex:1;padding:10px;border-radius:8px;border:2px solid #dadce0;background:white;color:#5f6368;font-weight:600;cursor:pointer;font-size:14px;">
-          👥 Outra pessoa
-        </button>
-      </div>
-
-      <div id="campoOutraPessoa" style="display:none;margin-bottom:16px;">
-        <input type="text" id="inputRetirante" placeholder="Nome de quem está retirando..."
-          style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:16px;">
-        <input type="text" id="inputRetiranteRg" placeholder="RG de quem está retirando..."
-          inputmode="numeric" autocomplete="off"
-          style="width:100%;padding:12px;border:1px solid #dadce0;border-radius:8px;font-size:16px;margin-top:8px;">
-        <div id="areaFotoRetirante" style="margin-top:10px;padding:10px;border:1px dashed #b7c6d8;border-radius:8px;background:#f8fbff;">
-          <div style="font-size:13px;color:#5f6368;margin-bottom:8px;">Foto obrigatória do RG/CNH ou da pessoa retirante</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="btn btn-sm" style="background:#e8f0fe;color:#1a73e8;flex:1;justify-content:center;padding:12px;font-weight:700;" onclick="abrirCameraRetirante()">📷 Fotografar RG/CNH ou pessoa</button>
-            <input id="inputFotoRetirante" type="file" accept="image/*" capture="environment" onchange="anexarFotoRetirante(this)" style="display:none;">
-            <button type="button" id="btnLimparFotoRetirante" class="btn btn-sm" style="display:none;background:#f8d7da;color:#842029;" onclick="limparFotoRetirante()">Remover foto</button>
-          </div>
-          <img id="previewFotoRetirante" alt="Foto do retirante" style="display:none;width:100%;max-height:180px;object-fit:contain;border:1px solid #dadce0;border-radius:8px;margin-top:8px;background:white;">
-        </div>
-        ${htmlRelacionados}
-      </div>
-
-      <div id="nomeRetirante" style="padding:10px 14px;background:#e8f0fe;border-radius:8px;font-size:15px;color:#1a73e8;margin-bottom:16px;">
-        👤 ${enc.moradorNome}
-      </div>
-
-      <label style="display:block;font-size:14px;color:#5f6368;margin-bottom:6px;">Assinatura obrigatória <span style="font-weight:400;color:#aaa;">(dedo, caneta touch ou mouse)</span></label>
-      <canvas id="canvasAssinatura" width="360" height="120"
-        style="width:100%;height:140px;border:1px solid #dadce0;border-radius:8px;background:#f8f9fa;touch-action:none;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;"></canvas>
-      <button onclick="limparAssinatura()" style="margin-top:4px;background:none;border:none;color:#1a73e8;font-size:13px;cursor:pointer;padding:0;">🗑️ Limpar assinatura</button>
-
-      <div style="display:flex;gap:10px;margin-top:16px;">
-        <button onclick="fecharModalRetirada()" style="flex:1;padding:12px;border-radius:8px;border:1px solid #dadce0;background:white;color:#5f6368;font-weight:600;cursor:pointer;font-size:15px;">Cancelar</button>
-        <button onclick="confirmarRetirada('${enc.id}')" style="flex:1;padding:12px;border-radius:8px;border:none;background:#34a853;color:white;font-weight:700;cursor:pointer;font-size:15px;">✅ Confirmar</button>
+    ? `<div style="margin-top…1267 tokens truncated…d:#34a853;color:white;font-weight:700;cursor:pointer;font-size:15px;">✅ Confirmar</button>
       </div>
     </div>
   `;

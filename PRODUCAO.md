@@ -42,10 +42,28 @@ Essas chaves ficam somente no backend (`server.js`) por meio do `.env`.
 O backend bloqueia acesso direto a `.env`, arquivos ocultos e à pasta `data/`.
 As rotas de dados, sincronização e WhatsApp exigem login com perfil permitido.
 
-## 5. Login e usuários
+## 5. Login, usuários e sessões
 
-Usuários criados pelo painel ficam em `data/users.json`, com senha protegida por hash PBKDF2.
-Essa pasta não deve ser enviada ao GitHub.
+Usuários e sessões ficam no banco global `data/access.sqlite`. As senhas usam hash
+PBKDF2 e os tokens de sessão são gravados somente como SHA-256. O token bruto
+existe apenas no navegador que iniciou a sessão.
+
+Na primeira inicialização após a atualização, os usuários de `data/users.json`
+são importados automaticamente, preservando identificadores, perfis, associações
+e senhas existentes. O JSON permanece intacto como cópia legada e deixa de ser a
+fonte ativa.
+
+Por padrão:
+
+- cada sessão expira após 8 horas;
+- 5 tentativas incorretas bloqueiam temporariamente o usuário por 15 minutos;
+- desativar um usuário ou trocar sua senha encerra todas as sessões dele;
+- as sessões continuam válidas após reiniciar o processo principal.
+
+Esses limites podem ser ajustados por `SESSION_MAX_AGE_MS`,
+`ACCESS_MAX_LOGIN_ATTEMPTS` e `ACCESS_LOCK_MINUTES` no `.env`.
+
+O painel administrativo está disponível em `/acessos.html`.
 
 ## 6. Espelhamento celular/computador
 
@@ -70,9 +88,11 @@ http://IP-DO-COMPUTADOR:3000
 
 Assim, o que for lançado em um dispositivo é salvo no backend e carregado pelo outro.
 
-## 7. Próximo endurecimento recomendado
+## 7. Cópias de segurança dos acessos
 
-O próximo passo de produção é mover usuários e sessões para o banco, mantendo senhas com hash e controle de expiração de sessão.
+O daemon de backup inclui `access-users.json`, com os registros necessários para
+restaurar usuários, e `users-legacy.json`. Sessões e tokens não são incluídos no
+backup. Em uma restauração, todos devem fazer um novo login.
 
 ## 8. Etiquetas sem serviço contratado
 

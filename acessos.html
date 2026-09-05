@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PortariaSync | Gestão de Acessos</title>
+  <style>
+    :root{--navy:#1d2549;--gold:#c9a53d;--bg:#f3f6fa;--card:#fff;--text:#101936;--muted:#667085;--line:#dce3ec;--green:#137333;--red:#b42318;--amber:#946200}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px Arial,sans-serif}button,input,select{font:inherit}
+    header{height:64px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:2px solid var(--gold)}
+    .brand{font-weight:800;font-size:18px}.brand span{color:var(--gold)}.header-actions{display:flex;align-items:center;gap:9px;font-size:12px}.header-actions a,.header-actions button{border:1px solid #687094;background:transparent;color:#fff;border-radius:7px;padding:8px 11px;text-decoration:none;cursor:pointer}.header-actions .gold{background:var(--gold);border-color:var(--gold);color:#17203e;font-weight:700}
+    main{max-width:1180px;margin:24px auto;padding:0 18px}.title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}h1{font-size:22px;margin:0 0 5px}p{margin:0;color:var(--muted)}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}.stat,.card{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 5px #1018280d}.stat{padding:15px}.stat label{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted)}.stat strong{display:block;font-size:25px;margin-top:7px}
+    .layout{display:grid;grid-template-columns:320px 1fr;gap:14px}.card{padding:16px}h2{font-size:16px;margin:0 0 14px}label{display:block;font-size:10px;font-weight:800;letter-spacing:.05em;margin:12px 0 5px;color:#42526d}input,select{width:100%;border:1px solid var(--line);border-radius:7px;padding:10px;background:#fff;color:var(--text)}
+    .btn{border:0;border-radius:7px;padding:9px 11px;font-weight:700;cursor:pointer}.primary{background:var(--gold);color:#19213f}.secondary{background:#edf2f7;color:#344054}.danger{background:#fee4e2;color:var(--red)}.success{background:#dcfae6;color:var(--green)}.small{padding:6px 8px;font-size:11px}.full{width:100%;margin-top:14px}
+    .table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th{text-align:left;color:var(--muted);font-size:10px;letter-spacing:.05em;padding:8px;border-bottom:1px solid var(--line)}td{padding:11px 8px;border-bottom:1px solid #edf0f4;vertical-align:middle}.actions{display:flex;gap:6px;flex-wrap:wrap}.badge{display:inline-block;border-radius:999px;padding:4px 7px;font-size:10px;font-weight:800}.active{background:#dcfae6;color:var(--green)}.inactive{background:#fee4e2;color:var(--red)}.locked{background:#fff0c2;color:var(--amber)}
+    .sessions{margin-top:14px}.message{display:none;padding:10px;border-radius:7px;margin-bottom:12px}.message.ok{display:block;background:#dcfae6;color:var(--green)}.message.error{display:block;background:#fee4e2;color:var(--red)}.empty{text-align:center;color:var(--muted);padding:30px}.hint{font-size:11px;line-height:1.45;color:var(--muted);margin-top:10px}
+    @media(max-width:800px){header{padding:0 12px}.header-actions span{display:none}.stats{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.title-row{display:block}.title-row p{margin-bottom:12px}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">Portaria<span>Sync</span><div style="font-size:9px;letter-spacing:.08em;font-weight:500">GESTÃO DE ACESSOS</div></div>
+  <div class="header-actions"><span id="currentUser"></span><a href="/admin.html">Painel administrativo</a><a href="/">Operação</a><button id="refreshButton">Atualizar</button><button class="gold" id="logoutButton">Sair</button></div>
+</header>
+<main>
+  <div class="title-row"><div><h1>Usuários e sessões</h1><p>Controle de credenciais, bloqueios e sessões ativas do PortariaSync.</p></div></div>
+  <div id="message" class="message"></div>
+  <section class="stats">
+    <div class="stat"><label>USUÁRIOS ATIVOS</label><strong id="activeCount">0</strong></div>
+    <div class="stat"><label>USUÁRIOS INATIVOS</label><strong id="inactiveCount">0</strong></div>
+    <div class="stat"><label>BLOQUEIOS TEMPORÁRIOS</label><strong id="lockedCount">0</strong></div>
+    <div class="stat"><label>SESSÕES ATIVAS</label><strong id="sessionCount">0</strong></div>
+  </section>
+  <div class="layout">
+    <section class="card">
+      <h2>Novo usuário</h2>
+      <label for="userName">NOME</label><input id="userName" autocomplete="off" placeholder="Ex.: João Porteiro">
+      <label for="userRole">PERFIL</label><select id="userRole"><option value="porteiro">Porteiro</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
+      <label for="userPassword">SENHA INICIAL</label><input id="userPassword" type="password" autocomplete="new-password" placeholder="Mínimo de 8 caracteres">
+      <button class="btn primary full" id="createButton">Criar usuário</button>
+      <div class="hint">A senha não é exibida nem armazenada em texto aberto. Após cinco tentativas incorretas, o acesso fica temporariamente bloqueado.</div>
+    </section>
+    <section class="card">
+      <h2>Usuários cadastrados</h2>
+      <div class="table-wrap"><table><thead><tr><th>NOME</th><th>PERFIL</th><th>ASSOCIAÇÃO</th><th>SITUAÇÃO</th><th>ÚLTIMO LOGIN</th><th>AÇÕES</th></tr></thead><tbody id="usersBody"></tbody></table></div>
+    </section>
+  </div>
+  <section class="card sessions">
+    <h2>Sessões ativas</h2>
+    <div class="table-wrap"><table><thead><tr><th>USUÁRIO</th><th>PERFIL</th><th>ASSOCIAÇÃO</th><th>ÚLTIMA ATIVIDADE</th><th>EXPIRAÇÃO</th><th>IP</th></tr></thead><tbody id="sessionsBody"></tbody></table></div>
+  </section>
+</main>
+<script src="/acessos-admin.js?v=20260905-1"></script>
+</body>
+</html>
