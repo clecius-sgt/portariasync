@@ -9,6 +9,7 @@ const { OccurrenceService } = require('./occurrence-service');
 const { ResidentOccurrenceService } = require('./resident-occurrence-service');
 const { AccessStore } = require('./access-store');
 const OperationalDashboard = require('./operational-dashboard');
+const { PackageManagementService } = require('./package-management-service');
 
 loadEnv();
 
@@ -29,6 +30,7 @@ const associations = new AssociationManager({
 const database = associations.database(DEFAULT_ASSOCIATION_ID);
 const occurrences = new OccurrenceService({ associations });
 const residentOccurrences = new ResidentOccurrenceService({ associations });
+const packageManagement = new PackageManagementService({ associations });
 const access = new AccessStore({
   file: process.env.ACCESS_DB || path.join(DATA_DIR, 'access.sqlite'),
   usersFile: USERS_FILE,
@@ -72,7 +74,11 @@ const server = http.createServer(async (req, res) => {
     }
     serveStatic(req, res);
   } catch (err) {
-    sendJson(res, err.statusCode || 500, { error: err.statusCode ? err.message : 'Erro interno', detail: err.message });
+    sendJson(res, err.statusCode || 500, {
+      error: err.statusCode ? err.message : 'Erro interno',
+      detail: err.message,
+      ...(err.code ? { code: err.code } : {})
+    });
   }
 });
 
@@ -182,6 +188,57 @@ async function handleApi(req, res) {
       occurrences: occurrences.status(session.associacaoId)
     });
     sendJson(res, 200, { ok: true, ...dashboard });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/packages/management') {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const result = packageManagement.list(session.associacaoId, {
+      q: requestUrl.searchParams.get('q') || '',
+      status: requestUrl.searchParams.get('status') || '',
+      from: requestUrl.searchParams.get('from') || '',
+      to: requestUrl.searchParams.get('to') || '',
+      timezoneOffsetMinutes: requestUrl.searchParams.get('tzOffset')
+    });
+    sendJson(res, 200, { ok: true, ...result });
+    return;
+  }
+
+  const packageCancelMatch = pathname.match(/^\/api\/packages\/management\/([^/]+)\/cancel$/);
+  if (req.method === 'POST' && packageCancelMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(packageCancelMatch[1]);
+    const body = await readJson(req);
+    const result = packageManagement.cancel(session.associacaoId, id, body, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, ...result });
+    return;
+  }
+
+  const packageReopenMatch = pathname.match(/^\/api\/packages\/management\/([^/]+)\/reopen$/);
+  if (req.method === 'POST' && packageReopenMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(packageReopenMatch[1]);
+    const body = await readJson(req);
+    const result = packageManagement.reopen(session.associacaoId, id, body, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, ...result });
+    return;
+  }
+
+  const packageManagementMatch = pathname.match(/^\/api\/packages\/management\/([^/]+)$/);
+  if (req.method === 'PATCH' && packageManagementMatch) {
+    const session = requireRole(req, ['admin', 'supervisor']);
+    const id = decodeURIComponent(packageManagementMatch[1]);
+    const body = await readJson(req);
+    const result = packageManagement.update(session.associacaoId, id, body, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, ...result });
+    return;
+  }
+
+  if (req.method === 'GET' && packageManagementMatch) {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const id = decodeURIComponent(packageManagementMatch[1]);
+    const result = packageManagement.get(session.associacaoId, id);
+    sendJson(res, 200, { ok: true, ...result });
     return;
   }
 
