@@ -33,9 +33,9 @@
 <main>
   <section id="loginCard" class="card">
     <h2>Acompanhe suas encomendas</h2>
-    <p>Informe o WhatsApp cadastrado nesta associação usando somente o DDD e o número. Não informe +55.</p>
-    <label for="phone">WhatsApp - DDD + número</label>
-    <input id="phone" inputmode="tel" autocomplete="tel" maxlength="15" placeholder="(17) 99999-9999">
+    <p>Informe o WhatsApp cadastrado nesta associação usando o DDD e o número.</p>
+    <label for="phone">WhatsApp</label>
+    <input id="phone" inputmode="tel" autocomplete="tel" maxlength="15" placeholder="(99) 99999-9999">
     <button id="requestBtn" class="primary">Receber código</button>
     <div id="loginMsg" class="msg info hidden"></div>
   </section>
@@ -87,6 +87,7 @@
     </div>
   </section>
 </main>
+<script src="phone-mask.js?v=20260904-1"></script>
 <script src="morador-portal.js?v=20260904-1"></script>
 </body>
 </html>
