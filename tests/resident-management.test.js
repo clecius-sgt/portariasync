@@ -89,6 +89,17 @@ test('desativação é bloqueada quando existem encomendas pendentes', () => {
   assert.equal(svc.list('principal').summary.active, 2);
 });
 
+test('proteção otimista impede sobrescrever alteração concorrente de outro processo', () => {
+  const svc = service();
+  const state = svc.state('principal');
+  svc.associations.value.version = 99;
+  assert.throws(
+    () => svc.save('principal', state),
+    error => error.statusCode === 409 && error.code === 'STATE_CHANGED'
+  );
+  assert.equal(svc.associations.value.version, 99);
+});
+
 test('importação sempre permite prévia e aplica inclusão/atualização sem conflito silencioso', () => {
   const svc = service();
   const rows = [
@@ -96,6 +107,7 @@ test('importação sempre permite prévia e aplica inclusão/atualização sem c
     { nome: 'Carla Mendes', casa: 'Rua México, 80', whats: '11966666666', tipo: 'locatária' }
   ];
   const preview = svc.prepareImport('principal', rows);
+  assert.equal(preview.baseVersion, 1);
   assert.equal(preview.summary.update, 1);
   assert.equal(preview.summary.add, 1);
   assert.equal(preview.summary.conflicts, 0);
@@ -119,6 +131,9 @@ test('interface e servidor dedicados protegem a gestão por sessão administrati
   const html = fs.readFileSync(path.join(root, 'moradores.html'), 'utf8');
   const client = fs.readFileSync(path.join(root, 'moradores-admin.js'), 'utf8');
   const server = fs.readFileSync(path.join(root, 'scripts', 'resident-management-server.js'), 'utf8');
+  const admin = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
+  const env = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.match(html, /Gestão de Moradores/);
   assert.match(html, /Importação em massa/);
   assert.match(html, /Duplicidades exatas/);
@@ -127,4 +142,7 @@ test('interface e servidor dedicados protegem a gestão por sessão administrati
   assert.match(server, /http:\/\/127\.0\.0\.1:3000\/api\/auth\/me/);
   assert.match(server, /payload\.user\.perfil !== 'admin'/);
   assert.match(server, /\/api\/residents\/health/);
+  assert.match(admin, /href="\/moradores\.html"/);
+  assert.match(env, /RESIDENT_MANAGEMENT_PORT=3003/);
+  assert.equal(pkg.scripts['residents:server'], 'node scripts/resident-management-server.js');
 });
