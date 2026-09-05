@@ -96,7 +96,68 @@ async function requirePlatformAdmin(req) {
     error.statusCode = 403;
     throw error;
   }
-  return payload.user;
+  return { user: payload.user, authorization };
+}
+
+async function loadAssociationDirectory(authorization) {
+  try {
+    const response = await fetch('http://127.0.0.1:3000/api/associations', {
+      headers: { Authorization: authorization }
+    });
+    let payload = {};
+    try { payload = await response.json(); } catch (_) {}
+    if (!response.ok) return [];
+    const list = payload?.multiAssociation?.associations;
+    return Array.isArray(list)
+      ? list.map(item => ({ id: String(item?.id || ''), nome: String(item?.nome || item?.name || item?.id || '') })).filter(item => item.id)
+      : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function enrichAssociation(messages, associations) {
+  const directory = new Map((associations || []).map(item => [String(item.id), item]));
+  const only = associations?.length === 1 ? associations[0] : null;
+  return (messages || []).map(item => {
+    let associationId = String(item?.associationId || '').trim();
+    let associationInferred = false;
+    if (!associationId && only) {
+      associationId = only.id;
+      associationInferred = true;
+    }
+    const association = directory.get(associationId);
+    return {
+      ...item,
+      associationId: associationId || null,
+      associationName: association?.nome || (associationId ? associationId : 'Não identificada'),
+      associationInferred
+    };
+  });
+}
+
+function trackingSummary() {
+  const current = store.summary();
+  let funnel = { accepted: 0, sent: 0, received: 0, read: 0, failed: 0 };
+  try {
+    const row = store.db.prepare(`
+      SELECT
+        SUM(CASE WHEN accepted_at IS NOT NULL THEN 1 ELSE 0 END) AS accepted,
+        SUM(CASE WHEN sent_at IS NOT NULL OR received_at IS NOT NULL OR read_at IS NOT NULL OR played_at IS NOT NULL THEN 1 ELSE 0 END) AS sent,
+        SUM(CASE WHEN received_at IS NOT NULL OR read_at IS NOT NULL OR played_at IS NOT NULL THEN 1 ELSE 0 END) AS received,
+        SUM(CASE WHEN read_at IS NOT NULL OR played_at IS NOT NULL THEN 1 ELSE 0 END) AS read,
+        SUM(CASE WHEN failed_at IS NOT NULL THEN 1 ELSE 0 END) AS failed
+      FROM whatsapp_messages
+    `).get() || {};
+    funnel = {
+      accepted: Number(row.accepted || 0),
+      sent: Number(row.sent || 0),
+      received: Number(row.received || 0),
+      read: Number(row.read || 0),
+      failed: Number(row.failed || 0)
+    };
+  } catch (_) {}
+  return { ...current, funnel };
 }
 
 function readJson(req, limit = 128 * 1024) {
@@ -135,24 +196,27 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         secretConfigured: true,
         instanceConfigured: !!EXPECTED_INSTANCE_ID,
-        tracking: store.summary()
+        tracking: trackingSummary()
       });
       return;
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/zapi/admin/recent') {
-      const user = await requirePlatformAdmin(req);
+      const auth = await requirePlatformAdmin(req);
+      const associations = await loadAssociationDirectory(auth.authorization);
       const limit = requestUrl.searchParams.get('limit') || 100;
+      const messages = enrichAssociation(store.list(limit), associations);
       sendJson(res, 200, {
         ok: true,
         user: {
-          id: user.id,
-          nome: user.nome,
-          perfil: user.perfil,
+          id: auth.user.id,
+          nome: auth.user.nome,
+          perfil: auth.user.perfil,
           plataforma: true
         },
-        tracking: store.summary(),
-        messages: store.list(limit)
+        tracking: trackingSummary(),
+        associations,
+        messages
       });
       return;
     }
@@ -163,7 +227,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const limit = requestUrl.searchParams.get('limit') || 25;
-      sendJson(res, 200, { ok: true, tracking: store.summary(), messages: store.list(limit) });
+      sendJson(res, 200, { ok: true, tracking: trackingSummary(), messages: store.list(limit) });
       return;
     }
 
