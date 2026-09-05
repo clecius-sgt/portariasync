@@ -8,6 +8,7 @@ const { AssociationManager, DEFAULT_ASSOCIATION_ID } = require('./association-ma
 const { OccurrenceService } = require('./occurrence-service');
 const { ResidentOccurrenceService } = require('./resident-occurrence-service');
 const { AccessStore } = require('./access-store');
+const OperationalDashboard = require('./operational-dashboard');
 
 loadEnv();
 
@@ -165,6 +166,22 @@ async function handleApi(req, res) {
       association: associations.publicInfo(session.associacaoId),
       database: associations.database(session.associacaoId).status()
     });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/dashboard/operational') {
+    const session = requireRole(req, ['admin', 'porteiro', 'supervisor']);
+    const state = await readAppState(session.associacaoId);
+    const scopedDatabase = associations.database(session.associacaoId);
+    const dashboard = OperationalDashboard.build(state, {
+      association: associations.publicInfo(session.associacaoId),
+      timezoneOffsetMinutes: requestUrl.searchParams.get('tzOffset'),
+      database: scopedDatabase.status(),
+      whatsapp: whatsapp.status(),
+      paddleocr: paddleOcr.status(),
+      occurrences: occurrences.status(session.associacaoId)
+    });
+    sendJson(res, 200, { ok: true, ...dashboard });
     return;
   }
 
