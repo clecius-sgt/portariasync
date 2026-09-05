@@ -65,6 +65,40 @@ function validateInstance(payload) {
   return String(payload?.instanceId || '') === EXPECTED_INSTANCE_ID;
 }
 
+async function requirePlatformAdmin(req) {
+  const authorization = String(req.headers.authorization || '');
+  if (!authorization.startsWith('Bearer ')) {
+    const error = new Error('Autenticação administrativa necessária.');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  let response;
+  try {
+    response = await fetch('http://127.0.0.1:3000/api/auth/me', {
+      headers: { Authorization: authorization }
+    });
+  } catch (_) {
+    const error = new Error('Servidor principal indisponível para validar a sessão.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  let payload = {};
+  try { payload = await response.json(); } catch (_) {}
+  if (!response.ok || !payload.user) {
+    const error = new Error('Sessão administrativa inválida ou expirada.');
+    error.statusCode = 401;
+    throw error;
+  }
+  if (payload.user.perfil !== 'admin' || payload.user.plataforma !== true) {
+    const error = new Error('Acesso restrito ao administrador da plataforma.');
+    error.statusCode = 403;
+    throw error;
+  }
+  return payload.user;
+}
+
 function readJson(req, limit = 128 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -102,6 +136,23 @@ const server = http.createServer(async (req, res) => {
         secretConfigured: true,
         instanceConfigured: !!EXPECTED_INSTANCE_ID,
         tracking: store.summary()
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname === '/api/zapi/admin/recent') {
+      const user = await requirePlatformAdmin(req);
+      const limit = requestUrl.searchParams.get('limit') || 100;
+      sendJson(res, 200, {
+        ok: true,
+        user: {
+          id: user.id,
+          nome: user.nome,
+          perfil: user.perfil,
+          plataforma: true
+        },
+        tracking: store.summary(),
+        messages: store.list(limit)
       });
       return;
     }
@@ -148,7 +199,7 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 404, { error: 'Rota não encontrada' });
   } catch (error) {
-    sendJson(res, 400, { error: error.message || 'Falha ao processar webhook' });
+    sendJson(res, error.statusCode || 400, { error: error.message || 'Falha ao processar webhook' });
   }
 });
 
