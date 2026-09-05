@@ -8,6 +8,7 @@
   let editingId = '';
   let importRows = [];
   let importPreview = null;
+  const ResidentPhone = window.PortariaSyncResidentPhone;
 
   const $ = id => document.getElementById(id);
 
@@ -39,19 +40,11 @@
   function digits(value) { return String(value || '').replace(/\D/g, ''); }
 
   function formatPhone(value) {
-    let raw = digits(value);
-    if (raw.startsWith('55') && (raw.length === 12 || raw.length === 13)) raw = raw.slice(2);
-    if (raw.length === 11) return '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 7) + '-' + raw.slice(7);
-    if (raw.length === 10) return '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 6) + '-' + raw.slice(6);
-    return raw || 'Sem WhatsApp';
+    return ResidentPhone.format(value, { emptyLabel: 'Sem WhatsApp' });
   }
 
   function phoneInputMask(value) {
-    const raw = digits(value).slice(0, 11);
-    if (raw.length <= 2) return raw ? '(' + raw : '';
-    if (raw.length <= 6) return '(' + raw.slice(0, 2) + ') ' + raw.slice(2);
-    if (raw.length <= 10) return '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 6) + '-' + raw.slice(6);
-    return '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 7) + '-' + raw.slice(7);
+    return ResidentPhone.formatLocalNumber(value);
   }
 
   function formatDate(value) {
@@ -218,6 +211,7 @@
     $('formTitle').textContent = 'Novo morador';
     $('residentName').value = '';
     $('residentAddress').value = '';
+    $('residentDdd').value = '';
     $('residentPhone').value = '';
     $('residentType').value = '';
     $('formWarning').style.display = 'none';
@@ -231,7 +225,9 @@
     $('formTitle').textContent = 'Editar morador';
     $('residentName').value = item.nome || '';
     $('residentAddress').value = item.casa || '';
-    $('residentPhone').value = formatPhone(item.whats).replace('Sem WhatsApp', '');
+    const phone = ResidentPhone.split(item.whats);
+    $('residentDdd').value = phone.ddd;
+    $('residentPhone').value = ResidentPhone.formatLocalNumber(phone.number);
     $('residentType').value = item.tipo || '';
     $('formWarning').style.display = 'none';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -241,7 +237,7 @@
     return {
       nome: $('residentName').value,
       casa: $('residentAddress').value,
-      whats: digits($('residentPhone').value),
+      whats: ResidentPhone.combine($('residentDdd').value, $('residentPhone').value),
       tipo: $('residentType').value,
       allowSharedPhone: allowSharedPhone === true
     };
@@ -438,6 +434,7 @@
   $('newResident').addEventListener('click', resetForm);
   $('cancelEdit').addEventListener('click', resetForm);
   $('saveResident').addEventListener('click', () => saveResident(false));
+  $('residentDdd').addEventListener('input', event => { event.target.value = digits(event.target.value).slice(0, 2); });
   $('residentPhone').addEventListener('input', event => { event.target.value = phoneInputMask(event.target.value); });
   $('residentRows').addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');
