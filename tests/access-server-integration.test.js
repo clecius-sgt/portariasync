@@ -144,6 +144,14 @@ test('API autentica pelo SQLite e preserva sessão após reiniciar o servidor', 
     assert.equal(reopened.body.package.status, 'pendente');
     assert.ok(reopened.body.package.timeline.some(item => item.type === 'package_reopened'));
 
+    const audit = await request(port, '/api/audit/advanced?mode=30', { headers: authorization });
+    assert.equal(audit.status, 200);
+    assert.equal(audit.body.association.id, 'principal');
+    assert.equal(audit.body.integrity.database, 'ok');
+    assert.ok(audit.body.summary.access >= 1);
+    assert.ok(audit.body.summary.custody >= 1);
+    assert.match(audit.body.reportHash, /^[a-f0-9]{64}$/);
+
     await stopServer(child);
     child = await startServer(port, dataDirectory, password);
     const restored = await request(port, '/api/auth/me', { headers: authorization });
