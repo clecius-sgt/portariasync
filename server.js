@@ -10,6 +10,7 @@ const { ResidentOccurrenceService } = require('./resident-occurrence-service');
 const { AccessStore } = require('./access-store');
 const OperationalDashboard = require('./operational-dashboard');
 const { PackageManagementService } = require('./package-management-service');
+const { AdvancedAuditService } = require('./advanced-audit-service');
 
 loadEnv();
 
@@ -41,6 +42,7 @@ const access = new AccessStore({
   maxLoginAttempts: Number(process.env.ACCESS_MAX_LOGIN_ATTEMPTS || 5),
   lockDurationMs: Number(process.env.ACCESS_LOCK_MINUTES || 15) * 60 * 1000
 });
+const advancedAudit = new AdvancedAuditService({ associations, access, occurrences });
 
 const residentPortal = new ResidentPortalService({
   readState: readAppState,
@@ -188,6 +190,21 @@ async function handleApi(req, res) {
       occurrences: occurrences.status(session.associacaoId)
     });
     sendJson(res, 200, { ok: true, ...dashboard });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/audit/advanced') {
+    const session = requireRole(req, ['admin', 'supervisor']);
+    const result = advancedAudit.build(session.associacaoId, {
+      mode: requestUrl.searchParams.get('mode') || '30',
+      start: requestUrl.searchParams.get('start') || '',
+      end: requestUrl.searchParams.get('end') || '',
+      source: requestUrl.searchParams.get('source') || 'all',
+      category: requestUrl.searchParams.get('category') || 'all',
+      actor: requestUrl.searchParams.get('actor') || '',
+      q: requestUrl.searchParams.get('q') || ''
+    });
+    sendJson(res, 200, { ok: true, ...result });
     return;
   }
 
