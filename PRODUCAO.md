@@ -93,7 +93,25 @@ Regras de alteração:
 - toda mudança é registrada na auditoria e na cadeia de custódia SHA-256;
 - fotos, assinaturas e PINs não são enviados na listagem administrativa.
 
-## 8. Espelhamento celular/computador
+## 8. Relatórios e Auditoria Avançada
+
+O painel `/relatorios.html` apresenta os indicadores gerenciais de recebimentos,
+retiradas, pendências, transportadoras, moradores e desempenho do OCR.
+
+O painel `/auditoria-avancada.html` consolida, por Multi-Associação:
+
+- eventos operacionais;
+- acessos, sessões e tentativas recusadas;
+- cadeia de custódia das encomendas;
+- histórico das ocorrências;
+- integridade do SQLite e das cadeias SHA-256.
+
+Os dois painéis aceitam filtros por período. A auditoria também filtra por fonte,
+categoria e texto. Os resultados podem ser exportados em CSV ou impressos em PDF.
+O acesso é restrito a `admin` e `supervisor`. Senhas, tokens, PINs, documentos,
+telefones, fotos e assinaturas não são expostos no relatório.
+
+## 9. Espelhamento celular/computador
 
 O estado completo do aplicativo fica na tabela `app_state` do Supabase:
 
@@ -116,13 +134,13 @@ http://IP-DO-COMPUTADOR:3000
 
 Assim, o que for lançado em um dispositivo é salvo no backend e carregado pelo outro.
 
-## 9. Cópias de segurança dos acessos
+## 10. Cópias de segurança dos acessos
 
 O daemon de backup inclui `access-users.json`, com os registros necessários para
 restaurar usuários, e `users-legacy.json`. Sessões e tokens não são incluídos no
 backup. Em uma restauração, todos devem fazer um novo login.
 
-## 10. Etiquetas sem serviço contratado
+## 11. Etiquetas sem serviço contratado
 
 O OCR usa Tesseract.js e o leitor de códigos usa ZXing, ambos executados no
 navegador com arquivos do próprio servidor. `npm ci` prepara os arquivos em

@@ -417,6 +417,39 @@ class AccessStore {
     return Number(result.changes || 0);
   }
 
+  listEvents(options = {}) {
+    const associationId = options.associationId ? String(options.associationId) : null;
+    const limit = Math.max(1, Math.min(5000, Number(options.limit) || 2000));
+    const rows = associationId
+      ? this.db.prepare(`
+          SELECT e.*, actor.name AS actor_name, target.name AS target_name
+          FROM access_events e
+          LEFT JOIN access_users actor ON actor.id = e.actor_user_id
+          LEFT JOIN access_users target ON target.id = e.target_user_id
+          WHERE e.association_id = ?
+          ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?
+        `).all(associationId, limit)
+      : this.db.prepare(`
+          SELECT e.*, actor.name AS actor_name, target.name AS target_name
+          FROM access_events e
+          LEFT JOIN access_users actor ON actor.id = e.actor_user_id
+          LEFT JOIN access_users target ON target.id = e.target_user_id
+          ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?
+        `).all(limit);
+    return rows.map(row => ({
+      id: Number(row.id),
+      occurredAt: new Date(Number(row.occurred_at)).toISOString(),
+      type: String(row.event_type || ''),
+      actorUserId: row.actor_user_id || '',
+      actorName: row.actor_name || '',
+      targetUserId: row.target_user_id || '',
+      targetName: row.target_name || '',
+      associationId: row.association_id || '',
+      ip: String(row.ip || '').slice(0, 128),
+      detail: String(row.detail || '').slice(0, 500)
+    }));
+  }
+
   overview(options = {}) {
     this.cleanupExpiredSessions();
     const associationId = options.associationId ? String(options.associationId) : null;
