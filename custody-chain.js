@@ -270,6 +270,30 @@ function appendTransitionEvents(previous, current, state, now = new Date()) {
     });
   }
 
+  const previousData = [previous.codigo || '', previous.transportadora || '', previous.obs || ''].join('|');
+  const currentData = [current.codigo || '', current.transportadora || '', current.obs || ''].join('|');
+  if (previousData !== currentData) {
+    const correctionActor = actorFromAudit(state, packageId, ['encomenda corrigida']);
+    appendEvent(current, {
+      type: 'package_data_corrected',
+      title: 'Dados da encomenda corrigidos',
+      description: current.motivoUltimaCorrecao
+        ? 'Motivo: ' + String(current.motivoUltimaCorrecao).slice(0, 240)
+        : 'Código, transportadora ou observação foram atualizados sem apagar o histórico anterior.',
+      occurredAt: current.cadastroAtualizadoEm || now,
+      recordedAt: now,
+      actor: correctionActor.actor,
+      actorRole: correctionActor.actorRole,
+      source: 'gestao-encomendas-2',
+      metadata: {
+        codigoAnterior: previous.codigo || '',
+        codigoAtual: current.codigo || '',
+        transportadoraAnterior: previous.transportadora || '',
+        transportadoraAtual: current.transportadora || ''
+      }
+    });
+  }
+
   const pinWasSent = previous.pinRetiradaEnviado === true;
   const pinIsSent = current.pinRetiradaEnviado === true;
   const resent = pinWasSent && current.pinRetiradaEnviadoEm && current.pinRetiradaEnviadoEm !== previous.pinRetiradaEnviadoEm;
@@ -363,6 +387,23 @@ function appendTransitionEvents(previous, current, state, now = new Date()) {
       description: current.motivoCancelamento ? 'Motivo: ' + String(current.motivoCancelamento).slice(0, 240) : 'Cancelamento registrado.',
       occurredAt: current.dataCancelamento || now, recordedAt: now,
       actor: cancelActor.actor, actorRole: cancelActor.actorRole, source: 'operação', metadata: {}
+    });
+  }
+
+  if (previous.status === 'cancelado' && current.status === 'pendente') {
+    const reopenActor = actorFromAudit(state, packageId, ['reabert']);
+    appendEvent(current, {
+      type: 'package_reopened',
+      title: 'Encomenda reaberta',
+      description: current.motivoReabertura
+        ? 'Motivo: ' + String(current.motivoReabertura).slice(0, 240)
+        : 'O cancelamento foi revertido e a encomenda voltou a aguardar retirada.',
+      occurredAt: current.dataReabertura || now,
+      recordedAt: now,
+      actor: reopenActor.actor,
+      actorRole: reopenActor.actorRole,
+      source: 'gestao-encomendas-2',
+      metadata: { statusAnterior: 'cancelado', statusAtual: 'pendente' }
     });
   }
 
