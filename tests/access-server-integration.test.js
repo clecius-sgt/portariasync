@@ -97,6 +97,53 @@ test('API autentica pelo SQLite e preserva sessão após reiniciar o servidor', 
     assert.equal(dashboard.body.summary.pending, 0);
     assert.equal(dashboard.body.serviceStatus.database, true);
 
+    const initialState = await request(port, '/api/app-state', {
+      method: 'PUT',
+      headers: authorization,
+      body: JSON.stringify({
+        version: Date.now(),
+        moradores: [{ id: 'm1', nome: 'Ana Teste', casa: 'Rua Brasil, 10', whats: '11999999999' }],
+        encomendas: [{ id: 'p1', codigo: 'AB123456', status: 'pendente', moradorId: 'm1', moradorNome: 'Ana Teste', moradorCasa: 'Rua Brasil, 10', dataEntrada: '05/09/2026, 10:00:00' }],
+        retirantesRelacionados: [],
+        auditoria: [],
+        detalhesRetirada: {},
+        memoriaRemetentes: {},
+        configPublica: {}
+      })
+    });
+    assert.equal(initialState.status, 200);
+
+    const packages = await request(port, '/api/packages/management?status=pendente', { headers: authorization });
+    assert.equal(packages.status, 200);
+    assert.equal(packages.body.summary.pending, 1);
+    assert.equal(packages.body.packages[0].code, 'AB123456');
+
+    const corrected = await request(port, '/api/packages/management/p1', {
+      method: 'PATCH',
+      headers: authorization,
+      body: JSON.stringify({ expectedVersion: packages.body.version, code: 'XY987654', residentId: 'm1', carrier: 'Correios', reason: 'Correção para teste integrado' })
+    });
+    assert.equal(corrected.status, 200);
+    assert.equal(corrected.body.package.code, 'XY987654');
+    assert.ok(corrected.body.package.timeline.some(item => item.type === 'package_data_corrected'));
+
+    const cancelled = await request(port, '/api/packages/management/p1/cancel', {
+      method: 'POST',
+      headers: authorization,
+      body: JSON.stringify({ expectedVersion: corrected.body.version, reason: 'Cancelamento para teste integrado' })
+    });
+    assert.equal(cancelled.status, 200);
+    assert.equal(cancelled.body.package.status, 'cancelado');
+
+    const reopened = await request(port, '/api/packages/management/p1/reopen', {
+      method: 'POST',
+      headers: authorization,
+      body: JSON.stringify({ expectedVersion: cancelled.body.version, reason: 'Reabertura para teste integrado' })
+    });
+    assert.equal(reopened.status, 200);
+    assert.equal(reopened.body.package.status, 'pendente');
+    assert.ok(reopened.body.package.timeline.some(item => item.type === 'package_reopened'));
+
     await stopServer(child);
     child = await startServer(port, dataDirectory, password);
     const restored = await request(port, '/api/auth/me', { headers: authorization });
