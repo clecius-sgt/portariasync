@@ -107,7 +107,15 @@ class ResidentManagementService {
   }
 
   save(associationId, state) {
-    state.version = Date.now();
+    const expectedVersion = Number(state?.version || 0);
+    const current = this.associations.readState(associationId);
+    const currentVersion = Number(current?.version || 0);
+    if (currentVersion !== expectedVersion) {
+      const error = statusError('Os dados da associação foram alterados por outra operação. Atualize a tela e tente novamente.', 409);
+      error.code = 'STATE_CHANGED';
+      throw error;
+    }
+    state.version = Math.max(Date.now(), expectedVersion + 1);
     state.updatedAt = this.now().toISOString();
     return this.associations.writeState(associationId, state);
   }
@@ -342,20 +350,30 @@ class ResidentManagementService {
     });
 
     return {
+      baseVersion: Number(state.version || 0),
       rows: resultRows,
       summary: { source: rows.length, add, update, unchanged, conflicts, invalid, applicable: add + update }
     };
   }
 
   importRows(associationId, rows = [], options = {}, actor = {}) {
-    const preview = this.prepareImport(associationId, rows, options);
+    let preview = this.prepareImport(associationId, rows, options);
+    let state = this.state(associationId);
+    if (Number(state.version || 0) !== Number(preview.baseVersion || 0)) {
+      preview = this.prepareImport(associationId, rows, options);
+      state = this.state(associationId);
+    }
     if (preview.summary.invalid || preview.summary.conflicts) {
       const error = statusError('A importação possui registros inválidos ou conflitos. Revise a prévia antes de confirmar.', 409);
       error.code = 'IMPORT_REVIEW_REQUIRED';
       error.preview = preview;
       throw error;
     }
-    const state = this.state(associationId);
+    if (Number(state.version || 0) !== Number(preview.baseVersion || 0)) {
+      const error = statusError('Os dados da associação mudaram durante a importação. Gere uma nova prévia e tente novamente.', 409);
+      error.code = 'STATE_CHANGED';
+      throw error;
+    }
     let added = 0;
     let updated = 0;
     for (const row of preview.rows) {
