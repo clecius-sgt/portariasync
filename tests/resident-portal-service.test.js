@@ -4,16 +4,36 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   ResidentPortalService,
+  normalizeLocalPhone,
   phonesMatch,
   cleanPackage,
   activeAuthorization,
   finalizePackageAuthorizations
 } = require('../resident-portal-service');
 
-test('normaliza telefones brasileiros com e sem 55', () => {
+test('normaliza telefones brasileiros com e sem 55 para comparação cadastral', () => {
   assert.equal(phonesMatch('17999998888', '5517999998888'), true);
   assert.equal(phonesMatch('(17) 99999-8888', '17999998888'), true);
   assert.equal(phonesMatch('17999998888', '11999998888'), false);
+});
+
+test('entrada do Portal do Morador aceita somente DDD e número, sem +55', async () => {
+  assert.equal(normalizeLocalPhone('(17) 99999-8888'), '17999998888');
+  assert.equal(normalizeLocalPhone('17 3333-4444'), '1733334444');
+  assert.equal(normalizeLocalPhone('+55 17 99999-8888'), '');
+
+  const service = new ResidentPortalService({
+    readState: async () => ({ moradores: [], encomendas: [] }),
+    writeState: async () => {},
+    sendText: async () => {},
+    randomBytes: size => Buffer.alloc(size, 1),
+    cooldownMs: 1
+  });
+
+  await assert.rejects(
+    () => service.requestCode('+55 17 99999-8888', 'x'),
+    /DDD e o número.*sem \+55/
+  );
 });
 
 test('login por OTP libera apenas moradores do telefone validado', async () => {
@@ -39,7 +59,7 @@ test('login por OTP libera apenas moradores do telefone validado', async () => {
     cooldownMs: 1
   });
 
-  const request = await service.requestCode('5517999998888', '127.0.0.1');
+  const request = await service.requestCode('17999998888', '127.0.0.1');
   assert.equal(sent.length, 1);
   assert.match(sent[0].message, /654321/);
 
