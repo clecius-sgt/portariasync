@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PortariaSync | Central de WhatsApp</title>
+<style>
+  :root{
+    --navy:#1a1f3a;--navy2:#2d3561;--gold:#c9a84c;--bg:#f4f6f9;--card:#fff;
+    --text:#1a1f3a;--muted:#6b7280;--border:#e2e8f0;--ok:#137333;--okbg:#e6f4ea;
+    --warn:#856404;--warnbg:#fff3cd;--bad:#c5221f;--badbg:#fce8e6;--info:#2457a6;--infobg:#eaf2ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
+  header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;border-bottom:2px solid var(--gold);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:16px;position:sticky;top:0;z-index:10}
+  .brand{font-size:20px;font-weight:800}.brand span{color:var(--gold)}
+  .sub{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;opacity:.75;margin-top:3px}
+  .head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .user{font-size:12px;color:var(--gold)}
+  button,.linkbtn{border:0;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .btn-light{background:#fff;color:var(--navy)}.btn-gold{background:var(--gold);color:var(--navy)}.btn-ghost{background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.22)}
+  main{max-width:1280px;margin:0 auto;padding:20px}
+  .intro{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px}
+  h1{font-size:24px;margin:0 0 5px}.intro p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}.updated{font-size:12px;color:var(--muted);text-align:right}
+  .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+  .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:var(--muted);font-weight:700;margin-bottom:8px}.number{font-size:30px;font-weight:800;line-height:1;margin:4px 0 8px}.desc{font-size:12px;color:var(--muted);line-height:1.45}
+  .number.ok{color:var(--ok)}.number.bad{color:var(--bad)}.number.warn{color:var(--warn)}
+  .statusline{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:12px 14px;background:#fff;border:1px solid var(--border);border-radius:10px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px var(--okbg)}.statusline strong{font-size:13px}.statusline span{font-size:12px;color:var(--muted)}
+  .filters{display:grid;grid-template-columns:1.2fr .8fr .8fr auto;gap:10px;align-items:end;margin-bottom:14px}.field label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:5px}.field input,.field select{width:100%;border:1px solid var(--border);background:#fff;border-radius:8px;padding:10px 11px;font-size:13px;color:var(--text);outline:none}.field input:focus,.field select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.14)}
+  .table-card{padding:0;overflow:hidden}.table-head{padding:15px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:12px;align-items:center}.table-head h2{font-size:16px;margin:0}.table-head span{font-size:12px;color:var(--muted)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:980px}th,td{padding:11px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle;font-size:12px}th{position:sticky;top:0;background:#f8fafc;color:var(--muted);text-transform:uppercase;letter-spacing:.55px;font-size:10px;z-index:1}tbody tr:hover{background:#fafbfd}.strong{font-weight:800}.muted{color:var(--muted)}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.45px;white-space:nowrap}.badge.accepted{background:#eef2f7;color:#475569}.badge.sent{background:var(--infobg);color:var(--info)}.badge.received{background:#e8f6f3;color:#0f766e}.badge.read,.badge.read_by_me,.badge.played{background:var(--okbg);color:var(--ok)}.badge.failed{background:var(--badbg);color:var(--bad)}
+  .empty{padding:38px 20px;text-align:center;color:var(--muted);font-size:13px}.privacy{margin-top:14px;padding:12px 14px;border-radius:9px;background:#f8fafc;border:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.55}
+  #authGate{position:fixed;inset:0;background:linear-gradient(160deg,#0f1224,#1a1f3a 55%,#2d3561);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}.login{width:100%;max-width:400px;background:rgba(255,255,255,.07);border:1px solid rgba(201,168,76,.35);border-radius:16px;padding:24px;color:#fff;backdrop-filter:blur(10px)}.login h2{margin:0 0 5px;font-size:21px}.login p{margin:0 0 18px;color:rgba(255,255,255,.68);font-size:13px;line-height:1.45}.login label{display:block;color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:.8px;margin:12px 0 5px}.login select,.login input{width:100%;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;font-size:15px;outline:none}.login select option{color:#111;background:#fff}.login button{width:100%;margin-top:16px;padding:13px;background:var(--gold);color:var(--navy)}#loginError{display:none;margin-top:12px;color:#ffb4ab;font-size:13px;text-align:center}
+  @media(max-width:920px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{grid-template-columns:1fr 1fr}.intro{align-items:flex-start;flex-direction:column}.updated{text-align:left}}
+  @media(max-width:560px){main{padding:14px}.grid{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr}.head-actions{max-width:62%}.brand{font-size:17px}.number{font-size:26px}.linkbtn,header button{padding:8px 10px;font-size:12px}}
+</style>
+</head>
+<body>
+<div id="authGate">
+  <div class="login">
+    <h2>Central de WhatsApp</h2>
+    <p>Acesso restrito ao administrador da plataforma. A Central exibe somente metadados de entrega, sem o conteúdo das mensagens.</p>
+    <label for="loginUser">Usuário</label>
+    <select id="loginUser"><option>Carregando usuários...</option></select>
+    <label for="loginPassword">Senha</label>
+    <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Digite sua senha">
+    <button id="loginButton" type="button">Entrar na Central</button>
+    <div id="loginError"></div>
+  </div>
+</div>
+<header>
+  <div><div class="brand">Portaria<span>Sync</span></div><div class="sub">Central de WhatsApp</div></div>
+  <div class="head-actions">
+    <div class="user" id="adminUser"></div>
+    <a class="linkbtn btn-ghost" href="/admin.html">Painel administrativo</a>
+    <button class="btn-light" id="refreshButton" type="button">Atualizar</button>
+    <button class="btn-gold" id="logoutButton" type="button">Sair</button>
+  </div>
+</header>
+<main id="content" style="display:none">
+  <div class="intro">
+    <div><h1>Acompanhamento das mensagens</h1><p>Visão operacional dos envios do PortalSync pela Z-API, do aceite até a leitura ou falha de entrega.</p></div>
+    <div class="updated" id="lastRefresh">Ainda não atualizado</div>
+  </div>
+  <div class="statusline"><div class="dot"></div><strong>Rastreamento ativo</strong><span id="trackingStatus">Consultando o histórico...</span></div>
+  <section class="grid" aria-label="Resumo do WhatsApp">
+    <div class="card"><div class="eyebrow">Total monitorado</div><div class="number" id="countTotal">0</div><div class="desc">mensagens registradas</div></div>
+    <div class="card"><div class="eyebrow">Em processamento</div><div class="number warn" id="countTransit">0</div><div class="desc">aceitas ou enviadas</div></div>
+    <div class="card"><div class="eyebrow">Entregues</div><div class="number ok" id="countDelivered">0</div><div class="desc">recebidas, lidas ou reproduzidas</div></div>
+    <div class="card"><div class="eyebrow">Lidas</div><div class="number ok" id="countRead">0</div><div class="desc">confirmação de leitura</div></div>
+    <div class="card"><div class="eyebrow">Falhas</div><div class="number bad" id="countFailed">0</div><div class="desc">falhas informadas pelo provedor</div></div>
+  </section>
+  <section class="card" style="margin-bottom:16px">
+    <div class="filters">
+      <div class="field"><label for="searchInput">Pesquisar</label><input id="searchInput" type="search" placeholder="telefone mascarado, referência ou tipo"></div>
+      <div class="field"><label for="statusFilter">Status</label><select id="statusFilter"><option value="">Todos</option><option value="accepted">Aceita</option><option value="sent">Enviada</option><option value="received">Recebida</option><option value="read">Lida</option><option value="played">Reproduzida</option><option value="failed">Falha</option></select></div>
+      <div class="field"><label for="kindFilter">Tipo</label><select id="kindFilter"><option value="">Todos</option></select></div>
+      <button class="btn-light" id="clearFilters" type="button" style="background:#eef2f7">Limpar filtros</button>
+    </div>
+  </section>
+  <section class="card table-card">
+    <div class="table-head"><h2>Histórico recente</h2><span id="resultCount">0 registros</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Atualização</th><th>Tipo</th><th>Referência</th><th>Destino</th><th>Status</th><th>Aceita</th><th>Recebida</th><th>Lida</th><th>Falha</th></tr></thead>
+        <tbody id="messageRows"></tbody>
+      </table>
+      <div class="empty" id="emptyState" style="display:none">Nenhuma mensagem encontrada para os filtros atuais.</div>
+    </div>
+  </section>
+  <div class="privacy">Privacidade: a Central não exibe o texto das mensagens, códigos OTP, PINs, documentos nem o número completo do destinatário. O telefone é apresentado somente com os quatro últimos dígitos.</div>
+</main>
+<script src="/whatsapp-central.js?v=20260904-1"></script>
+</body>
+</html>
