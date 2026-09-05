@@ -88,6 +88,7 @@
   }
 
   function formatAge(value) {
+    if (value == null || value === '') return 'Encerrada';
     const hours = Number(value);
     if (!Number.isFinite(hours)) return 'Encerrada';
     if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} min`;
