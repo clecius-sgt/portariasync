@@ -5,6 +5,7 @@
   let authToken = localStorage.getItem('authToken') || '';
   let currentUser = null;
   let messages = [];
+  let associations = [];
   let refreshTimer = null;
 
   const $ = id => document.getElementById(id);
@@ -67,6 +68,10 @@
 
   function kindLabel(kind) {
     return KIND_LABELS[kind] || String(kind || 'Mensagem');
+  }
+
+  function associationLabel(item) {
+    return String(item?.associationName || item?.associationId || 'Não identificada');
   }
 
   function showLogin(message) {
@@ -172,19 +177,47 @@
     if (kinds.includes(current)) select.value = current;
   }
 
+  function buildAssociationOptions() {
+    const select = $('associationFilter');
+    const current = select.value;
+    const options = new Map();
+    for (const association of associations) {
+      if (association?.id) options.set(String(association.id), String(association.nome || association.id));
+    }
+    for (const item of messages) {
+      const id = String(item?.associationId || '');
+      if (id && !options.has(id)) options.set(id, associationLabel(item));
+      if (!id) options.set('__unknown__', 'Não identificada');
+    }
+    select.innerHTML = '<option value="">Todas</option>';
+    for (const [id, label] of Array.from(options.entries()).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))) {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    if (options.has(current)) select.value = current;
+  }
+
+  function deriveFunnel(tracking) {
+    if (tracking?.funnel) return tracking.funnel;
+    const accepted = messages.filter(item => item.acceptedAt).length;
+    const sent = messages.filter(item => item.sentAt || item.receivedAt || item.readAt || item.playedAt).length;
+    const received = messages.filter(item => item.receivedAt || item.readAt || item.playedAt).length;
+    const read = messages.filter(item => item.readAt || item.playedAt).length;
+    const failed = messages.filter(item => item.failedAt || item.status === 'failed').length;
+    return { accepted, sent, received, read, failed };
+  }
+
   function renderSummary(tracking) {
     const total = Number(tracking?.total || 0);
-    const accepted = Number(tracking?.accepted || 0);
-    const sent = Number(tracking?.sent || 0);
-    const received = Number(tracking?.received || 0);
-    const read = Number(tracking?.read || 0);
-    const played = Number(tracking?.played || 0);
-    const failed = Number(tracking?.failed || 0);
+    const funnel = deriveFunnel(tracking);
     $('countTotal').textContent = total;
-    $('countTransit').textContent = accepted + sent;
-    $('countDelivered').textContent = received + read + played;
-    $('countRead').textContent = read;
-    $('countFailed').textContent = failed;
+    $('countAccepted').textContent = Number(funnel.accepted || 0);
+    $('countSent').textContent = Number(funnel.sent || 0);
+    $('countReceived').textContent = Number(funnel.received || 0);
+    $('countRead').textContent = Number(funnel.read || 0);
+    $('countFailed').textContent = Number(funnel.failed || 0);
     $('trackingStatus').textContent = total
       ? 'Último evento em ' + formatDate(tracking.lastUpdateAt) + '. Atualização automática a cada 15 segundos.'
       : 'Nenhuma mensagem monitorada até o momento. Atualização automática a cada 15 segundos.';
@@ -192,18 +225,30 @@
 
   function filteredMessages() {
     const query = String($('searchInput').value || '').trim().toLowerCase();
+    const association = $('associationFilter').value;
     const status = $('statusFilter').value;
     const kind = $('kindFilter').value;
     return messages.filter(item => {
+      if (association) {
+        const itemAssociation = String(item?.associationId || '') || '__unknown__';
+        if (itemAssociation !== association) return false;
+      }
       if (status) {
         const itemStatus = item.status === 'read_by_me' ? 'read' : item.status;
         if (itemStatus !== status) return false;
       }
       if (kind && item.kind !== kind) return false;
       if (!query) return true;
-      const haystack = [item.phone, item.referenceId, item.kind, kindLabel(item.kind), item.status, statusLabel(item.status)]
-        .map(value => String(value || '').toLowerCase())
-        .join(' ');
+      const haystack = [
+        item.phone,
+        item.referenceId,
+        item.kind,
+        kindLabel(item.kind),
+        item.status,
+        statusLabel(item.status),
+        item.associationId,
+        associationLabel(item)
+      ].map(value => String(value || '').toLowerCase()).join(' ');
       return haystack.includes(query);
     });
   }
@@ -219,6 +264,7 @@
       const failure = item.error ? escapeHtml(item.error) : '-';
       return '<tr>' +
         '<td><span class="strong">' + escapeHtml(formatDate(item.updatedAt)) + '</span></td>' +
+        '<td><span class="strong">' + escapeHtml(associationLabel(item)) + '</span></td>' +
         '<td>' + escapeHtml(kindLabel(item.kind)) + '</td>' +
         '<td>' + escapeHtml(item.referenceId || '-') + '</td>' +
         '<td><span class="strong">' + escapeHtml(item.phone || '-') + '</span></td>' +
@@ -240,7 +286,9 @@
     try {
       const payload = await api('/api/zapi/admin/recent?limit=200');
       messages = Array.isArray(payload.messages) ? payload.messages : [];
+      associations = Array.isArray(payload.associations) ? payload.associations : [];
       renderSummary(payload.tracking || {});
+      buildAssociationOptions();
       buildKindOptions();
       renderRows();
       $('lastRefresh').textContent = 'Atualizado em ' + new Date().toLocaleTimeString('pt-BR');
@@ -287,10 +335,12 @@
   $('refreshButton').addEventListener('click', refresh);
   $('logoutButton').addEventListener('click', logout);
   $('searchInput').addEventListener('input', renderRows);
+  $('associationFilter').addEventListener('change', renderRows);
   $('statusFilter').addEventListener('change', renderRows);
   $('kindFilter').addEventListener('change', renderRows);
   $('clearFilters').addEventListener('click', () => {
     $('searchInput').value = '';
+    $('associationFilter').value = '';
     $('statusFilter').value = '';
     $('kindFilter').value = '';
     renderRows();
