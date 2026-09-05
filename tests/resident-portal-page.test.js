@@ -2,8 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'morador.html'), 'utf8');
@@ -15,6 +15,12 @@ test('portal do morador possui login por WhatsApp e áreas de encomendas', () =>
   assert.match(html, /Encomendas aguardando retirada/);
   assert.match(html, /Histórico de retiradas/);
   assert.match(html, /morador-portal\.js/);
+});
+
+test('telefone do portal é informado somente com DDD e número, sem código do país', () => {
+  assert.match(html, /DDD \+ número/);
+  assert.match(html, /Não informe \+55/);
+  assert.match(html, /placeholder="\(17\) 99999-9999"/);
 });
 
 test('frontend usa endpoints isolados do portal do morador', () => {
