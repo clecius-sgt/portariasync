@@ -8,6 +8,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'morador.html'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'morador-portal.js'), 'utf8');
+const mask = fs.readFileSync(path.join(root, 'phone-mask.js'), 'utf8');
 
 test('portal do morador possui login por WhatsApp e áreas de encomendas', () => {
   assert.match(html, /Portal do Morador/);
@@ -17,10 +18,12 @@ test('portal do morador possui login por WhatsApp e áreas de encomendas', () =>
   assert.match(html, /morador-portal\.js/);
 });
 
-test('telefone do portal é informado somente com DDD e número, sem código do país', () => {
-  assert.match(html, /DDD \+ número/);
-  assert.match(html, /Não informe \+55/);
-  assert.match(html, /placeholder="\(17\) 99999-9999"/);
+test('telefone do portal usa máscara brasileira de DDD e número', () => {
+  assert.doesNotMatch(html, /Não informe \+55/);
+  assert.match(html, /placeholder="\(99\) 99999-9999"/);
+  assert.match(html, /phone-mask\.js/);
+  assert.match(mask, /formatBrazilianPhone/);
+  assert.match(mask, /slice\(0, 11\)/);
 });
 
 test('frontend usa endpoints isolados do portal do morador', () => {
