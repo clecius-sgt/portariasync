@@ -78,7 +78,22 @@ O painel em `/dashboard-operacional.html` reúne a situação atual da portaria:
 O acesso é permitido aos perfis `admin`, `supervisor` e `porteiro`. Os dados são
 isolados pela associação vinculada à sessão.
 
-## 7. Espelhamento celular/computador
+## 7. Gestão de Encomendas 2.0
+
+O painel `/encomendas-admin.html` oferece consulta completa do histórico, filtros
+por situação, período e texto, além da fila priorizada pelo tempo de espera.
+
+Regras de alteração:
+
+- `admin` e `supervisor` podem corrigir encomendas ainda pendentes;
+- somente `admin` pode cancelar ou reabrir um registro;
+- correção, cancelamento e reabertura exigem motivo;
+- retiradas concluídas não podem ser alteradas pelo painel;
+- códigos duplicados entre encomendas pendentes são bloqueados;
+- toda mudança é registrada na auditoria e na cadeia de custódia SHA-256;
+- fotos, assinaturas e PINs não são enviados na listagem administrativa.
+
+## 8. Espelhamento celular/computador
 
 O estado completo do aplicativo fica na tabela `app_state` do Supabase:
 
@@ -101,13 +116,13 @@ http://IP-DO-COMPUTADOR:3000
 
 Assim, o que for lançado em um dispositivo é salvo no backend e carregado pelo outro.
 
-## 8. Cópias de segurança dos acessos
+## 9. Cópias de segurança dos acessos
 
 O daemon de backup inclui `access-users.json`, com os registros necessários para
 restaurar usuários, e `users-legacy.json`. Sessões e tokens não são incluídos no
 backup. Em uma restauração, todos devem fazer um novo login.
 
-## 9. Etiquetas sem serviço contratado
+## 10. Etiquetas sem serviço contratado
 
 O OCR usa Tesseract.js e o leitor de códigos usa ZXing, ambos executados no
 navegador com arquivos do próprio servidor. `npm ci` prepara os arquivos em
