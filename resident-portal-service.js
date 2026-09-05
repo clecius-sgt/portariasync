@@ -6,6 +6,11 @@ function digits(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+function normalizeLocalPhone(value) {
+  const raw = digits(value);
+  return raw.length === 10 || raw.length === 11 ? raw : '';
+}
+
 function phoneVariants(value) {
   const raw = digits(value);
   const variants = new Set();
@@ -202,6 +207,7 @@ class ResidentPortalService {
       enabled: true,
       multiAssociation: true,
       thirdPartyAuthorization: true,
+      phoneInput: 'ddd-number',
       otpTtlMinutes: Math.round(this.otpTtlMs / 60000),
       sessionHours: Math.round(this.sessionTtlMs / 3600000),
       activeSessions: this.sessions.size
@@ -210,8 +216,8 @@ class ResidentPortalService {
 
   async requestCode(phone, ip = '', associationId = this.defaultAssociationId) {
     this.cleanup();
-    const informed = digits(phone);
-    if (informed.length < 10 || informed.length > 15) throw statusError('Informe um número de WhatsApp válido.', 400);
+    const informed = normalizeLocalPhone(phone);
+    if (!informed) throw statusError('Informe apenas o DDD e o número do WhatsApp, sem +55.', 400);
     const scopedAssociationId = String(associationId || this.defaultAssociationId);
 
     const challengeId = this.token(16);
@@ -525,6 +531,7 @@ class ResidentPortalService {
 module.exports = {
   ResidentPortalService,
   digits,
+  normalizeLocalPhone,
   phoneVariants,
   phonesMatch,
   maskPhone,
