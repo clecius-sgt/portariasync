@@ -65,7 +65,20 @@ Esses limites podem ser ajustados por `SESSION_MAX_AGE_MS`,
 
 O painel administrativo está disponível em `/acessos.html`.
 
-## 6. Espelhamento celular/computador
+## 6. Dashboard Operacional
+
+O painel em `/dashboard-operacional.html` reúne a situação atual da portaria:
+
+- entradas e retiradas do dia;
+- fila de encomendas por tempo de espera e prioridade;
+- ocorrências abertas e alertas críticos;
+- estado do banco, WhatsApp, OCR e alertas automáticos;
+- movimentações recentes, com atualização automática a cada 30 segundos.
+
+O acesso é permitido aos perfis `admin`, `supervisor` e `porteiro`. Os dados são
+isolados pela associação vinculada à sessão.
+
+## 7. Espelhamento celular/computador
 
 O estado completo do aplicativo fica na tabela `app_state` do Supabase:
 
@@ -88,13 +101,13 @@ http://IP-DO-COMPUTADOR:3000
 
 Assim, o que for lançado em um dispositivo é salvo no backend e carregado pelo outro.
 
-## 7. Cópias de segurança dos acessos
+## 8. Cópias de segurança dos acessos
 
 O daemon de backup inclui `access-users.json`, com os registros necessários para
 restaurar usuários, e `users-legacy.json`. Sessões e tokens não são incluídos no
 backup. Em uma restauração, todos devem fazer um novo login.
 
-## 8. Etiquetas sem serviço contratado
+## 9. Etiquetas sem serviço contratado
 
 O OCR usa Tesseract.js e o leitor de códigos usa ZXing, ambos executados no
 navegador com arquivos do próprio servidor. `npm ci` prepara os arquivos em

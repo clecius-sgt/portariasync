@@ -91,6 +91,12 @@ test('API autentica pelo SQLite e preserva sessão após reiniciar o servidor', 
     assert.equal(overview.body.summary.ativos, 1);
     assert.equal(overview.body.summary.sessoesAtivas, 1);
 
+    const dashboard = await request(port, '/api/dashboard/operational?tzOffset=-180', { headers: authorization });
+    assert.equal(dashboard.status, 200);
+    assert.equal(dashboard.body.association.id, 'principal');
+    assert.equal(dashboard.body.summary.pending, 0);
+    assert.equal(dashboard.body.serviceStatus.database, true);
+
     await stopServer(child);
     child = await startServer(port, dataDirectory, password);
     const restored = await request(port, '/api/auth/me', { headers: authorization });
