@@ -1,13 +1,13 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { PaddleOcrClient } = require('./paddle-ocr-client');
 const { WhatsAppProvider } = require('./whatsapp-provider');
 const { ResidentPortalService, finalizePackageAuthorizations } = require('./resident-portal-service');
 const { AssociationManager, DEFAULT_ASSOCIATION_ID } = require('./association-manager');
 const { OccurrenceService } = require('./occurrence-service');
 const { ResidentOccurrenceService } = require('./resident-occurrence-service');
+const { AccessStore } = require('./access-store');
 
 loadEnv();
 
@@ -16,10 +16,9 @@ const PUBLIC_DIR = __dirname;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = path.resolve(__dirname, process.env.PORTARIASYNC_DATA_DIR || 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 8 * 60 * 60 * 1000);
-const sessions = new Map();
 const paddleOcr = new PaddleOcrClient({ baseDir: __dirname });
 const whatsapp = new WhatsAppProvider();
 const associations = new AssociationManager({
@@ -29,8 +28,16 @@ const associations = new AssociationManager({
 const database = associations.database(DEFAULT_ASSOCIATION_ID);
 const occurrences = new OccurrenceService({ associations });
 const residentOccurrences = new ResidentOccurrenceService({ associations });
-
-ensureUsersFile();
+const access = new AccessStore({
+  file: process.env.ACCESS_DB || path.join(DATA_DIR, 'access.sqlite'),
+  usersFile: USERS_FILE,
+  defaultAssociationId: DEFAULT_ASSOCIATION_ID,
+  normalizeAssociationId: value => associations.get(String(value || ''))?.id || DEFAULT_ASSOCIATION_ID,
+  adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
+  sessionMaxAgeMs: SESSION_MAX_AGE_MS,
+  maxLoginAttempts: Number(process.env.ACCESS_MAX_LOGIN_ATTEMPTS || 5),
+  lockDurationMs: Number(process.env.ACCESS_LOCK_MINUTES || 15) * 60 * 1000
+});
 
 const residentPortal = new ResidentPortalService({
   readState: readAppState,
@@ -76,6 +83,7 @@ server.listen(PORT, () => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.once(signal, () => {
     paddleOcr.stop();
+    try { access.close(); } catch (_) {}
     try { associations.closeAll(); } catch (_) {}
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000).unref();
@@ -141,6 +149,7 @@ async function handleApi(req, res) {
       whatsappProvider: whats,
       database: database.status(),
       multiAssociation: associations.status(false),
+      access: access.status(),
       residentPortal: residentPortal.status(),
       occurrences: occurrences.status(DEFAULT_ASSOCIATION_ID),
       residentOccurrencePortal: residentOccurrences.status(),
@@ -183,8 +192,8 @@ async function handleApi(req, res) {
     const session = requirePlatformAdmin(req);
     const { associacaoId } = await readJson(req);
     const association = associations.require(associacaoId);
-    session.associacaoId = association.id;
-    sendJson(res, 200, { ok: true, user: publicUser(session) });
+    const updated = access.switchAssociation(bearerToken(req), association.id);
+    sendJson(res, 200, { ok: true, user: publicUser(updated) });
     return;
   }
 
@@ -303,22 +312,11 @@ async function handleApi(req, res) {
 
   if (req.method === 'POST' && req.url === '/api/auth/login') {
     const { id, senha } = await readJson(req);
-    const user = readUsers().find(u => u.id === id);
-    if (!user || !verifyPassword(senha, user.password)) {
-      sendJson(res, 401, { error: 'Usuário ou senha incorretos' });
-      return;
-    }
-    const associacaoId = validUserAssociation(user);
-    const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, {
-      id: user.id,
-      nome: user.nome,
-      perfil: user.perfil,
-      associacaoId,
-      plataforma: user.plataforma === true || user.id === 'u1',
-      createdAt: Date.now()
+    const authenticated = access.authenticate(id, senha, {
+      ip: clientIp(req),
+      userAgent: req.headers['user-agent'] || ''
     });
-    sendJson(res, 200, { token, user: publicUser(sessions.get(token)) });
+    sendJson(res, 200, { token: authenticated.token, user: publicUser(authenticated.session) });
     return;
   }
 
@@ -329,34 +327,64 @@ async function handleApi(req, res) {
   }
 
   if (req.method === 'POST' && req.url === '/api/auth/logout') {
-    const token = bearerToken(req);
-    if (token) sessions.delete(token);
+    access.logout(bearerToken(req), { ip: clientIp(req) });
     sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/access/overview') {
+    const session = requireRole(req, ['admin']);
+    const associationId = session.plataforma === true ? null : session.associacaoId;
+    const overview = access.overview({ associationId });
+    overview.users = overview.users.map(publicUserDetails);
+    sendJson(res, 200, { ok: true, ...overview });
     return;
   }
 
   if (req.method === 'POST' && req.url === '/api/users') {
     const session = requireRole(req, ['admin']);
     const { nome, perfil, senha, associacaoId } = await readJson(req);
-    if (!nome || !['admin', 'porteiro', 'supervisor'].includes(perfil) || !senha || String(senha).length < 4) {
+    if (!nome || !['admin', 'porteiro', 'supervisor'].includes(perfil) || !senha || String(senha).length < 8) {
       sendJson(res, 400, { error: 'Dados do usuário inválidos' });
       return;
     }
     const targetAssociation = session.plataforma === true
       ? associations.require(associacaoId || session.associacaoId).id
       : session.associacaoId;
-    const users = readUsers();
-    const user = {
-      id: 'u' + Date.now(),
-      nome,
-      perfil,
-      associacaoId: targetAssociation,
-      plataforma: false,
-      password: hashPassword(senha)
-    };
-    users.push(user);
-    writeUsers(users);
+    const user = access.createUser({ nome, perfil, senha, associacaoId: targetAssociation }, sessionActor(session, req));
     sendJson(res, 200, { user: publicUser(user) });
+    return;
+  }
+
+  const userStatusMatch = pathname.match(/^\/api\/users\/([^/]+)\/status$/);
+  if (req.method === 'PATCH' && userStatusMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(userStatusMatch[1]);
+    const target = requireUserScope(session, id);
+    const body = await readJson(req);
+    const updated = access.setUserActive(target.id, body.ativo === true, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, user: publicUserDetails(updated) });
+    return;
+  }
+
+  const userPasswordMatch = pathname.match(/^\/api\/users\/([^/]+)\/password$/);
+  if (req.method === 'POST' && userPasswordMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(userPasswordMatch[1]);
+    const target = requireUserScope(session, id);
+    const body = await readJson(req);
+    const updated = access.resetPassword(target.id, body.senha, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, user: publicUserDetails(updated) });
+    return;
+  }
+
+  const userSessionsMatch = pathname.match(/^\/api\/users\/([^/]+)\/sessions$/);
+  if (req.method === 'DELETE' && userSessionsMatch) {
+    const session = requireRole(req, ['admin']);
+    const id = decodeURIComponent(userSessionsMatch[1]);
+    const target = requireUserScope(session, id);
+    const revoked = access.revokeUserSessions(target.id, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, sessoesRevogadas: revoked });
     return;
   }
 
@@ -368,14 +396,9 @@ async function handleApi(req, res) {
       sendJson(res, 400, { error: 'Usuário padrão não pode ser removido' });
       return;
     }
-    const users = readUsers();
-    const target = users.find(u => u.id === id);
-    if (target && session.plataforma !== true && validUserAssociation(target) !== session.associacaoId) {
-      sendJson(res, 403, { error: 'Usuário pertence a outra associação.' });
-      return;
-    }
-    writeUsers(users.filter(u => u.id !== id));
-    sendJson(res, 200, { ok: true });
+    const target = requireUserScope(session, id);
+    const updated = access.setUserActive(target.id, false, sessionActor(session, req));
+    sendJson(res, 200, { ok: true, user: publicUserDetails(updated) });
     return;
   }
 
@@ -655,53 +678,6 @@ function requireSupabase() {
   }
 }
 
-function ensureUsersFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(USERS_FILE)) {
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-    writeUsers([
-      {
-        id: 'u1',
-        nome: 'Administrador',
-        perfil: 'admin',
-        associacaoId: DEFAULT_ASSOCIATION_ID,
-        plataforma: true,
-        password: hashPassword(adminPassword)
-      }
-    ]);
-    return;
-  }
-
-  const users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-  let changed = false;
-  for (const user of users) {
-    if (!user.associacaoId || !associations.get(user.associacaoId)) {
-      user.associacaoId = DEFAULT_ASSOCIATION_ID;
-      changed = true;
-    }
-    if (user.id === 'u1' && user.plataforma !== true) {
-      user.plataforma = true;
-      changed = true;
-    }
-    if (user.id !== 'u1' && typeof user.plataforma !== 'boolean') {
-      user.plataforma = false;
-      changed = true;
-    }
-  }
-  if (changed) writeUsers(users);
-}
-
-function readUsers() {
-  ensureUsersFile();
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-}
-
-function writeUsers(users) {
-  const tmp = USERS_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(users, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, USERS_FILE);
-}
-
 function validUserAssociation(user) {
   const requested = String(user?.associacaoId || DEFAULT_ASSOCIATION_ID);
   return associations.get(requested)?.id || DEFAULT_ASSOCIATION_ID;
@@ -823,21 +799,20 @@ function publicUser(user) {
   };
 }
 
+function publicUserDetails(user) {
+  return {
+    ...publicUser(user),
+    ativo: user.ativo === true,
+    tentativasFalhas: Number(user.tentativasFalhas || 0),
+    bloqueadoAte: user.bloqueadoAte || null,
+    ultimoLoginEm: user.ultimoLoginEm || null,
+    criadoEm: user.criadoEm || null,
+    atualizadoEm: user.atualizadoEm || null
+  };
+}
+
 function publicUsers() {
-  return readUsers().map(publicUser);
-}
-
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
-  return `pbkdf2$${salt}$${hash}`;
-}
-
-function verifyPassword(password, stored) {
-  const [algo, salt, hash] = String(stored || '').split('$');
-  if (algo !== 'pbkdf2' || !salt || !hash) return false;
-  const test = crypto.pbkdf2Sync(String(password), salt, 120000, 32, 'sha256').toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
+  return access.listUsers().map(publicUser);
 }
 
 function bearerToken(req) {
@@ -876,11 +851,7 @@ function residentSessionActor(session, req) {
 
 function requireRole(req, roles) {
   const token = bearerToken(req);
-  const session = token ? sessions.get(token) : null;
-  if (session && Date.now() - session.createdAt > SESSION_MAX_AGE_MS) {
-    sessions.delete(token);
-  }
-  const ativa = token ? sessions.get(token) : null;
+  const ativa = token ? access.requireSession(token) : null;
   if (!ativa || !roles.includes(ativa.perfil)) {
     const err = new Error('Sem permissão');
     err.statusCode = 403;
@@ -888,6 +859,21 @@ function requireRole(req, roles) {
   }
   associations.require(ativa.associacaoId || DEFAULT_ASSOCIATION_ID);
   return ativa;
+}
+
+function requireUserScope(session, id) {
+  const target = access.getUser(id, true);
+  if (!target) {
+    const err = new Error('Usuário não encontrado.');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (session.plataforma !== true && validUserAssociation(target) !== session.associacaoId) {
+    const err = new Error('Usuário pertence a outra associação.');
+    err.statusCode = 403;
+    throw err;
+  }
+  return target;
 }
 
 function requirePlatformAdmin(req) {
@@ -962,7 +948,7 @@ function sendJson(res, status, payload) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
   });
   res.end(JSON.stringify(payload));
 }
