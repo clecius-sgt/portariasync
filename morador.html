@@ -33,9 +33,9 @@
 <main>
   <section id="loginCard" class="card">
     <h2>Acompanhe suas encomendas</h2>
-    <p>Informe o WhatsApp cadastrado nesta associação. Enviaremos um código de acesso pelo próprio WhatsApp.</p>
-    <label for="phone">WhatsApp com DDD</label>
-    <input id="phone" inputmode="tel" autocomplete="tel" placeholder="(17) 99999-9999">
+    <p>Informe o WhatsApp cadastrado nesta associação usando somente o DDD e o número. Não informe +55.</p>
+    <label for="phone">WhatsApp - DDD + número</label>
+    <input id="phone" inputmode="tel" autocomplete="tel" maxlength="15" placeholder="(17) 99999-9999">
     <button id="requestBtn" class="primary">Receber código</button>
     <div id="loginMsg" class="msg info hidden"></div>
   </section>
