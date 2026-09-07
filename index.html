@@ -282,6 +282,21 @@
   }
   .registro-preview strong { color: var(--text); }
 
+  .registro-resultado {
+    display: none;
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  .registro-resultado.info { display: block; background: #e8f0fe; color: #174ea6; border: 1px solid #aecbfa; }
+  .registro-resultado.success { display: block; background: #e6f4ea; color: #137333; border: 1px solid #aad7b8; }
+  .registro-resultado.warn { display: block; background: #fff8e1; color: #7a5600; border: 1px solid #f5d36a; }
+  .registro-resultado.error { display: block; background: #fce8e6; color: #c5221f; border: 1px solid #f3b7af; }
+  .btn:disabled { opacity: .65; cursor: not-allowed; }
+
   #toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: #333; color: white; padding: 12px 24px; border-radius: 8px;
@@ -504,9 +519,10 @@
 
     <div id="previewRegistro" class="registro-preview"></div>
 
-    <button class="btn btn-primary btn-full" onclick="registrarEncomenda()">
+    <button id="btnRegistrarEncomenda" type="button" class="btn btn-primary btn-full" onclick="registrarEncomenda()">
       ✅ Registrar e notificar morador
     </button>
+    <div id="resultadoRegistro" class="registro-resultado" role="status" aria-live="assertive"></div>
   </div>
 </div>
 
@@ -1409,7 +1425,11 @@ function registrarAuditoria(acao, detalhes = {}) {
   };
   auditoria.unshift(item);
   auditoria = auditoria.slice(0, 1000);
-  localStorage.setItem('auditoria', JSON.stringify(auditoria));
+  try {
+    localStorage.setItem('auditoria', JSON.stringify(auditoria));
+  } catch(e) {
+    console.warn('Auditoria mantida em memória até a sincronização:', e);
+  }
   agendarSyncEstadoServidor();
 }
 
@@ -1800,10 +1820,37 @@ function limparFormRegistrar() {
   document.getElementById('listaMoradores').style.display = 'none';
   document.getElementById('ocrStatus').style.display = 'none';
   document.getElementById('inputFotoOCR').value = '';
+  const resultado = document.getElementById('resultadoRegistro');
+  if (resultado) {
+    resultado.className = 'registro-resultado';
+    resultado.textContent = '';
+  }
+  const botao = document.getElementById('btnRegistrarEncomenda');
+  if (botao) {
+    botao.disabled = false;
+    botao.textContent = '✅ Registrar e notificar morador';
+  }
+  _registroEncomendaEmAndamento = false;
   moradorSelecionadoId = null;
 }
 
 // ========== REGISTRAR ==========
+let _registroEncomendaEmAndamento = false;
+
+function mostrarResultadoRegistro(tipo, mensagem) {
+  const resultado = document.getElementById('resultadoRegistro');
+  if (!resultado) return;
+  resultado.className = 'registro-resultado ' + tipo;
+  resultado.textContent = mensagem;
+}
+
+function atualizarBotaoRegistro(processando, texto = '') {
+  const botao = document.getElementById('btnRegistrarEncomenda');
+  if (!botao) return;
+  botao.disabled = !!processando;
+  botao.textContent = texto || (processando ? '⏳ Registrando...' : '✅ Registrar e notificar morador');
+}
+
 function filtrarMoradores() {
   const q = document.getElementById('searchMorador').value.toLowerCase();
   const lista = document.getElementById('listaMoradores');
@@ -1925,6 +1972,10 @@ function adicionarObsRapida(texto) {
 
 async function registrarEncomenda() {
   if (!exigirPerfil(['admin', 'porteiro'])) return;
+  if (_registroEncomendaEmAndamento) {
+    mostrarResultadoRegistro('info', 'Registro em andamento. Aguarde a confirmação.');
+    return;
+  }
   if (_leituraEtiquetaPendente) { toast('Aguarde a leitura da etiqueta antes de registrar.'); return; }
   const codigo = codigoDigitadoNormalizado();
   const transp = document.getElementById('inputTransportadora').value;
@@ -1943,6 +1994,9 @@ async function registrarEncomenda() {
 
   const morador = moradores.find(m => m.id === moradorSelecionadoId);
   if (!morador) { limparMoradorSelecionado(); toast('Morador não localizado. Selecione novamente.'); return; }
+  _registroEncomendaEmAndamento = true;
+  atualizarBotaoRegistro(true);
+  mostrarResultadoRegistro('info', 'Registrando a encomenda. Aguarde...');
   const enc = {
     id: Date.now().toString(),
     codigo,
@@ -1957,33 +2011,58 @@ async function registrarEncomenda() {
     dataRetirada: null,
     fotoEtiqueta: _fotoEtiquetaBase64 || null
   };
-  invalidarLeituraEtiqueta();
+  let registrada = false;
+  try {
+    invalidarLeituraEtiqueta();
+    encomendas.unshift(enc);
+    try {
+      salvarEncomendas();
+    } catch(e) {
+      encomendas = encomendas.filter(item => item !== enc);
+      throw e;
+    }
+    salvarEncomendasSupabase(enc); // compatibilidade com instalações que usam Supabase
+    registrarAuditoria('Encomenda registrada', {
+      encomendaId: enc.id,
+      codigo: enc.codigo,
+      moradorId: enc.moradorId,
+      moradorNome: enc.moradorNome,
+      transportadora: enc.transportadora
+    });
+    registrada = true;
 
-  encomendas.unshift(enc);
-  salvarEncomendas();
-  salvarEncomendasSupabase(enc); // sync Supabase
-  registrarAuditoria('Encomenda registrada', {
-    encomendaId: enc.id,
-    codigo: enc.codigo,
-    moradorId: enc.moradorId,
-    moradorNome: enc.moradorNome,
-    transportadora: enc.transportadora
-  });
+    document.getElementById('inputCodigo').value = '';
+    document.getElementById('searchMorador').value = '';
+    document.getElementById('inputTransportadora').value = '';
+    document.getElementById('inputObs').value = '';
+    document.getElementById('moradorSelecionado').style.display = 'none';
+    moradorSelecionadoId = null;
+    atualizarCadastroEncomenda();
+    renderDashboard();
 
-  // Limpar form
-  document.getElementById('inputCodigo').value = '';
-  document.getElementById('searchMorador').value = '';
-  document.getElementById('inputTransportadora').value = '';
-  document.getElementById('inputObs').value = '';
-  document.getElementById('moradorSelecionado').style.display = 'none';
-  moradorSelecionadoId = null;
-  atualizarCadastroEncomenda();
+    const mensagemRegistro = `✅ Encomenda ${codigo} registrada para ${morador.nome}.`;
+    mostrarResultadoRegistro('success', config.whatsAuto !== false ? mensagemRegistro + ' Enviando WhatsApp...' : mensagemRegistro + ' Notificação automática desativada.');
+    toast(mensagemRegistro, 5000);
 
-  toast('✅ Encomenda registrada!');
-
-  // Enviar WhatsApp
-  if (config.whatsAuto !== false) {
-    await enviarWhatsApp(morador, enc);
+    if (config.whatsAuto !== false) {
+      atualizarBotaoRegistro(true, '📲 Enviando WhatsApp...');
+      const enviado = await enviarWhatsApp(morador, enc);
+      mostrarResultadoRegistro(
+        enviado ? 'success' : 'warn',
+        enviado
+          ? `${mensagemRegistro} WhatsApp enviado com sucesso.`
+          : `${mensagemRegistro} Não foi possível enviar o WhatsApp. Avise o morador manualmente.`
+      );
+    }
+  } catch(e) {
+    console.error('Falha ao registrar encomenda:', e);
+    if (!registrada) {
+      mostrarResultadoRegistro('error', '❌ Não foi possível registrar a encomenda. Tente novamente.');
+      toast('❌ Não foi possível registrar a encomenda. Tente novamente.', 6000);
+    }
+  } finally {
+    _registroEncomendaEmAndamento = false;
+    atualizarBotaoRegistro(false);
   }
 }
 
@@ -2804,6 +2883,7 @@ async function enviarWhatsApp(morador, enc) {
   const ok = await chamarEvolutionAPI(morador.whats, msg);
   if (ok) toast('📲 WhatsApp enviado para ' + morador.nome + '!');
   else toast('⚠️ Encomenda registrada, mas falha no WhatsApp. Avise manualmente.');
+  return ok;
 }
 
 async function chamarEvolutionAPI(numero, mensagem) {
@@ -2838,7 +2918,21 @@ async function uploadFotoSupabase(base64, encId) {
 
 // ========== PERSIST ==========
 function salvarEncomendas() {
-  localStorage.setItem('encomendas', JSON.stringify(encomendas));
+  try {
+    localStorage.setItem('encomendas', JSON.stringify(encomendas));
+  } catch(e) {
+    const erroQuota = e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+    if (!erroQuota) throw e;
+    const cacheSemMidia = encomendas.map(item => {
+      const copia = { ...item };
+      for (const campo of ['fotoEtiqueta', 'fotoRetirante', 'assinatura']) {
+        if (typeof copia[campo] === 'string' && copia[campo].startsWith('data:')) delete copia[campo];
+      }
+      return copia;
+    });
+    localStorage.setItem('encomendas', JSON.stringify(cacheSemMidia));
+    console.warn('Cache local salvo sem imagens; os dados completos seguem para o servidor.');
+  }
   agendarSyncEstadoServidor();
 }
 function salvarMoradores() {
